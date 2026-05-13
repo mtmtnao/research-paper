@@ -1,0 +1,15 @@
+# arXiv-2203.05482v3
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノートを `notes/arXiv-2203.05482v3.md` に作成しました。
+
+要点:
+- **論文**: Wortsman et al., "Model soups" (ICML 2022)。同じ事前学習初期値から異なる hp で fine-tune した重みを平均する手法（uniform / greedy / learned の 3 種、本命は greedy）
+- **看板の結果**: ViT-G/14 を ImageNet で fine-tune して greedy soup が 90.94% top-1（当時 SOTA の CoAtNet-7 90.88% 超え）、5 distribution shifts 平均 85.02%
+- **Critical Thoughts** は強み/弱み/次に試したいことに分割し、著者自身が §5 で認めている **(a) 大規模事前学習以外では効果が薄い** と **(b) calibration が改善しない** の 2 つの limitations を明示。さらに「同一計算予算での比較が無い」「random seed のみだと伸びない」「NLP の改善幅が小さい原因不明」などを疑問として挙げました
+- 数値・データセット名・モデル名・テーブル番号はすべて TeX (`main.tex`) から直接拾った値です
+
+
+--- stderr ---
+

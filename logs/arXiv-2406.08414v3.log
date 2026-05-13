@@ -1,0 +1,15 @@
+# arXiv-2406.08414v3
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+作成しました: `notes/arXiv-2406.08414v3.md`
+
+要点:
+- タイトル: "Discovering Preference Optimization Algorithms with and for Large Language Models" (NeurIPS 2024)
+- 手法: GPT-4 に PyTorch コードで preference loss を逐次提案させ、`zephyr-7b-gemma-sft` × Argilla DPO Mix 7K で実訓練 → MT-Bench スコアをフィードバック。約 100 候補評価。
+- 主結果: DiscoPOP (=LRML) = logistic と exponential を sigmoid ゲートで動的に混合する非凸 loss。MT-Bench 7.916, AlpacaEval LC 65.18% (vs SFT) で baseline 群を上回る。
+- Critical Thoughts では、(1) MT-Bench を fitness かつ報告に使う circularity、(2) β=0.05 が loss 形状に焼き込まれ β スイープで破綻する点（著者も limitation で認知）、(3) error bar 欠落、(4) discovery 順位と held-out 順位の不一致（DBAQL/PFL）を率直に指摘。
+
+
+--- stderr ---
+

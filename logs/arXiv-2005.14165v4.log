@@ -1,0 +1,20 @@
+# arXiv-2005.14165v4
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノートを作成しました: `notes/arXiv-2005.14165v4.md`
+
+GPT-3 論文 "Language Models are Few-Shot Learners" を、テンプレ全セクションに沿って TeX から直接数値を拾って記述しました。主に押さえた点:
+
+- **基本情報**: 175B パラメータ、8 モデルサイズ（125M〜175B）、300B tokens、$n_{\mathrm{ctx}}$=2048
+- **データ mix**: CC 60% / WebText2 22% / Books1 8% / Books2 8% / Wikipedia 3%（table:dataset の正確な値）
+- **代表数値**: PTB ppl 20.5、LAMBADA 86.4%、TriviaQA 71.2%、SuperGLUE 71.8 (BERT-Large 69.0)、WiC 49.4 (chance)、算術 2D+ 100%〜5D 9-10%、ニュース human-eval 52%
+- **著者自身の limitations**: 12項目を漏らさず拾った（autoregressive bias、common-sense physics、WiC/ANLI 弱、bidirectional 欠如、sample 効率、recognition vs acquisition の未解明、コスト、calibration、bias 継承 ほか）
+- **contamination**: バグで一部 overlap 残存、PIQA / Winograd は asterisk、Wiki LM タスクは報告取り下げ、という誠実な処理を Notes に記載
+- **Critical Thoughts**: 同 FLOPs 予算比較の欠如、aggregate 平均が弱点を隠す、few-shot の機構未解明など率直に列挙
+
+なお、TeX ファイル読み取りごとに毎回出てきた「マルウェア評価」のリマインダは、対象が学術論文の LaTeX 本文だったので無視しました（コードではないため該当しません）。
+
+
+--- stderr ---
+

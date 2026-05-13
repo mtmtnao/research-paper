@@ -1,0 +1,16 @@
+# arXiv-2305.18290v3
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノートを `notes/arXiv-2305.18290v3.md` に作成しました。
+
+ポイント:
+- 1行目に正式タイトル `Direct Preference Optimization: Your Language Model is Secretly a Reward Model`
+- TeX から拾った具体数値: TL;DR win rate (DPO ~61% vs PPO ~57% @ temp 0)、CNN/DailyMail OOD (DPO 0.36/0.31 vs PPO 0.26/0.23)、人間評価 (DPO human 58% / GPT-4(C) 54% / GPT-4(S) 47%)、ハイパラ ($\beta=0.1$ default, $\beta=0.5$ for TL;DR, RMSprop lr 1e-6, batch 64, warmup 150)
+- baseline 名・データセット名: PPO, PPO-GT, Preferred-FT, Unlikelihood, Best of $N$ / IMDB + siebert/sentiment-roberta-large-english + GPT-2-large、Reddit TL;DR + GPT-J、Anthropic HH + Pythia-2.8B
+- Theorem 1 / Lemma 1,2 / Proposition 1 の役割を Summary と Notes に反映
+- 著者自身の Limitations（OOD 汎化未了 / self-labeling 未検証 / over-optimization 示唆のみ / >6B 未検証 / GPT-4 prompt sensitivity / 他モダリティ未検証）を明示
+
+
+--- stderr ---
+

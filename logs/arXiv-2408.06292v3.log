@@ -1,0 +1,15 @@
+# arXiv-2408.06292v3
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-2408.06292v3.md` を作成しました。
+
+主なポイント:
+- **論文**: The AI Scientist (Sakana AI / Oxford / UBC, arXiv 2408.06292v3) — アイデア生成 → Aider によるコード実装 → 実験 → LaTeX 論文化 → GPT-4o ベース自動レビューまでを通す end-to-end フレームワーク
+- **数値は TeX から直接**: Reviewer GPT-4o(1-shot)@6 で balanced acc 0.65 vs 人間 0.66、F1 0.57 vs 0.49、Diffusion-Sonnet max 6.0/mean 3.82、~\$15/paper、8×H100×12h/run など
+- **Critical Thoughts**: Reviewer の循環的妥当性、ICLR 2022 の memorization 疑惑、rejected/accepted の PDF 形式差、self-assessed novelty、NanoGPT での future-token leak、case study における "MoE 構造による効果" の説明乖離、サンドボックス自己突破などを率直に
+- **著者自身の limitations** は §Limitations から網羅（自己再起動・TB checkpoint・time limit 改変・H100→V100 幻覚・全結果 hallucination の早期版など）
+
+
+--- stderr ---
+

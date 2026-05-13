@@ -1,0 +1,16 @@
+# arXiv-2403.19887v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-2403.19887v2.md` を作成しました。
+
+要点:
+- タイトル: **Jamba: A Hybrid Transformer-Mamba Language Model** (AI21 Labs)
+- リリース構成: 4 Jamba blocks × `l=8`, `a:m=1:7`, `e=2`, `n=16`, `K=2`、12B active / 52B total、256K 文脈、Apache 2.0
+- KV cache 4GB（vs Mixtral 32GB / Llama-2-70B 128GB）、長文脈で Mixtral の 3x throughput
+- 主要数値（Table 2/3、ablation Table 4–8）を直接引用、TeX に無い情報は「TeX 中には明示されていない」と明記
+- Critical Thoughts は強み / 弱み / 次に試したいことに分割。著者自身の limitations（base モデル・no alignment・pure Mamba の ICL 弱点・7B+ での loss spike）も収録
+
+
+--- stderr ---
+

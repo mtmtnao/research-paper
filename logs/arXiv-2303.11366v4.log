@@ -1,0 +1,20 @@
+# arXiv-2303.11366v4
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノート作成完了: `notes/arXiv-2303.11366v4.md`
+
+論文は **Reflexion: Language Agents with Verbal Reinforcement Learning** (Shinn et al., NeurIPS 2023)。
+
+要点:
+- 3 モデル構成（Actor / Evaluator / Self-Reflection）で重み更新なしの言語的 RL
+- HumanEval Python 91.0（GPT-4 80.1 を抜いて当時 SOTA）、AlfWorld 130/134、HotPotQA +20%
+- ただし **MBPP Python は 77.1 で GPT-4 80.1 に負け**（自己生成テストの FP=16.3% が原因と著者自身が分析）
+- **starchat-beta では 0.26→0.26 と改善ゼロ** → 自己反省は emergent property
+- 著者の limitations: local minima、sliding window memory の限界、非決定的・API 依存・並行処理関数では test-driven が機能しない
+
+Critical Thoughts では、fair token-budget 比較が無いこと・Evaluator 失敗時の脆さ・emergent の検証が starchat-beta 1 つしか無い点を弱みとして拾いました。
+
+
+--- stderr ---
+

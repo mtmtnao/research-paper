@@ -1,0 +1,14 @@
+# arXiv-1703.03864v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノートを `notes/arXiv-1703.03864v2.md` に作成しました。
+
+要点:
+- **Summary** は Algorithm 1/2 のコア（shared seed + scalar broadcast）、MuJoCo の Table 1 比、Atari 23勝28敗、Humanoid 657min→10min、virtual batch norm、frame-skip 不変性、固定ハイパラを TeX/PDF から直接引いて記述。
+- **Critical Thoughts** は強み（再現容易・§3.1 の T 依存性整理・wallclock 桁短縮）/弱み（Atari の勝敗が極端で分析薄・VBN のアブレ無し・σ 適応未検証・1,440 CPU 前提・all-to-all コスト未計測）/次に試したいこと（IMPALA/PPO との pareto・LLM RL 応用・σ schedule・VBN 代替）に分けた。
+- 著者自身が認める limitations（データ効率 3-10x 劣化・51 game 中 28 敗・σ 適応に効果無し・indirect encoding は future work）も Critical Thoughts と Notes 両方で明示。
+
+
+--- stderr ---
+

@@ -1,0 +1,16 @@
+# arXiv-2010.11929v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+作成しました: `notes/arXiv-2010.11929v2.md`
+
+主要ポイント:
+- **タイトル**: "An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale" (ICLR 2021, Dosovitskiy et al., Google Brain)
+- TeX から拾った数値: ViT-H/14 (JFT) で ImageNet 88.55 / ReaL 90.72 / CIFAR-100 94.55 / VTAB 77.63、TPUv3-core-days 2.5k vs BiT-L 9.9k / Noisy Student 12.3k
+- モデル諸元 (Table 1)、masked patch prediction 79.9%、position embedding ablation、ObjectNet 61.7% top-1 も収録
+- 著者自身の limitation（detection/segmentation 未検証、self-sup と supervised の 4% gap、さらなる scaling）を Critical Thoughts に反映
+- スタイル手本に合わせて、Summary は問題/手法/結果/貢献の 4 ブロック、Critical Thoughts は強み/弱み・疑問/次に試したいことに分割
+
+
+--- stderr ---
+

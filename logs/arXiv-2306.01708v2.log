@@ -1,0 +1,17 @@
+# arXiv-2306.01708v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノートを `notes/arXiv-2306.01708v2.md` に作成しました。
+
+**TIES-Merging (NeurIPS 2023, Yadav+)** の主要な拾い物:
+
+- **手法**: 3 ステップ — (1) Trim: top-20% magnitude 残し、(2) Elect: $\gamma_m^p = \textrm{sgn}(\sum_t \hat\tau_t^p)$、(3) Disjoint Merge: elected sign 一致タスクだけで平均 → $\theta_m = \theta_\textrm{init} + \lambda\tau_m$（既定 $\lambda=1$）。
+- **主結果（Table 1）**: (IA)$^3$ 66.4 (+2.5), T5-large 76.9 (+3.6), ViT-B/32 73.6 (+1.8) など全ベースライン超え。OOD（Table 2）は T5-large で RegMean 比 +4.4。
+- **Oracle Sign（Table 7）**: 66.4 → 72.0、multitask 73.1。**符号さえ当てられればギャップはほぼ閉じる**。
+- **著者自身の limitations**（Appendix sec:limitation）: 理論不足 / 共通 init・arch 必須 / multitask に未到達 / checkpoint 選択未解決 / multitask sign 推定が open ← 全て note に反映。
+- Critical Thoughts では「k=20 は PEFT 上の grid 結果で普遍ではない」「T5-base × validation 無しは Task Arithmetic に負けている (69.7 vs 73.2)」「生成タスク・LoRA 未検証」「mass 多数決のロバスト性」を挙げました。
+
+
+--- stderr ---
+

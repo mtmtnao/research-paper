@@ -1,0 +1,15 @@
+# arXiv-2210.03629v3
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-2210.03629v3.md` を作成しました。
+
+主な内容:
+- **Summary**: ReAct = action space を言語空間に拡張して thought/action/observation を交互生成。PaLM-540B の各タスク結果（HotpotQA EM, FEVER Acc, ALFWorld SR, WebShop Score/SR）を表から直接転記。
+- **Takeaway**: 「フォーマット単純さが普及力」「CoT と ReAct は相補的で hybrid が最強」「ReAct-IM ablation の意義」「prompting → finetuning で逆転」など。
+- **Critical Thoughts**: HotpotQA で ReAct 単体は CoT-SC に負ける点、prompt 選択 variance、greedy decoding 起因の thought ループ（著者自身が認めた limitation を含む）、token budget で fair でない比較などを率直に。
+- Notes / Quotes は TeX から直接引用、Related Papers は本文・bibliography で引かれているものに限定。
+
+
+--- stderr ---
+

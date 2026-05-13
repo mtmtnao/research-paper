@@ -1,0 +1,15 @@
+# arXiv-2106.09685v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-2106.09685v2.md` を作成しました。
+
+要点:
+- LoRA (Hu+ 2021, Microsoft, ICLR 2022) を扱う
+- TeX から拾った具体数値: GPT-3 175B でチェックポイント 350GB→35MB（10,000× 削減）、VRAM 1.2TB→350GB、訓練 25% 高速化、Adapter$^H$ +30.3% レイテンシ vs LoRA 0%、$r=1$ で $W_q+W_v$ なら WikiSQL 73.4 / MNLI 91.3、amplification factor ≈ 21.5×
+- 強み（レイテンシ 0、broad evaluation、SVD/Frobenius による科学パート）と、著者が認める limitations（バッチ内マルチタスク不可、適用先選択がヒューリスティック、MLP/LN/bias 未検証、異言語タスクでは小 $r$ が足りない可能性）を分けて記載
+- 手本 (arXiv-2305.14325v1.md) の粒度・口調・具体性に合わせた
+
+
+--- stderr ---
+

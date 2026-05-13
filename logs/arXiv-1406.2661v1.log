@@ -1,0 +1,15 @@
+# arXiv-1406.2661v1
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノートを `notes/arXiv-1406.2661v1.md` に作成しました。
+
+主な内容:
+- **Summary**: minimax ゲーム定義、$D^*_G = p_\text{data}/(p_\text{data}+p_g)$、$C(G)=-\log 4 + 2\cdot\text{JSD}$ の理論結果、Parzen window 評価 (MNIST 225±2, TFD 2057±26) を TeX から直接引用
+- **Takeaway**: non-saturating loss trick、ノイズを最下層のみに入れる実装選択、$k$ ステップ交互更新と SML/PCD の類比、著者自身が "Helvetica scenario" として明記している mode collapse
+- **Critical Thoughts**: 著者が認めた limitations（explicit $p_g$ なし、$D/G$ 同期必要、Parzen の高次元での弱さ）、CIFAR-10 の定量比較が無いこと、学習率等ハイパーパラメータが TeX に書かれていないことを明記
+- 推測を避けるため、明示されていない情報は「TeX 中には明示されていない」と Notes セクションに分離
+
+
+--- stderr ---
+

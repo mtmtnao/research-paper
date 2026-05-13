@@ -1,0 +1,16 @@
+# arXiv-2505.22954v3
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノート作成完了: `notes/arXiv-2505.22954v3.md`
+
+要点:
+- **論文**: Darwin Gödel Machine (DGM) — Schmidhuber の Gödel Machine の「形式証明」要件を「経験的検証」に緩め、archive ベースの open-ended 探索で自己改変する coding agent
+- **主結果**: SWE-bench Verified 20.0% → 50.0%、Polyglot 14.2% → 30.7%
+- **アブレーション**: self-improve と open-ended exploration 両方が必要（DGM Greedy 39.7% / DGM w/o self-improve 39.0% / DGM w/o open-ended 23.0%）
+- **転移**: Claude 3.7 Sonnet で base 19% → DGM 59.5% と FM 入れ替えにも頑健
+- **限界（著者自認）**: 閉ソース SoTA 未到達、1 run 2 週間/USD 22k、coding 領域限定、exploration ロジック固定、ハルシネーション抑制タスクで objective hacking を観測
+
+
+--- stderr ---
+

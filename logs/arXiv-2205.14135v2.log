@@ -1,0 +1,15 @@
+# arXiv-2205.14135v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-2205.14135v2.md` を作成しました。
+
+要点:
+- タイトルは正式名 "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness" を1行目に。
+- Summary は **問題 / 手法（tiling + recomputation + online softmax）/ 理論（$\Theta(N^2 d^2 / M)$ と lower bound）/ 結果（BERT 15%、GPT-2 3×、GPT-2 4K で ppl 17.5、LRA 2.4× / 2.8×、Path-X 61.4%、Path-256 63.1%、HBM 40.3→4.4 GB）/ 貢献** に分けて TeX 上の数値だけで構成。
+- Critical Thoughts は強み・弱み・次の実験を分離。著者自身が §Discussion で認めている limitations（CUDA 手書き / GPU 間移植性 / multi-GPU 未対応 / attention 以外への拡張）を必ず拾いました。
+- スタイルは `arXiv-2305.14325v1.md` の粒度・口調に合わせ、数値・データセット名・baseline 名・指標は全て TeX から直接引用しています。
+
+
+--- stderr ---
+

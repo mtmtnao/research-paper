@@ -1,0 +1,16 @@
+# arXiv-2501.06252v3
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノート `notes/arXiv-2501.06252v3.md` を作成しました。
+
+主なポイント:
+- 1行目に正式タイトル `Transformer-Squared: Self-adaptive LLMs`
+- Summary に SVF の数式・REINFORCE + KL 目的・2パス推論・3 adaptation 戦略を整理
+- Table 1〜5 から具体的な数値（Llama3-8B GSM8K 75.89→79.15, Mistral GSM8K 42.83→49.74, Llama3-70B MATH の劣化 40.64→40.44, ablation で LoRA+RL が 57.92 に崩壊, cross-model transfer 等）を直接引用
+- Critical Thoughts で「改善幅が小さく信頼区間が示されていない」「70B で MATH のみ劣化」「Cls-expert/Few-shot を 70B で評価していない」「sparse reward と CEM のスケーラビリティ」など率直に指摘
+- 著者自身が conclusion / methods で認めている limitation（base model の潜在成分に縛られる、CEM のドメイン数増加コスト、弱い base での reward sparsity）を「次に試したいこと」と分けて拾った
+
+
+--- stderr ---
+

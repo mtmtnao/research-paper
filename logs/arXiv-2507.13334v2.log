@@ -1,0 +1,17 @@
+# arXiv-2507.13334v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+notes/arXiv-2507.13334v2.md を作成しました。
+
+主なポイント:
+- **論文**: "A Survey of Context Engineering for Large Language Models" (Mei et al., ICT CAS ほか, 2025-07-21, v2)
+- **本質**: prompt engineering を上位化した「Context Engineering」を $C = \mathcal{A}(c_{\text{instr}}, c_{\text{know}}, c_{\text{tools}}, c_{\text{mem}}, c_{\text{state}}, c_{\text{query}})$ で定式化し、Foundational Components × System Implementations の二層 taxonomy に 1400+ 本を整理した survey
+- **著者の最大の主張**: comprehension-generation の非対称性が field-defining な open problem
+- TeX から拾った数値（GAIA 92% vs 15%、WebArena leaderboard、BFCL 2,000 / T-Eval 553 / ToolHop 995×3,912、商用 AI で 30% 精度低下 等）をすべて引用元 § と一緒に保持
+- Critical Thoughts では「数式は definitional に留まり prescriptive ではない」「孫引き数値の比較条件は未保証」「MCP/A2A/ACP/ANP の差分は本文では未整理」など率直に列挙
+- 著者自認の limitation（Acknowledgments の "may have been inadvertently overlooked"）も拾済み
+
+
+--- stderr ---
+

@@ -1,0 +1,14 @@
+# arXiv-2305.16291v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-2305.16291v2.md` を作成しました。
+
+主な構成:
+- **Summary**: 3 モジュール（Automatic Curriculum / Skill Library / Iterative Prompting）の役割、API 構成（`gpt-4-0314` / `gpt-3.5-turbo-0301` / `text-embedding-ada-002`）、Mineflayer 経由の制御、定量結果（160 iter で 63 items, 3.3× / 2.3× / 15.3×、Tech tree 表の具体値、Diamond は 1/3、ablation -93% / -73% / 5.7×）を TeX から直接引用。
+- **Critical Thoughts**: 強み（ablation の clean さ、zero-shot 転移、黒箱性、limitations の率直さ）、弱み（コスト比較の不公平、試行 3 回・Diamond 1/3、Mineflayer 依存、baseline が NLP 由来、long horizon 未検証）、次に試したいこと（同予算 pareto、distillation、confidence 付き self-verification、長時間ラン、multimodal critic）を分けて記述。
+- **著者自身が認めた limitations**（コスト 15×、self-verification の spider string 誤検出、curriculum の hallucination "copper sword"、cobblestone を燃料扱い）を Notes / Quotes と Critical Thoughts の両方で拾っています。
+
+
+--- stderr ---
+

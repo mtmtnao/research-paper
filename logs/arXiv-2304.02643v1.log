@@ -1,0 +1,16 @@
+# arXiv-2304.02643v1
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+notes/arXiv-2304.02643v1.md を作成しました。
+
+要点:
+- タイトル: "Segment Anything"（ICCV 2023, Meta AI / FAIR）
+- 3 components（task / model / data）、SA-1B（11M images, 1.1B masks, 99.1% 自動生成）、SAM = MAE-ViT-H + sparse/dense prompt encoder + 2-layer mask decoder、ブラウザ CPU 50ms。
+- 数値は全て TeX から: 23 dataset 中 16 で RITM 超え、BSDS500 ODS .768、LVIS AR@1000 59.3、COCO mask AP 46.5、94% pair > 90% IoU 等。
+- Limitations は著者自身が認めた 7 点（fine structure 取りこぼし、interactive 多点で劣勢、image encoder 重い、text-to-mask exploratory、semantic/panoptic prompt 未解決、domain-specific tools に劣る、衣服 segmentation で gender bias）を明示。
+- Critical Thoughts では「scale で殴る foundation model」を主張しつつ ViT-H と 1M images で頭打ちという内部矛盾、ライセンス画像の制約、ViTDet との AP gap を fine-tune で潰す実験が無い点などを率直に指摘。
+
+
+--- stderr ---
+

@@ -1,0 +1,16 @@
+# arXiv-2203.11171v4
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-2203.11171v4.md` を作成しました。
+
+- 1行目に正式タイトル `# Self-Consistency Improves Chain of Thought Reasoning in Language Models`
+- テンプレ全セクション (Summary / Takeaway / Critical Thoughts / Notes / Related) を埋めた
+- 数値・ベンチマーク名 (GSM8K +17.9, SVAMP +11.0, AQuA +12.2, StrategyQA +6.4, ARC-c +3.9 など) は TeX の Table 2/3/4/5 から直接拾った
+- サンプリング設定 (UL2/LaMDA T=0.5 k=40, PaLM T=0.7 k=40, GPT-3 T=0.7 no top-k, 40 paths × 10 runs)、aggregation 比較 (majority vote 74.4 vs normalized weighted sum 74.1) も明記
+- 著者自身が認めている limitation (計算コスト、固定回答集合のみ、nonsensical rationale) は Conclusion / §2 / Ethics から拾って Critical Thoughts に反映
+- 強み / 弱み・疑問 / 次に試したいこと を分けて記述
+
+
+--- stderr ---
+

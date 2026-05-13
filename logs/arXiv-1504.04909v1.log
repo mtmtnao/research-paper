@@ -1,0 +1,18 @@
+# arXiv-1504.04909v1
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノート作成完了: `notes/arXiv-1504.04909v1.md`
+
+論文は Mouret & Clune 2015 "Illuminating search spaces by mapping elites"（MAP-Elites 原典）。要点:
+
+- **アルゴリズム**: feature space をセル離散化し、各セルに1個 elite を保持。archive のみ（population なし）で uniform random selection → mutate → 該当セル比較で置換、というシンプル構造。
+- **3 ドメイン実験**: retina NN（512×512, vs EA/NS+LC/random, 全4指標で $p<10^{-7}$ 勝利）、Voxcad soft robot（128×128, reliability/coverage で $p<0.002$ 勝利だが precision で $p<0.01$ 負け）、実機 soft arm（64 セル, vs grid/random, 中間 x 領域で勝利）。
+- **指標**: Global Performance / Global Reliability / Precision / Coverage の4軸を定式化。
+- **著者自身の limitations**: preliminary draft であり数値は再実験予定、precision で optimization 系に負ける、open-ended evolution にはならない（新セルを増やせない）、MOLE との直接定量比較が未実施、real arm の評価回数記述が本文と methods で不一致。
+
+Critical Thoughts では強み（簡潔さ・概念整理・lineage 分析）と弱み（preliminary な数値、fair comparison 不在、feature 選定論の欠如、precision 劣化の未解明）を分けて整理し、次に試したいこととして同予算 Pareto curve、feature 学習化、LLM 空間への適用などを挙げた。
+
+
+--- stderr ---
+

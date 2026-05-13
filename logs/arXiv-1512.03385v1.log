@@ -1,0 +1,14 @@
+# arXiv-1512.03385v1
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノート作成完了: `notes/arXiv-1512.03385v1.md`
+
+主なポイント:
+- **Summary**: degradation 問題（BN 後も plain ネットが深いほど training error が上がる現象）と residual block $y=\mathcal{F}(x)+x$ による解決を、ImageNet/CIFAR/COCO/VOC の具体数値で記載（ImageNet test top-5 3.57%、ResNet-152 single 4.49%、COCO +28% relative、CIFAR-110 6.43%、1202 層 training err <0.1% など）。
+- **Takeaway**: identity を fallback として保持する preconditioning という見方、parameter-free shortcut で十分（option A vs B vs C の差は小さい）、152 層単一が過去のアンサンブルを超える点、バックボーン差し替えだけで検出が大幅改善する点。
+- **Critical Thoughts**: 強み（ablation の徹底、5 タスク同時 1 位）、弱み（plain の最適化困難の根本原因は本文中で "future work" と明言、1202 層 overfit は dropout 未使用条件、shortcut 比較が 34 層のみ、multi-scale training は時間切れで未実施 等、著者自身が論文中で認めた limitation も拾った）、次に試したいこと（landscape 分析、固定 random shortcut の対照、stochastic depth との組合せ 等）。
+
+
+--- stderr ---
+

@@ -1,0 +1,16 @@
+# arXiv-2303.17651v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-2303.17651v2.md` を作成しました。
+
+主なポイント:
+- タイトルは `Self-Refine: Iterative Refinement with Self-Feedback`（`\ours` マクロが `Self-Refine` と確認）
+- Table 1 の 7 タスク × 3 モデルの数値、Table 3 のフィードバック品質アブレ、Fig. 4 の反復ごとの diminishing returns を TeX から直接拾って記載
+- 著者明示の limitations（強モデル前提 / 英語のみ / クローズド LM / 悪用ガード無し）を Critical Thoughts に明記
+- GSM8K の +0.2 停滞と「ChatGPT feedback の 94% が 'everything looks good'」という著者自身の自白、定性分析の失敗内訳（feedback 位置誤り 33% / 修正案誤り 61% / refiner 失敗 6%）も収録
+- 評価が GPT-4-as-judge 中心である circularity、token 予算を揃えた self-consistency 比較の欠如を弱みとして率直に指摘
+
+
+--- stderr ---
+

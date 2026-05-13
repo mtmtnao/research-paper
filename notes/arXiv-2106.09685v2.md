@@ -1,0 +1,80 @@
+# LoRA: Low-Rank Adaptation of Large Language Models
+
+- arXiv: https://arxiv.org/abs/2106.09685
+- source: ../papers/arXiv-2106.09685v2/
+- authors: Edward J. Hu*, Yelong Shen*, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen (Microsoft)
+- venue / year: ICLR 2022 (v2)
+- tags: [PEFT, LoRA, low-rank, fine-tuning, LLM, adapter]
+- read_date: 2026-05-12
+- rating:
+
+---
+
+## Summary（著者の主張）
+
+- **問題**: GPT-3 175B のような巨大事前学習モデルを各下流タスクごとに full fine-tuning すると、タスクごとに 175B パラメータの独立インスタンスを保存・配備する必要があり、ストレージとデプロイ両面で非現実的。既存の parameter-efficient 法は (a) adapter 系が **推論レイテンシを増やす**（直列に1ブロック追加するため hardware parallelism を活かしきれない）、(b) prefix tuning 系が **入力系列長を食う + 最適化が不安定で非単調**、というトレードオフを抱える。
+- **手法**: 事前学習重み $W_0 \in \mathbb{R}^{d\times k}$ を凍結し、その更新分を低ランク分解 $\Delta W = BA$（$B\in\mathbb{R}^{d\times r}$, $A\in\mathbb{R}^{r\times k}$, $r\ll \min(d,k)$）で表現する。forward は $h = W_0 x + BA x$。$A$ は Gaussian 初期化、$B$ はゼロ初期化なので学習開始時 $\Delta W = 0$。出力は $\alpha/r$ でスケール（$\alpha$ は最初に試した $r$ に合わせて固定、再チューニング不要）。Transformer 自己注意の $W_q, W_k, W_v, W_o$ のうち、本実験では **$W_q$ と $W_v$ だけ** に LoRA を当て、MLP/LayerNorm/bias は凍結。デプロイ時は $W = W_0 + BA$ をマージできるので **追加推論レイテンシゼロ**、タスク切替は $BA$ を引いて別の $B'A'$ を足すだけ。
+- **結果**:
+  - **GPT-3 175B**: trainable params を full FT の 10,000× 削減（350GB→35MB, $r=4$, $W_q/W_v$ のみ）、訓練 VRAM 1.2TB→350GB、訓練スループット 32.5→43.1 tokens/s/V100（25% 高速化）。WikiSQL 73.4 / MNLI-m 91.7 / SAMSum 53.8/29.8/45.9（LoRA 4.7M）で full FT（175,255.8M, 73.8 / 89.5 / 52.0/28.0/44.5）に **同等以上**、PreEmbed・PreLayer・BitFit・Adapter$^H$ をすべて上回る（Table 4）。
+  - **RoBERTa**: GLUE 平均で base LoRA 0.3M=87.2（FT 125M=86.4）、large LoRA 0.8M=89.0（FT 355M=88.9）。**DeBERTa XXL** LoRA 4.7M=91.3（FT 1.5B=91.1）（Table 2）。
+  - **GPT-2 M/L (E2E NLG)**: LoRA 0.35M で BLEU 70.4 / NIST 8.85 / METEOR 46.8 / ROUGE-L 71.8 / CIDEr 2.53、FT 354.92M（68.2 / 8.62 / 46.2 / 71.0 / 2.47）と PreLayer 0.35M（69.7 / 8.81 / …）を上回る（Table 3）。
+  - **レイテンシ**: GPT-2 medium, batch 1 / seq 128 で Adapter$^H$ は +30.3%, Adapter$^L$ +20.7% の遅延、LoRA は 0%（Table 1）。
+  - **rank の効果**: WikiSQL/MultiNLI で $W_q+W_v$ なら **$r=1$ でほぼ最大性能**（WikiSQL 73.4, MNLI 91.3）。$W_q$ 単独だと $r=4$〜8 を要する（Table 6）。
+  - **適用先**: 同じ 18M 予算なら $\{W_q,W_v\}$（$r=4$）または $\{W_q,W_k,W_v,W_o\}$（$r=2$）が $W_q$ 単独 $r=8$ より良い → **少ない rank で多くの行列に当てる方が有利**（Table 5）。
+  - **部分空間解析**: $A_{r=8}$ と $A_{r=64}$ の上位特異方向は重なりが大きく（Grassmann 類似度ベース、Eq.4）、特に top-1 方向は normalized similarity > 0.5。残りはノイズに近い。
+  - **$\Delta W$ vs $W$**: $\|W_q\|_F = 61.95$, $\|\Delta W_q\|_F = 6.91$（$r=4$）。$\Delta W_q$ の部分空間に $W_q$ を射影すると $\|U^\top W_q V^\top\|_F = 0.32$ → ランダム射影 0.02 より大きいが、$W$ の top-$r$（21.67）より遥かに小さい。**$\Delta W$ は $W$ で強調されていない方向を増幅（amplification factor $\approx$ 21.5×）**。
+- **貢献**: (1) 黒箱に近い形で適用できる低ランク更新による PEFT 手法 LoRA、(2) RoBERTa / DeBERTa / GPT-2 / GPT-3 で full FT 同等以上を **桁違いに少ないパラメータと追加レイテンシ 0** で達成、(3) rank-deficiency と $\Delta W$/$W$ の関係に関する経験的分析、(4) PyTorch 実装と RoBERTa/DeBERTa/GPT-2 のチェックポイントを公開（github.com/microsoft/LoRA）。
+
+## Takeaway（自分にとっての要点）
+
+- **LoRA は構造上 inference latency ゼロ**：$W_0 + BA$ をマージしてしまえば本体と同じ shape で推論できる。adapter / prefix が抱える宿命的なオーバーヘッドが消える、というのが実用上一番効く差分。タスク切替も $BA$ を抜き差しするだけで VRAM 上のホットスワップが可能。
+- **rank=1 でも崩れない**のは想像以上で、$W_q, W_v$ 同時適用なら GPT-3 で $r=1$ vs $r=64$ の差は 0.4pt 以内（Table 6）。「rank を増やす ≠ 意味のある部分空間が増える」が SVD overlap で示されている → 実務では **$r$ を小さく取って複数行列に分散**が良いヒューリスティック。
+- **どの重みに当てるか**：自己注意の $W_q + W_v$ が最も効く（$W_k$ 単独は弱い、Table 5）。MLP・LayerNorm・bias は本研究では touch していない（明示的に future work）。
+- **$\alpha/r$ スケーリング**で $r$ を変えても学習率の再チューニングが要らない、というのは hyperparameter sweep を1次元減らせる地味だが嬉しい工夫。$\alpha$ は最初の $r$ に揃えて以後固定。
+- **$\Delta W$ は $W$ の補集合方向を強める**：事前学習で「学習したが強調されていなかった特徴」を下流タスク用にブーストしている、という解釈。これは LoRA が **新規特徴を作るのではなく既存特徴の重み付けを変える** ことを示唆していて、サブタスク汎化の性質を考える上で重要。
+- **メモリ削減 2/3** は Adam の optimizer state（モーメント）を凍結重みに対して持たなくて良いから。これは LoRA の本質ではなく Adam に依存した副次効果だが、現実の GPU 制約では決定的。
+
+## Critical Thoughts（評価・疑問）
+
+- **強み**:
+  - 設計が **足し算で済み、構造的にレイテンシ 0**。実装も既存層に並列パスを追加するだけで、ライブラリ化が容易（実際公開されている）。
+  - 評価が広い：エンコーダ系（RoBERTa, DeBERTa XXL）と デコーダ系（GPT-2, GPT-3 175B）、NLU（GLUE）と NLG（E2E/WebNLG/DART, WikiSQL, SAMSum）を一気通貫でカバーし、いずれも full FT 同等以上。
+  - **rank-deficiency を SVD overlap (Grassmann 距離) と Frobenius 射影で定量化**し、「なぜ $r=1$ でも動くのか」を経験的に裏付けている。手法論文として珍しく科学パートが厚い。
+  - **適用先・rank の ablation（Table 5/6）が明快**で、実務者はそのまま「$W_q,W_v$ に $r\in\{4,8\}$」をデフォルトに採用できる。
+- **弱み / 疑問**:
+  - 著者自身が認める制限: (i) $A,B$ を $W$ にマージしてしまうと、**同一バッチ内に異なるタスクのサンプルを混ぜることが直接できない**（マージしない動的版は遅い）、(ii) 適用する重みの選び方は **ヒューリスティック**で原理化されていない、(iii) MLP/LayerNorm/bias は未探索で future work。
+  - rank=1 で十分という主張は GLUE / WikiSQL / MNLI が中心。footnote では「事前学習と全く異なる言語のタスクでは小さい $r$ では足りないだろう」と注意書きがある（Sec. 7.2）が、定量検証はない。
+  - **prefix-tuning が非単調**で性能ピークが見えにくいという指摘は、prefix 側のチューニング努力が LoRA と対称かどうかが気になる（PreLayer 20.2M vs LoRA 4.7M の比較は token 当たり fair か？）。
+  - GPT-3 の結果は random seed 1 個分の典型 std しか報告されていない（コスト理由は理解できるが、$\pm0.1$ オーダの優劣比較には弱い）。
+  - $\Delta W$ の amplification factor 21.5× の解釈は印象的だが、48 層目 1 つの $W_q$ に対する測定。層・行列横断で同じ傾向が出るかは appendix に断片的にしかない。
+  - 計算コストの全体最適化（同じ予算で full FT 短時間 vs LoRA 長時間）は議論されていない。LoRA は **速いというより安い**手法であり、最終性能で full FT を上回る理由が「正則化的効果」か「単に運」かは未解明。
+- **次に試したいこと**:
+  - **MLP / LayerNorm / FFN への LoRA 適用**（後続の QLoRA, LongLoRA, DoRA でやられているが、自分でも当てて rank-overlap がどう変わるか SVD で見たい）。
+  - 異なる $r$ で学習した複数 LoRA を **線形合成 / SVD で統合** して 1 つの低ランク adapter にまとめる実験（タスク算術系の応用）。
+  - $\Delta W$ の amplification 方向を SVD で取り出し、**事前学習中に "学んだが眠っていた" features** を解釈できるか可視化する。
+  - rank=1 が成立する条件と崩れる条件（言語間転移、ドメイン跳躍）の境界を ablation。
+  - $\alpha/r$ スケールを学習可能にした版（LoRA+ / rsLoRA に近い）と固定版の比較。
+
+## Notes / Quotes
+
+- "we hypothesize that the change in weights during model adaptation also has a low 'intrinsic rank'" (introduction)
+- "introducing \emph{no inference latency} compared to a fully fine-tuned model, by construction" (Sec. 4.1)
+- Forward 式: $h = W_0 x + \Delta W x = W_0 x + BAx$（Eq. 3）。$A$: Gaussian, $B$: zero, scale $\alpha/r$。
+- 適用方針: 「自己注意の重みだけに当てて MLP は凍結。simplicity と param-efficiency が理由」(Sec. 4.2)
+- Adapter latency: batch=1, seq=128 で Adapter$^H$ +30.3%, Adapter$^L$ +20.7%（Table 1）
+- GPT-3 175B チェックポイント: 350GB → 35MB（$r=4$, $W_q/W_v$ のみ）
+- "$r=1$ suffices for adapting both $W_q$ and $W_v$ on these datasets while training $W_q$ alone needs a larger $r$" (Sec. 7.2)
+- "$\Delta W$ only \emph{amplifies directions that are not emphasized in $W$}" / amplification factor $\approx 21.5$ for $r=4$ (Sec. 7.3)
+- 既知の限界: 同一 forward 内で異なるタスクの $A,B$ を同時に使うのが難しい、適用先の選択がヒューリスティック、MLP/LN/bias は未検証（Sec. 4.2, Sec. 8）
+- 公開実装: https://github.com/microsoft/LoRA
+
+## Related Papers
+
+- Houlsby+ 2019 — original adapter, $\text{Adapter}^H$ baseline。LoRA の最大の比較対象。
+- Lin+ 2020, Pfeiffer+ 2021, Rücklé+ 2020 (AdapterDrop) — adapter variants ($\text{Adapter}^L$, $\text{Adapter}^P$, $\text{Adapter}^D$)。
+- Li & Liang 2021, Prefix-Tuning / Lester+ 2021, Prompt Tuning / Hambardzumyan+ 2020 WARP / Liu+ 2021 GPT understands — prefix・prompt 系の対抗手法。
+- Zaken+ 2021 BitFit — bias-only tuning baseline。
+- Aghajanyan+ 2020, Li+ 2018 (intrinsic dimension) — 低 intrinsic rank 仮説の出発点。
+- Mahabadi+ 2021 \textsc{Compacter} — Kronecker 積で adapter をさらに圧縮、LoRA と組み合わせ可能と示唆。
+- Brown+ 2020 GPT-3, Liu+ 2019 RoBERTa, He+ 2021 DeBERTa, Radford GPT-2 — 評価対象モデル。
+- Wang+ 2019 GLUE, WikiSQL, SAMSum, E2E, WebNLG, DART — 評価データセット。

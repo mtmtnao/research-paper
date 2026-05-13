@@ -1,0 +1,15 @@
+# arXiv-2305.10601v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+notes/arXiv-2305.10601v2.md を作成しました。
+
+要点:
+- タイトル: *Tree of Thoughts: Deliberate Problem Solving with Large Language Models* (NeurIPS 2023, Yao+)
+- 3 タスクの数値はすべて TeX から直接拾った: Game of 24 (ToT b=5 で **74%** vs CoT 4.0%)、Creative Writing (ToT 7.56 vs CoT 6.93、人間評価で ToT 勝 41/CoT 勝 21)、5×5 Crosswords (Word 60% vs CoT 15.6%)。
+- 著者が認める limitations（GPT-4 が解ける範囲には不要、API コスト大、3 タスクのみ、obsolete 語で pruning ミス等）は Critical Thoughts と Notes 両方に明記。
+- 14325v1 のノートに合わせて、強み / 弱み・疑問 / 次に試したいこと を分けて率直に書いてあります。
+
+
+--- stderr ---
+

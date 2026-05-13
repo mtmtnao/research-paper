@@ -1,0 +1,15 @@
+# arXiv-2410.14735v4
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノートを `notes/arXiv-2410.14735v4.md` に作成完了。
+
+主なポイント:
+- **論文**: CycleQD（Sakana AI, ICLR 2025）— MAP-Elites の quality/BC を世代ごとに入替え、model merging を crossover、SVD を mutation として使う LLM agent skill 獲得手法
+- **核心数値**: AgentBench で MBPP 76.4 / DB 38.2 / OS 42.6 / 平均 52.4（gpt-3.5-turbo 53.7 にほぼ並ぶ、Llama3-8B base 比 +19.8pt）
+- **アブレーション**: QD 47.6 → cyclic 49.4 → +SVD 51.7 → +Elite 52.4 と単調改善、ガウシアン摂動は逆効果（48.5）
+- **Critical Thoughts**: 強み（汎化 0.99 維持、SAM への拡張）、弱み（DB は expert 比劣化、計算コストの fair comparison 無し、K=3 限定、Elite sampling のハイパー感度不明）、著者自認の限界（expert が divergent だと崩れる）を分けて記述
+
+
+--- stderr ---
+

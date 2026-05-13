@@ -1,0 +1,15 @@
+# arXiv-2302.10662v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-2302.10662v2.md` を作成しました。
+
+主なポイント:
+- **論文**: Chaplick et al., "Snakes and Ladders: a Treewidth Story" (WG 2023 + arXiv v2 拡張版、グラフ理論)
+- **本旨**: ladder（$2 \times (k+1)$ グリッドが 4 コーナーで外に繋がる構造）は長さ 4 まで縮めても treewidth が保たれる（Theorem `thm:main3`）。定数 4 は tight、しかも全 treewidth で tight (`lem:alwaystight`)。display graph では更に 1 短くできる (Theorem `thm:preserve2`)。
+- **副産物**: phylogenetics の **common chain reduction rule** が display graph の treewidth を保つ（Kelk 2017 の open problem を解決）。
+- 著者自身の Author's note 2（Theorem `thm:main3` は [almob2023] で別技法既出、本論文の unique は `lem:alwaystight` と display graph 版・$tw\geq 4$ 強化）を Critical Thoughts に明記しました。
+
+
+--- stderr ---
+

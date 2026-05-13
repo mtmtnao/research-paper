@@ -1,0 +1,15 @@
+# arXiv-2203.15556v1
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+読書ノートを `notes/arXiv-2203.15556v1.md` に作成しました。
+
+主な収録内容:
+- **Summary**: 3 つの独立手法 (envelope / IsoFLOP / parametric) で $a \approx b \approx 0.5$（Kaplan+ の 0.73/0.27 と対立）、Chinchilla 70B × 1.4T tokens が Gopher 280B × 300B tokens を MMLU 67.6 vs 60.0、BIG-bench 65.1 vs 54.4 などで上回ったこと
+- **Takeaway**: 「model を大きくする」前提を覆した分水嶺、Kaplan+ の指数ズレが LR スケジュール起因という診断、$\alpha=0.34/\beta=0.28$ が理論下限 0.5 より低くアーキ・最適化に改善余地
+- **Critical Thoughts**: 大規模実物比較が 2 点のみ・$\log N_{opt}$ の concavity・train/test 汚染 untested・1 epoch 未満限定 などの自認 limitation を含め、強み / 弱み / 次に試すこと を分けて記述
+- TeX から拾った定量値（Pile bpb、Winogender 78.3/71.4、TruthfulQA 43.6→66.7、外挿表の 1T パラメータ→21.2T tokens 等）を直接引用
+
+
+--- stderr ---
+

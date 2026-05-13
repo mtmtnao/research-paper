@@ -1,0 +1,16 @@
+# arXiv-2311.03099v3
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノート作成完了: `notes/arXiv-2311.03099v3.md`
+
+要点だけ:
+- 論文タイトル "Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch" (ICML 2024, Alibaba)
+- 手法 DARE = delta parameter を率 $p$ で drop → $1/(1-p)$ で rescale。SFT delta は $p=0.9$〜0.99 でほぼ無傷、fine-tuned 全体を落とすと $p=0.1$ で崩壊
+- merging plug-in として Task Arithmetic / TIES-Merging を底上げ。supermario_v2 が 2024-01-28 時点で Open LLM Leaderboard 7B 部門 1 位 (75.49)
+- 著者自身が認める失敗条件 (continual pre-train backbone, delta > 0.002, encoder merge は微改善) も網羅
+- Critical Thoughts では「期待値だけ揃えて分散は $1/(1-p)$ 倍に膨らむのに何故崩れないか未説明」「シード分散の報告がない」「閾値 0.002 は経験則」あたりを率直に指摘
+
+
+--- stderr ---
+

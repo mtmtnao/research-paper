@@ -1,0 +1,15 @@
+# arXiv-2312.00752v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノート作成完了。`notes/arXiv-2312.00752v2.md`
+
+要点:
+- **論文**: Mamba (Gu & Dao, arXiv 2312.00752v2) — SSM パラメータ $\Delta, \B, \C$ を入力依存にする selection 機構 + hardware-aware parallel scan + attention/MLP を排した homogeneous ブロック
+- **拾った数値**: Selective Copying 18.3→99.8、Induction Heads が 256→$2^{20}$ (4000×) 外挿、Pile zero-shot avg Mamba-2.8B 63.3 ≈ GPT-J-6B、推論 4–5×、scan 20–40×、DNA 3–4× 少パラ、SC09 FID 0.94→0.67、ablation で selective Δ 単独 10.93→9.81・全部 selective 8.71
+- **著者自身の limitations**: ≤1.3B までしか検証していない（scaling）、downstream affordances（fine-tune/RLHF/ICL）が未知、連続モダリティでは LTI の方が良い場合あり（no free lunch、audio で complex に切替えている事実）
+- スタイルは `arXiv-2305.14325v1.md` に合わせ、Summary/Takeaway/Critical Thoughts (強み/弱み/次に試したい) を分割、TeX から直接引いた語句は英文のまま `Notes / Quotes` に保存
+
+
+--- stderr ---
+

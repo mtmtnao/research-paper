@@ -1,0 +1,5 @@
+# arXiv の TeX ソース一式（容量が大きいため git 管理から除外）
+papers/
+
+# macOS
+.DS_Store

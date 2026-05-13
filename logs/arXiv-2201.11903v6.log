@@ -1,0 +1,9 @@
+# arXiv-2201.11903v6
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+You've hit your limit · resets 7:10pm (Asia/Manila)
+
+
+--- stderr ---
+

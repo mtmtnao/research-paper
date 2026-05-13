@@ -1,0 +1,15 @@
+# arXiv-1412.6980v9
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+notes/arXiv-1412.6980v9.md を作成しました。
+
+主な内容:
+- **タイトル**: Adam: A Method for Stochastic Optimization (Kingma & Ba, ICLR 2015)
+- TeX ソースは PDF ラッパー (`arxiv.tex` → `0_adam_main.pdf`) だったので PDF を全ページ読みました
+- Algorithm 1（更新則とデフォルト $\alpha=0.001, \beta_1=0.9, \beta_2=0.999, \epsilon=10^{-8}$）、§2.1 の trust region 解釈、§3 のバイアス補正導出、Theorem 4.1 の regret $O(\sqrt T)$、§5 の AdaGrad/RMSProp との関係、§6.1〜6.4 の実験（MNIST LR、IMDB BoW、MNIST FC NN、CIFAR-10 c64-c64-c128-1000 CNN、VAE bias correction）、§7.1 AdaMax、§7.2 temporal averaging を反映
+- 著者自身の限界認識を Critical Thoughts に明記: 凸前提の証明、CNN で marginal、$\hat v_t$ が消えて $\epsilon$ 支配、AdaMax の実験欠如、Kai Fan による AdaMax 導出修正の謝辞
+
+
+--- stderr ---
+

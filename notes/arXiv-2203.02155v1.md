@@ -1,0 +1,76 @@
+# Training language models to follow instructions with human feedback
+
+- arXiv: https://arxiv.org/abs/2203.02155
+- source: ../papers/arXiv-2203.02155v1/
+- authors: Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Carroll L. Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul Christiano, Jan Leike, Ryan Lowe (OpenAI)
+- venue / year: NeurIPS 2022 (arXiv preprint 2022-03)
+- tags: [RLHF, alignment, InstructGPT, LLM, instruction-following]
+- read_date: 2026-05-12
+
+---
+
+## Summary（著者の主張）
+
+- **問題**: LM を大きくすればするほど能力は上がるが、自動的にユーザ意図に従う（helpful / honest / harmless）ようになるわけではない。事前学習目的「Web の次トークン予測」とユーザの「指示に有用かつ安全に従ってほしい」目的が *misaligned*。事実捏造、毒性、バイアス、指示無視といった行動が現れる。
+- **手法**: GPT-3 を 3 段階で fine-tune する RLHF（Ziegler+2019, Stiennon+2020 を言語タスク全般に拡張）。(1) **SFT**: ラベラの demonstration 13k で GPT-3 を教師あり学習（16 epochs, cosine decay, dropout 0.2）。(2) **RM**: SFT モデルの最終 unembedding 層を外したものから 6B reward model を学習。175B RM は不安定だったので 6B を採用。1 プロンプトあたり K=4〜9 個の出力を提示し全 ${K \choose 2}$ ペア比較を 1 バッチ要素にまとめる pairwise log-σ loss（式 1）。(3) **PPO**: 6B RM を報酬関数として SFT モデルを PPO で fine-tune。token ごとに SFT との KL ペナルティ β を入れて報酬 over-optimization を抑制。"PPO-ptx" は γ で重みを付けた pretraining LM 損失を追加して NLP ベンチでの劣化を埋め合わせる（式 2）。プロンプトは主に OpenAI API Playground 経由で集めた実ユーザ入力（>96% 英語、PII フィルタ、user ID 単位で train/valid/test 分割）と、初期 bootstrap 用のラベラ手書き（plain / few-shot / user-based）の混合。labeler は screening test を通った約 40 名。
+- **結果**: API 分布上のラベラ選好で **175B InstructGPT (PPO-ptx) は 175B GPT-3 に 85±3%、few-shot 175B GPT-3 に 71±4% の確率で勝つ**。1.3B InstructGPT ですら 175B GPT-3 を上回る。FLAN/T0（175B GPT-3 を約 100 万例で fine-tune）に対する InstructGPT の winrate は 78±4% / 79±4%、175B SFT を基準にした比較では InstructGPT 73.4±2% vs T0 26.8±2% / FLAN 29.8±2%。指示遵守・customer assistant 文脈での適切さ・hallucination（closed-domain で 21% vs GPT-3 の 41%）等のメタデータでも改善。**TruthfulQA** で truthful+informative の割合が GPT-3 の約 2 倍（自動評価表で 175B PPO の "QA prompt" true+info は 0.752 vs GPT-3 0.251）。**RealToxicityPrompts** で "respectful" 指示時に約 25% 毒性低下（Perspective API）。一方 Winogender / CrowS-Pairs では **バイアス減少は見られない**（respectful 指示時はむしろエントロピーが下がる＝より確信的）。**alignment tax**: 素の PPO は SQuADv2, DROP, HellaSwag, WMT15 fr→en で性能劣化、PPO-ptx で大半を回復し HellaSwag は GPT-3 を超えるが DROP/SQuADv2/翻訳はまだ届かず。**held-out labelers** でも RM 精度 72.4±0.4 → 69.6±0.9% と僅かに落ちる程度で、選好順位は訓練ラベラとほぼ同じ。コーディング・非英語指示にも一定の汎化。
+- **貢献**: (1) RLHF を「広い API プロンプト分布」へスケールさせ、SFT → RM → PPO レシピを公開（プロンプト数・hyperparam・loss 関数まで）。(2) InstructGPT モデル群が helpful / 真実性 / 毒性で公開 LM を上回ることを大規模人手評価で実証。(3) pretraining mix（PPO-ptx）で alignment tax を緩和する単純な手法。(4) NLP データセット fine-tune（FLAN, T0）が API 実分布では効果薄であることを定量的に示した。(5) alignment cost が pretraining cost に比して桁違いに小さい（175B PPO-ptx 60 PF-days vs GPT-3 3,640 PF-days）ことを示し、現状はモデルを大きくするより align させるほうが cost-effective と論じた。
+
+## Takeaway（自分にとっての要点）
+
+- **1.3B InstructGPT > 175B GPT-3 (preference)** は、現場感覚で「100× のスケールより RLHF」が成り立つ強い実証。RLHF はモデルをデカくする代替投資という見方を裏付ける材料として再利用できる。
+- RM は **175B より 6B が安定**で、value function 兼用にも 6B のほうが扱いやすかった、というのは reward hacking や訓練安定性を考えるうえで重要な実務知見。
+- K=4〜9 の同一プロンプトからのペアを **1 バッチ要素にまとめる**実装上の工夫（${K \choose 2}$ を別データ点扱いするとオーバーフィットする）はそのまま自分の RM 学習にも転用できる。
+- **PPO-ptx は KL coefficient を大きくするだけより良い**。alignment tax を消す手段として KL ではなく pretraining mix を選ぶ理由付けに使える。
+- FLAN/T0 が自社プロンプト分布で SFT baseline に負ける、という結果は「public NLP fine-tune セットは実利用に対する代理にならない」ことの一次資料。社内データを集める投資の正当化に使える。
+- **InstructGPT に "respectful" を付けると毒性は下がるがバイアスは増す**（出力に確信を持つようになる）という非対称は重要。"safety prompt" が常に良いとは限らない、という反証として覚えておく。
+- 著者自身が "labelers don't have visibility into the contexts" / "customers may not be optimizing for end users" と書いている通り、ここでの align は **OpenAI 内 researcher × Upwork/ScaleAI ラベラ × API 課金顧客** の選好への align であり、"human values" 一般への align ではない、というスタンスを明確に切り分けている。
+
+## Critical Thoughts（評価・疑問）
+
+- **強み**:
+  - 規模・人手評価の両方で堂々と勝ち負けを出している。winrate 85±3% のような数値は preference 評価としては大きい部類で、論じる余地が少ない。
+  - 「誰の選好に align しているか」を §3.5 で正面から限定している（研究者＋40 ラベラ＋API 顧客）。alignment 論文として珍しく誠実で、reproducibility 議論の土台になる。
+  - レシピが具体的（SFT 16 epochs / dropout 0.2、KL β、γ の意味、RM サイズ選択理由、K-way ranking のバッチ化）で再実装可能なレベルまで書かれている。
+  - alignment tax を量・KL coef・PPO-ptx の両軸でアブレーションしており、「PPO-ptx は KL を上げるより良い」を実験で示している。
+- **弱み / 疑問**:
+  - **バイアスは改善しない**どころか、respectful prompt 下で CrowS-Pairs エントロピーが下がる（より確信的にステレオタイプを生成）という結果は重要だが、原因分析は浅く "pattern is not clear" で止まっている。
+  - 著者自身が認める通り、ラベラは大半が英語話者で米国／東南アジア在住、API 顧客は waitlist 由来で OpenAI 社員ネットワーク偏り。**「誰に align しているか」の限定が即「誰には align しないか」になる**。
+  - 著者自身の limitation: 「ほとんどの比較は 1 ラベラのみ」「ユーザ指示が有害でもモデルはそれに従う」「実際 'biased になれ' と指示すると同サイズ GPT-3 より毒性が高い」「toxic / 性的 / 暴力的コンテンツを依然として出す」「false premise・hedge・複数制約に弱い」。**つまり alignment が方向であって完成ではない**ことを論文自身が明示。
+  - SFT vs PPO の比較において、PPO は SFT モデルそのものから初期化されているので、PPO の "改善" は SFT 比でしか厳密には言えない（few-shot GPT-3 比は 71% で、SFT 比の評価より差が縮む）。fair な比較の token / compute 予算は揃っていない。
+  - FLAN/T0 比較は **「OpenAI のラベラが OpenAI 内製 SFT 分布で評価する」** 構造上、in-distribution の InstructGPT に有利。「FLAN/T0 が悪い」と結論するには評価分布の偏りが残る。
+  - 1.3B InstructGPT > 175B GPT-3 は preference 評価のみで、knowledge / few-shot reasoning ベンチでは依然 175B が強い（HellaSwag, SQuADv2, DROP 等の自動評価表で 175B GPT-3 が勝つケース多数）。「100× を超えた」という見出しは preference という指標固有の現象。
+  - RM 1 個（6B）が value function を兼ねていて、RM そのものの calibration や reward hacking の長期挙動は本論では追跡されていない。
+- **次に試したいこと**:
+  - 同じレシピで **labeler 母集団を意図的に多様化**（地理・言語・専門性）して、preference winrate と bias 指標が動くかを切り分け実験。
+  - PPO-ptx の γ を tasksに応じて per-prompt で動的に切り替えると alignment tax と reward の Pareto がさらに動くか。
+  - "respectful" 指示でエントロピーが下がる現象を、prompt 内の正則化（diversity penalty）でキャンセルできるか検証。
+  - RM を 175B にできないという制約に対して、ensemble of small RMs / mixture-of-experts RM が代替になるか。
+  - adversarial data collection（Dinan+2019）と組み合わせて、false premise / 有害指示拒否を後付けで追加学習し、helpfulness をどこまで維持できるかの trade-off curve。
+
+## Notes / Quotes
+
+- "outputs from our 1.3B PPO-ptx model are preferred to those from the 175B GPT-3" (Figure 1 / Intro)
+- "175B InstructGPT outputs are preferred to GPT-3 outputs 85 ± 3% of the time, and preferred 71 ± 4% of the time to few-shot 175B GPT-3" (§4.1 / Abstract)
+- "Hallucination rate ... 21% vs. 41%" (closed-domain, §1)
+- "In this paper we only use 6B RMs, as this saves a lot of compute, and we found that 175B RM training could be unstable" (§3.5 Models)
+- "we train on all ${K \choose 2}$ comparisons from each prompt as a single batch element" (§3.5)
+- "training our 175B SFT model requires 4.9 petaflops/s-days and training our 175B PPO-ptx model requires 60 petaflops/s-days, compared to 3,640 petaflops/s-days for GPT-3" (§5.1)
+- "InstructGPT generates more toxic outputs than equivalently-sized GPT-3 models" when prompted to be maximally biased (§5.3 Limitations)
+- "Our models are neither fully aligned nor fully safe" (§5.3)
+- "we are aligning to demonstrations and preferences provided by our training labelers ... they are mostly English-speaking people living in the United States or Southeast Asia" (§5.2)
+- inter-labeler agreement: training 72.6±1.5%, held-out 77.3±1.3%（§3.4）
+- RM held-out accuracy 69.6±0.9% vs train-distribution 72.4±0.4%（§4.1）
+- Dataset sizes: SFT train 11,295 labeler + 1,430 customer; RM train 6,623 labeler + 26,584 customer; PPO train 31,144 customer（Table: dataset-size）
+
+## Related Papers
+
+- Christiano+ 2017 *Deep RL from Human Preferences* — RLHF の源流。
+- Ziegler+ 2019, Stiennon+ 2020 (summarization) — 本論文がレシピを継承した先行 RLHF 研究。
+- Wei+ 2021 FLAN, Sanh+ 2021 T0 — instruction tuning baseline、§4 で head-to-head 比較。
+- Askell+ 2021 "A General Language Assistant as a Laboratory for Alignment" — helpful/honest/harmless フレームの出典、concurrent work。
+- Schulman+ 2017 PPO — 強化学習アルゴリズム本体。
+- Lin+ 2021 TruthfulQA, Gehman+ 2020 RealToxicityPrompts, Rudinger+ 2018 Winogender, Nangia+ 2020 CrowS-Pairs — 評価データセット。
+- Brown+ 2020 GPT-3 — 出発点となる事前学習モデル。
+- Leike+ 2018 scalable agent alignment, Christiano+ 2018 iterated amplification — alignment 研究の文脈。
+- Nakano+ 2021 WebGPT, Wu+ 2021 recursive book summarization — RLHF を別タスクに拡張した同時代研究。

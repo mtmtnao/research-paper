@@ -1,0 +1,16 @@
+# arXiv-2212.04089v3
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノートを `notes/arXiv-2212.04089v3.md` に作成しました。
+
+主なポイント:
+- タイトル: *Editing Models with Task Arithmetic*（Ilharco et al., ICLR 2023）
+- 定義 $\tau_t = \theta_\textrm{ft}^t - \theta_\textrm{pre}$ と 3 演算（negation / addition / analogy）を Summary に整理
+- 数値は TeX から直接拾った: ViT-L/14 negation 94.0→19.0（control 75.5→72.9）、GPT-2 Large toxic 4.8%→0.8%（ppl 16.4→16.9）、CLIP 8 タスク全加算 91.2% normalized、T5+HF Hub 427 候補で GLUE 78.1→78.6、T5-large analogy Yelp 95.1（target FT 95.5）など
+- 著者明記の Limitations（同一 architecture・同一 pre-trained 初期化に限定）を Critical Thoughts と Notes 両方に記載
+- Critical Thoughts は強み/弱み/次の実験で分けて、$\lambda$ 探索コスト、Detoxify 一本依存、正規化精度表記の解釈、subpopulation 実験の人工性などを率直に指摘
+
+
+--- stderr ---
+

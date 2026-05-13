@@ -1,0 +1,16 @@
+# arXiv-1901.01753v3
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノート作成完了: `notes/arXiv-1901.01753v3.md`
+
+POET（Wang, Lehman, Clune, Stanley, Uber AI Labs, 2019）の読書ノートをテンプレ通り 7 セクションすべて埋めて書きました。主なポイント:
+
+- **数値はすべて TeX から直接拾った**: solved 閾値 230、MC `50 ≤ E^child ≤ 300`、ES 直接最適化での max score 17.9/39.6/13.6/24.0/19.2、各 difficulty 到達 iter 638/1,180/2,178、transfer 成功率 53.62%/49.26%/48.89%、25,200 iter × 256 CPU × ~10 日、など。
+- **著者が認める限界**を Critical Thoughts に明示: direct encoding ゆえの難度上限、固定 morphology、固定 reward、preconceived target 不可、の 4 点（Discussion で実際に future work として残されている）。
+- **強み / 弱み・疑問 / 次に試したいこと** を分割。Transfer 削除アブレーションの強さ、curriculum baseline の弱さ、3 run しか無い統計、3D・別ドメインへの追試欠如、を率直に。
+- TeX の原稿コメント（Stanley が「ターゲット指定できない手法と target 到達を比べる枠組みは無理がある」と指摘していた箇所）も Critical Thoughts に反映。
+
+
+--- stderr ---
+

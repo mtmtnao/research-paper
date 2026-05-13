@@ -1,0 +1,15 @@
+# arXiv-2402.17764v1
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-2402.17764v1.md` を作成しました。
+
+主なポイント:
+- **タイトル**: "The Era of 1-bit LLMs: All Large Language Models are in 1.58 Bits"
+- **結果サマリ**: 3B から FP16 LLaMA に PPL/zero-shot で追いつき、3.9B で逆転。70B で throughput 8.9x、energy 71.4x。
+- **Critical Thoughts**: ベースラインが自前再現 LLaMA (RedPajama 100B token) で公平性に疑問、PTQ 系（GPTQ/AWQ）との直接比較なし、MMLU/GSM8K など推論系がない、学習安定性の議論欠如、71.4x はカーネル限定の数字、などを指摘。
+- **著者自身の留保**: 「2-bit カーネル流用なので最適化余地あり」「4-bit 以下活性は future work」を明記。
+
+
+--- stderr ---
+

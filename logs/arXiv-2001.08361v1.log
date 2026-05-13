@@ -1,0 +1,15 @@
+# arXiv-2001.08361v1
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-2001.08361v1.md` を作成しました。
+
+要点:
+- タイトル: "Scaling Laws for Neural Language Models" (Kaplan+, OpenAI, 2020-01)
+- TeX から数値を直接拾った: $\alpha_N=0.076, \alpha_D=0.095, \alpha_C^\mathrm{min}=0.050$、$N\propto C^{0.73}, B\propto C^{0.24}, S\propto C^{0.03}, D\propto C^{0.27}$、$D\gtrsim 5\times 10^3 N^{0.74}$、$C^\ast\!\sim\!10^4$ PF-days など
+- 著者自身の limitations（§Caveats）も Critical Thoughts と Notes に反映：理論なし、$B_\mathrm{crit}$ 外挿に不安、小データ regime / 正則化未調整、$C\!\approx\!6NBS$ は long context で破綻、init・momentum 未 tune、LR は target loss 依存
+- Chinchilla との後年の対比、推論コストの欠落など、自分の率直な疑問も整理
+
+
+--- stderr ---
+

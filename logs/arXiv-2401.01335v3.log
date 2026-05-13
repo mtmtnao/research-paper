@@ -1,0 +1,16 @@
+# arXiv-2401.01335v3
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-2401.01335v3.md` を作成しました。
+
+要点:
+- タイトル: "Self-Play Fine-Tuning Converts Weak Language Models to Strong Language Models"（ICML 2024、UCLA）
+- 手法 SPIN は SFT 済みモデルから合成応答を生成し「自分の出力 vs 人手応答」を IPM ベースで識別する self-play を反復。logistic loss で DPO と式は似るが preference データ不要・iterative・$p_\text{ref}$ が iter ごとに進化する点が違う。
+- 主要数値（zephyr-7b-sft-full ベース・Ultrachat200k から 50k）: Open LLM avg 58.14→63.16（iter 3）、TruthfulQA +11.17、GSM8k +12.21、MT-Bench 5.94→6.78、62k preference の DPO（avg 61.31）に iter 1 で勝つ。
+- Theorem 1（global optimum が $p_\text{data}$ で必要十分）・Theorem 2（logistic loss 時の opponent 更新式）を抑え、ablation（SFT を epoch 増やしても伸びない、iter 0 を長く回しても iter 1 に届かない）も記載。
+- Critical Thoughts では強み／弱み／次に試したいことを分け、著者自身が認める limitation（target 分布が ceiling／生成コスト削減が future work）と、MMLU/Winogrande で頭打ち・データ汚染（Ultrachat=GPT-3.5 由来）・iterative DPO との直接比較欠如など率直に列挙。
+
+
+--- stderr ---
+

@@ -1,0 +1,104 @@
+# 1行1 arXiv ID。'#' 以降はコメント。バージョン省略時は最新を自動解決。
+
+# =============================================================
+# Sakana AI 本体・David Ha 系（自己改善・進化・モデルマージ）
+# =============================================================
+2403.13187   # Evolutionary Optimization of Model Merging Recipes (Sakana)
+2408.06292   # The AI Scientist (Sakana, Nature 2026)
+2501.06252   # Transformer^2: Self-adaptive LLMs (Sakana)
+2406.08414   # DiscoPOP: Discovering Preference Optimization Algorithms (Sakana)
+2505.05522   # Continuous Thought Machines (Sakana, Llion Jones, NeurIPS 2025 Spotlight)
+2505.22954   # Darwin Godel Machine: Open-Ended Evolution of Self-Improving Agents (Sakana)
+2410.14735   # Agent Skill Acquisition via CycleQD (Sakana, ICLR 2025)
+1906.04358   # Weight Agnostic Neural Networks (Gaier & Ha)
+1803.10122   # World Models (Ha & Schmidhuber)
+
+# =============================================================
+# Sakana 思想の祖先（進化計算・モデルマージの基礎）
+# =============================================================
+1504.04909   # Illuminating Search Spaces by Mapping Elites (MAP-Elites)
+2203.05482   # Model Soups (重み平均で性能向上、Evolutionary Model Merge の前提)
+2306.01708   # TIES-Merging (EMM が組み込む主要 merging 手法)
+
+# =============================================================
+# Architecture
+# =============================================================
+1706.03762   # Attention Is All You Need (Transformer)
+1512.03385   # Deep Residual Learning (ResNet)
+1810.04805   # BERT
+2010.11929   # An Image is Worth 16x16 Words (ViT)
+2312.00752   # Mamba (Selective SSM)
+
+# =============================================================
+# Generative
+# =============================================================
+1406.2661    # Generative Adversarial Networks
+1312.6114    # Auto-Encoding Variational Bayes (VAE)
+2006.11239   # Denoising Diffusion Probabilistic Models (DDPM)
+2112.10752   # High-Resolution Image Synthesis with Latent Diffusion (Stable Diffusion)
+
+# =============================================================
+# Foundation / LLM
+# =============================================================
+2005.14165   # GPT-3: Language Models are Few-Shot Learners
+2203.02155   # InstructGPT
+2203.15556   # Chinchilla: Training Compute-Optimal LLMs
+2001.08361   # Scaling Laws for Neural Language Models (Kaplan)
+
+# =============================================================
+# Training / Efficiency
+# =============================================================
+1412.6980    # Adam
+2106.09685   # LoRA
+2205.14135   # FlashAttention
+2305.18290   # DPO: Direct Preference Optimization
+
+# =============================================================
+# Prompting / Agents / Multimodal
+# =============================================================
+2201.11903   # Chain-of-Thought Prompting
+2210.03629   # ReAct
+2103.00020   # CLIP
+
+
+### ここから追加
+# =============================================================
+# Sakana 思想の深化（自己組織化・進化・バイオミメティクス）
+# =============================================================
+2005.04860   # Growing Neural Cellular Automata (自己組織化の傑作、Ha氏注目の動的システム)
+1703.03864   # Evolution Strategies as a Scalable Alternative to RL (OpenAIによる進化戦略の再評価)
+1901.01753   # POET: Paired Open-Ended Trailblazer (環境とエージェントを共進化させるオープンエンド学習)
+2302.10662   # EvoPrompting: Language Models for Code-Level Neural Architecture Search (LLMと進化計算の融合)
+2401.01335   # SPIN: Self-Play Fine-Tuning (自己対話によるモデルの自己改善)
+
+# =============================================================
+# モデルマージ・組成・タスク編集（ポスト学習技術）
+# =============================================================
+2311.03099   # Language Models are Super-Additive Optimizers (DARE: スパース化による高度なマージ)
+2406.05954   # Arcee's MergeKit: A Toolkit for Merging Large Language Models (マージ技術の標準ツール)
+2212.04089   # Editing Models with Task Arithmetic (モデルの重みを加減算して機能を制御)
+2306.03795   # ZipIt! Merging Models from Different Tasks without Training (異なるタスクモデルの融合)
+
+# =============================================================
+# 次世代アーキテクチャ・効率化（ポストTransformer）
+# =============================================================
+2402.17764   # The Era of 1-bit LLMs (BitNet 1.58b: 極限の効率化と計算コスト削減)
+2404.19756   # KAN: Kolmogorov-Arnold Networks (MLPを置き換える可能性のある新しい関数近似法)
+2403.19887   # Jamba: A Hybrid Transformer-Mamba Architecture (TransformerとSSMの融合)
+2405.21060   # Transformers are SSMs: Generalized Framework (Mamba-2: 理論的統合)
+2402.14905   # MobileLLM: Optimizing Sub-billion Parameter LLMs (エッジ向けの超小型LLM最適化)
+
+# =============================================================
+# 推論・エージェント・オープンエンド学習
+# =============================================================
+2412.19437   # DeepSeek-V3 Technical Report (MoEの効率的なスケーリングと学習)
+2501.12948   # DeepSeek-R1: Incentivizing Reasoning Capability via RL (強化学習による推論特化)
+2302.04761   # Toolformer: Language Models Can Teach Themselves to Use Tools (自律的な道具利用)
+2305.16291   # Voyager: An Open-Ended Embodied Agent with LLMs (マインクラフトでの継続学習エージェント)
+
+# =============================================================
+# 自己教師あり学習・視覚の創発
+# =============================================================
+2103.18013   # Emerging Properties in Self-Supervised Vision Transformers (DINO: 視覚的な概念の自己獲得)
+2304.07193   # DINOv2: Learning Robust Visual Features without Supervision (実用的な自己教師あり視覚モデル)
+2304.02643   # Segment Anything (SAM: 基盤視覚モデルの代表格)

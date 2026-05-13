@@ -1,0 +1,14 @@
+# arXiv-2403.13187v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノートを `notes/arXiv-2403.13187v2.md` に作成しました。
+
+主な内容:
+- **手法**: PS (DARE-TIES の係数を CMA-ES で層ごと最適化) と DFS (inference path の indicator array $\mathcal{I}$ と scaling matrix $W$ を同時進化) の 2 軸、および両者の合成。
+- **数値**: Japanese Math LLM で MGSM-JA 52.0 (PS 7B) / 55.2 (PS+DFS 10B)、JP-LMEH 70.5 で 70B 級を凌駕。VLM で JA-VLM-Bench-In-the-Wild ROUGE-L 51.2 を達成。13B でも 13.2→34.0 とスケール。
+- **Critical Thoughts**: 強み（PS/DFS の直交分解、benchmark を最適化していない、distraction/$W$ ablation が丁寧）、弱み（test 250 問の信頼区間なし、計算コスト fair compare 不在、JA-VLM-Bench 50 問の小ささ、著者自身が認める limitations: 論理整合性欠如・instruction tuning 未実施）、次の方向（GPU 時間予算 pareto、hypernetwork による $W$ 拡張、文化横断 benchmark）を明記。
+
+
+--- stderr ---
+

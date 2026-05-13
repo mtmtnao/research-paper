@@ -1,0 +1,15 @@
+# arXiv-2005.04860v1
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノート作成完了: `notes/arXiv-2005.04860v1.md`
+
+要点:
+- 対象は ML ではなく磁性スカーミオン物理の理論+シミュレーション論文（Tamura ら, 2020, Osaka Univ.）。タグは `[magnetic-skyrmion, micromagnetics, Thiele-equation, spintronics, condensed-matter]` とした。
+- `papers/arXiv-2005.04860v1/` には **TeX ソースが無く `source.pdf` のみ** だったため、README の優先順位ルールに従い PDF から起こした旨を Notes セクションに明記。
+- 本文から拾った具体値: 式3 の閉形式、Fig.2 の (R,w) 3 セット (25.55,11.35) / (24.60,8.05) / (7.4,7.9) nm と F_wall ピーク ≈1.4 / 1.05 / 0.6 ×10⁻¹² N、ピーク位置 X/w ≈ 2〜3。
+- Critical Thoughts では、著者が "such a crude model" と剛体仮定を自覚している点を拾い、加えて「タイトルに hub/bent とあるが本文では直線壁のみ」「材料パラメータ Ms, A, K_±, D, α が明示されていない」など PDF 内で確認できない欠落を率直に列挙。
+
+
+--- stderr ---
+

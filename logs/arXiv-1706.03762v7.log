@@ -1,0 +1,16 @@
+# arXiv-1706.03762v7
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-1706.03762v7.md` を作成しました。
+
+主要な点：
+- タイトルは "Attention Is All You Need"、NIPS 2017
+- WMT'14 EN-DE 28.4 BLEU（big）/ 27.3（base）、EN-FR 41.8 BLEU を TeX から直接拾った
+- base/big のハイパーパラメータ（$N=6$, $d_{\text{model}}=512$, $h=8$, $d_k=d_v=64$ 等）、訓練条件（8×P100, base 12h / big 3.5d, Adam $\beta_2=0.98$, warmup 4000, label smoothing 0.1）、推論条件（beam 4, $\alpha=0.6$）を全て本文から拾った
+- 著者自身が認める限界（$O(n^2 d)$ の長文問題、restricted self-attention は future work、autoregressive decoding の系列性）を Critical Thoughts と Notes 両方に明記
+- スタイル手本の粒度（数値・データセット名・行番号レベルの具体性）を踏襲
+
+
+--- stderr ---
+

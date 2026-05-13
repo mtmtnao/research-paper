@@ -1,0 +1,18 @@
+# arXiv-2510.04618v3
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノート作成完了: `notes/arXiv-2510.04618v3.md`
+
+論文「Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models」を Summary / Takeaway / Critical Thoughts の3軸で整理しました。
+
+主要ポイント:
+- **問題**: brevity bias と context collapse（AppWorld step 60→61 で 18,282→122 tokens, acc 66.7→57.1 の崩落例）
+- **手法**: Generator / Reflector / Curator + delta bullet (id + helpful/harmful counter) + grow-and-refine、決定的マージで rewrite 回避
+- **主要数値**: AppWorld +17.0/+17.1（offline/online、DeepSeek-V3.1）、FiNER+Formula +12.8、adaptation latency -82.3%、KV cache reuse 91.8%
+- **著者自認の限界**: Reflector 依存、no-label & no-execution-feedback ドメイン (FiNER online) で劣化、HotPotQA や Game of 24 では不要
+- **Critical**: GEPA との iso-budget 比較欠落、IBM-CUGA 比較が footnote で「方法論的比較ではない」と但し書きされている点、KV cache 主張が OpenAI API 依存である点などを指摘
+
+
+--- stderr ---
+

@@ -1,0 +1,15 @@
+# arXiv-1906.04358v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-1906.04358v2.md` を作成しました。
+
+要点:
+- タイトルは「Weight Agnostic Neural Networks」（Gaier & Ha, NeurIPS 2019）
+- Summary では method（NEAT ベース + 共有重み + 3 目的 NSGA-II + 活性化 10 種）と数値（Table 1 の SwingUp/Biped/CarRacing の全カラム、Biped 210 接続 vs SOTA 2804、MNIST ~92%）を TeX から直接引用
+- Critical Thoughts は著者自身が認める limitations（CNN に勝てない、フィードフォワード制約で CarRacing 劣後、勾配 fine-tune が効かない、単一固定値 0.7 だと汎化しない）と、自分の疑問（個別ランダム重みで壊れる点でタイトルが釣り気味、活性化関数の必須性アブレ無し、計算コスト公平比較無し、MNIST 数値が緩い）を分けて記述
+- 既存ノート（arXiv-2305.14325v1.md）の粒度・口調・具体性レベルに揃えた
+
+
+--- stderr ---
+

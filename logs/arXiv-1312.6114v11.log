@@ -1,0 +1,11 @@
+# arXiv-1312.6114v11
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノート作成完了: `notes/arXiv-1312.6114v11.md`
+
+Kingma & Welling "Auto-Encoding Variational Bayes" (ICLR 2014, VAE 原論文) の読書ノートを TeX から直接拾った数値・設定（MNIST 500 / Frey 200 hidden, M=100, L=1, Adagrad ∈{0.01,0.02,0.1}, init N(0,0.01), MCEM = HMC 10 leapfrog/90% accept、周辺尤度 estimator は <5D でのみ信頼可、など）と、著者自身が認めている limitation（低次元でしか marginal likelihood 評価できない / Rezende+ 2014 との並行発見 / Gaussian 対角 posterior は簡便さの選択）を含めて、テンプレ全セクション埋めて作成しました。
+
+
+--- stderr ---
+

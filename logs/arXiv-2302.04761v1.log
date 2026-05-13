@@ -1,0 +1,19 @@
+# arXiv-2302.04761v1
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノートを `notes/arXiv-2302.04761v1.md` に作成しました。
+
+主要ポイント:
+- タイトル: **Toolformer: Language Models Can Teach Themselves to Use Tools** (Schick et al., Meta AI 2023)
+- 手法: pretrained GPT-J 6.7B が自身で API 呼び出し候補を生成 → 実行 → 「将来トークン予測 loss を下げるか」($L_i^- - L_i^+ \geq \tau_f$) で self-supervised に filter → その拡張データで finetune
+- 5 ツール: QA(Atlas) / Calculator / Wikipedia Search(BM25/KILT) / MT(NLLB 600M) / Calendar
+- ハイライト結果: LAMA T-REx 31.9→53.5、Math (MAWPS) 9.9→44.0、Dateset 3.9→27.3。GPT-3 175B を多くで超える一方、QA (TriviaQA 48.8 vs 65.9) では届かず
+- ツール使用能力は ~775M パラから emergence
+- 著者自認の limitations: chain 不可、interactive 不可、prompt sensitivity、sample inefficiency (100万文書→calculator 994 例)、API コスト無考慮
+
+Critical Thoughts は強み/弱み・疑問/次に試したいこと、を分けて記述し、特に「filtering 信号が次トークン loss なのでタスク正解と無関係に API 採択される」「chain と interactive が構造的に学習不可」を弱点として展開しました。
+
+
+--- stderr ---
+

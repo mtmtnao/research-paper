@@ -1,0 +1,17 @@
+# arXiv-2508.21433v3
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノート作成完了: `notes/arXiv-2508.21433v3.md`
+
+要点:
+- タイトル: "The Complexity Trap: Simple Observation Masking Is as Efficient as LLM Summarization for Agent Context Management" (JetBrains Research, NeurIPS 2025 Workshop)
+- 5 モデル構成 × SWE-bench Verified 500 件で Raw / Observation Masking (M=10) / LLM-Summary (N=21, M=10) を比較
+- 主結論: ObsMask は 4/5 構成で最安、LLM-Summary を consistent/significant に上回らない
+- 新規発見: trajectory elongation effect（LLM-Summary が軌跡を +15% 伸ばす）+ summary 生成コスト最大 7.2%
+- Hybrid (N=43, M=W=10) で -7% / -11% / +2.6pp
+- 著者 Limitations: SE 単一ドメイン / 非適応的ヒューリスティック / scaffold 汎化は initial のみ — をすべて拾い、Gemini thinking で -22.3pp 落ちる点や OpenHands で M を 10→58 に再チューニング必須な点も Critical Thoughts に明記
+
+
+--- stderr ---
+

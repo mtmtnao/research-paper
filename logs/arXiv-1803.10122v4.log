@@ -1,0 +1,15 @@
+# arXiv-1803.10122v4
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-1803.10122v4.md` を作成しました。
+
+要点:
+- タイトル `# World Models`、テンプレ全セクションを TeX から拾った数値（CarRacing 906±21、Take Cover τ別表、パラメータ内訳 867/4.3M etc.）で埋めました
+- 著者自身の limitations（VAE が task-irrelevant、LSTM 容量、step-by-step planning、adversarial exploit、mode collapse）を Critical Thoughts に明記
+- 推測箇所は「TeX に明示されていない」と注記（Learning to Think の subroutine 連携が未実装である旨）
+- venue は TeX が ICML 2018 accepted テンプレを使っている事実だけを記載（NeurIPS 系の断定はしていません）
+
+
+--- stderr ---
+

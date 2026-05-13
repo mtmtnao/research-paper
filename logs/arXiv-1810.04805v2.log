@@ -1,0 +1,16 @@
+# arXiv-1810.04805v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-1810.04805v2.md` を作成しました。
+
+主要な構成:
+- **Summary**: 問題（単方向 / 浅い concat 双方向の限界）→ MLM (80/10/10) + NSP の事前学習 + 出力層 1 枚での fine-tune → 11 タスクで SOTA（GLUE 80.5, SQuAD v1.1 F1 93.2, v2.0 F1 83.1, SWAG 86.3 など TeX/表から直接拾った具体数値）→ 4 つの貢献
+- **Takeaway**: deep vs 浅い concat 双方向の違い、80/10/10 の意味、`[CLS]` の脚注での制限、NSP の意外な効き方、fine-tune 推奨ハイパラ、feature-based の活路
+- **Critical Thoughts**: 強み（GPT との統制実験、評価範囲の広さ）／弱み（著者自身が認める pre-train/fine-tune mismatch・MLM の収束遅さ・BERT_LARGE の fine-tune 不安定、加えて指標の数字の盛り方や NSP の検証の浅さ、計算資源バリア）／次に試したいこと（マスク比率の網羅・NSP vs SOP・fine-tune 安定化）
+- **Notes / Quotes**: TeX からの直接引用と各表の具体値
+- **Related Papers**: Transformer / GPT / ELMo / ULMFiT / Cloze / 各ベンチマーク論文
+
+
+--- stderr ---
+

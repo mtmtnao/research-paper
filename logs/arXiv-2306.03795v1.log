@@ -1,0 +1,16 @@
+# arXiv-2306.03795v1
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノート `notes/arXiv-2306.03795v1.md` を作成しました。
+
+要点:
+- **論文**: Schöning & Kruse, "AI-Supported Assessment of Load Safety" (arXiv 2306.03795v1) — 物流トラックの荷台写真を CNN で 3 クラス（安全/不安全/使用不能）に分類する研究
+- **構造**: 2 段二分木。Stage1（使用可/不能）は LogisticNet で R98%/P95%、InceptionV3/ResNet101 も全て 90% 超。Stage2（安全/不安全）は ResNet101 800x800 で F1=0.59, MCC=0.20 と崩壊
+- **データ**: 物流会社実画像 5712 枚（I:1813 / II:2355 / III:1544）
+- **著者自身の限界宣言**: Stage2 はクラス境界曖昧で未解決、人手監視が依然必要 — Conclusion から拾って Critical Thoughts に記載
+- **疑問点**: test split 明示なし、Stage1 で軽量モデルが勝った理由、ラベル曖昧性の inter-annotator agreement 未測定など
+
+
+--- stderr ---
+

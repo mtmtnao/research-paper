@@ -1,0 +1,17 @@
+# arXiv-2203.02155v1
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+notes/arXiv-2203.02155v1.md を作成しました（InstructGPT 論文）。
+
+主なポイント:
+- **Summary**: SFT→6B RM→PPO(+ptx) の 3 段 RLHF レシピ。175B InstructGPT vs 175B GPT-3 で 85±3% winrate、1.3B InstructGPT が 175B GPT-3 を上回る。Hallucination 21% vs 41%、TruthfulQA で約 2 倍 truthful+informative。Bias は改善せず、"respectful" 指示下ではむしろ確信的になる。
+- **Critical Thoughts**: 
+  - 強み = レシピが具体的・誰に align しているか §3.5 で正面から限定。
+  - 弱み = ラベラ偏り（英語話者・米/SE Asia 40 名）、PPO は SFT 由来なので比較が完全 fair ではない、FLAN/T0 比較は in-distribution 評価に偏る、preference 以外の自動評価では依然 GPT-3 が勝つケースあり。
+  - 著者自身の limitation（toxic/biased を依然出す、有害指示にも従う、false premise に弱い、"biased になれ" 指示下で GPT-3 より毒性高い）を全部拾いました。
+- 数値・compute・dataset size（11,295 / 6,623 / 31,144 等）は TeX から直接拾い、推測箇所は無しです。
+
+
+--- stderr ---
+

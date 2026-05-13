@@ -1,0 +1,17 @@
+# arXiv-2006.11239v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+notes/arXiv-2006.11239v2.md を作成しました。
+
+主要ポイント:
+- **タイトル**: Denoising Diffusion Probabilistic Models (Ho, Jain, Abbeel, NeurIPS 2020)
+- **核**: ε-prediction reparameterization + 重みを捨てた simplified MSE objective $L_\mathrm{simple}$ で FID 13.51 → **3.17**（CIFAR10 unconditional SOTA）
+- **理論貢献**: diffusion ↔ multi-scale denoising score matching + Langevin dynamics の同値、progressive lossy decoder / 一般化 autoregressive 解釈
+- **数値**: CIFAR10 IS 9.46 / FID 3.17 / NLL ≤3.75、LSUN Bedroom FID 4.90、Church 7.89、Cat 19.75。rate 1.78 + distortion 1.97 bits/dim
+- **著者自認の弱点**: NLL は SparseTransformer 等に劣る、learned Σ は不安定、progressive compression は proof-of-concept、interpolation で eyewear が転移しない
+- **私の追加批判**: サンプリングが遅い ($T=1000$, 256² で 128枚 300秒)、多様性指標欠如、LSUN Cat で StyleGAN2 に大差負け
+
+
+--- stderr ---
+

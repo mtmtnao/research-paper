@@ -1,0 +1,16 @@
+# arXiv-2305.19118v4
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノートを `notes/arXiv-2305.19118v4.md` に作成しました。
+
+要点メモ:
+- 論文タイトル: *Encouraging Divergent Thinking in Large Language Models through Multi-Agent Debate*（EMNLP 2024 想定。TeX ファイル名 `emnlp_2024.tex` から推定、本文中の明示記述は無し）
+- 構成: DoT 問題の定式化 → MAD（2 debaters + judge with adaptive break）→ Common MT / CIAR の2タスクで評価
+- 数値はすべて TeX の Table 1 (`tab:common-mt`)、Table 2 (`tab:CIAR`)、Table 3 (`tab:mitigate-dot`)、Table behavior-agent、Appendix Table 5/6 から直接引用
+- limitations.tex に書かれた著者自身の3点（時間コスト・long context・LLM judge の自己贔屓）は Critical Thoughts セクションで明示
+- スタイル手本 (2305.14325v1) に合わせ、Summary は問題/手法/結果/貢献、Takeaway は箇条書きで自分視点、Critical Thoughts は強み/弱み/次に試したいことに分割
+
+
+--- stderr ---
+

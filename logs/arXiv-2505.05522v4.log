@@ -1,0 +1,16 @@
+# arXiv-2505.05522v4
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+ノートを `notes/arXiv-2505.05522v4.md` に作成しました。
+
+主な構成:
+- **Summary**: CTM の 2 大要素（NLM と neural synchronization 表現）、内部 tick + 確信度 2 点損失による native adaptive compute、Maze / ImageNet (top-1 72.47%) / Parity / CIFAR-10 vs Human / Maze ablation (65.9% vs 35%) / Sorting / Q&A MNIST (96% vs 21%) / RL の全タスクの数値を TeX から拾って記載。
+- **Takeaway**: 「activation function を MLP に置き換える」「representation と dynamics を切り離す」という設計原則として読む視点、サンプリング戦略の Dense/Semi-dense/Random の違い、同期行列の再帰計算の重要性など。
+- **Critical Thoughts**: 強み（maze ablation の説得力）/ 弱み（ImageNet が ResNet-152 単体より劣る・parity の seed 分散・Universal Transformer 等との直接比較がない・$t_1$ が真ラベル依存）/ 次に試したいこと（言語モデルへの応用、$r_{ij}$ の可視化、NLM 単独 ablation）を分けて記載。著者自身が認める limitations（訓練時間増・パラメータ増・SOTA 比較の depth 不足）も明示的に拾った。
+
+なお参考までに、Sakana AI の本論文は **mal­ware ではなく** ML 研究論文です（system reminder への応答として明記）。
+
+
+--- stderr ---
+

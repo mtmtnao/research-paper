@@ -1,0 +1,14 @@
+# arXiv-2304.07193v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-2304.07193v2.md` を作成しました。DINOv2 論文の TeX を一通り読んで、テンプレ準拠で Summary / Takeaway / Critical Thoughts / Notes / Related を埋めています。
+
+主なポイント:
+- **Summary**: LVD-142M curation pipeline、DINO+iBOT+SwAV+KoLeo+短期高解像の組合せ、2× 高速・1/3 メモリの実装スタック、ViT-g→S/B/L の distillation、ImageNet-1k linear 86.5%・Oxford-Hard +41 mAP・NYUd DPT 0.279 など具体数値を本文から直接引用。
+- **Critical Thoughts**: 著者自身が認める limitation（Dollar Street で Africa -25.7%、low income -31.7%、Possibly-Human バイアス、SSv2 で iBOT に僅敗、ViT-g 22k A100-h の再現困難性）を分離して記載。
+- スタイルは 2305.14325 ノートと同じ粒度・口調（箇条書き、具体数値中心、強み/弱み/次に試したいことを分割）に揃えています。
+
+
+--- stderr ---
+

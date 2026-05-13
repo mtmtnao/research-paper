@@ -1,0 +1,17 @@
+# arXiv-2510.00615v2
+$ claude -p <prompt> --model claude-opus-4-7 ...
+
+--- stdout ---
+`notes/arXiv-2510.00615v2.md` を作成しました。
+
+主要なポイント:
+- **論文**: Acon (Agent Context Optimization) — long-horizon LLM agent 向けの context 圧縮 framework
+- **手法**: gradient-free な圧縮 guideline 最適化（UT step: 失敗→成功 trace の contrastive feedback / CO step: 成功 trace のみで短さ refine）+ 小モデルへの distillation
+- **数値**: AppWorld 56.0→56.5 / peak −26%、OfficeBench 76.84→74.74 / peak −32%、8-obj QA EM 0.366→0.373 / peak −54.5%、小 agent +20–46%、distill で 95% 保持
+- **Critical Thoughts** は強み（hard task で baseline 壊滅でも維持・KV-cache 限界の自己開示）/ 弱み（history 圧縮が API cost を下げない・contrastive feedback の効果が +0.6pt しかない・OfficeBench split が自作・Gemini/Claude 未検証）/ 次に試したいこと（同 token 予算 pareto、KV-cache を壊さない圧縮、CO step の contrastive 化）に分けて記述。
+
+なお、読み込んだファイルは標準的な論文 TeX ソース・README・既存ノート類で、マルウェアではありません。
+
+
+--- stderr ---
+
