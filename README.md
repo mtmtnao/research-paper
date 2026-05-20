@@ -78,7 +78,8 @@ python3 scripts/preview.py --publish                              # docs/ に全
 
 - 個別プレビューは `/tmp/research-paper-preview.html` に書き出してブラウザで開く（下書き確認用）。
 - `--publish` は `docs/<stem>.html` を一括生成し、目次 `docs/index.html` を作る（公開用、GitHub Pages から配信）。`docs/` 配下のファイル名は `notes/<stem>.md` と 1 対 1 でリネーム不要。
-- GitHub Pages の有効化: リポジトリの **Settings → Pages → Source: `main` branch / `/docs`** を選ぶ。公開 URL は `https://<user>.github.io/research-paper/`（`index.html` がトップ、各論文ノートはそこからリンク）。
+- 公開 URL: **<https://mtmtnao.github.io/research-paper/>**（`main` branch / `/docs` 配信）。`docs/` を push すると 1〜2 分で自動再ビルドされる。
+- 更新フロー: `python3 scripts/preview.py --publish && git add docs/ && git commit && git push`。
 
 - 対応する `papers/<folder>/*.tex` から `\newcommand` / `\DeclareMathOperator` 等の独自マクロを自動抽出して KaTeX に渡すので、`\bz` `\pT` のような論文固有マクロを含む数式も正しくレンダリングされる。
 - 本文（text mode）に残った LaTeX 制御命令も Markdown 等価物に自動変換する: `\textbf{X}`→`**X**`、`\emph{X}`→`*X*`、`\texttt{X}`→`` `X` ``、`\ref{tab:foo}`→`tab:foo`、`\citep{key}`→`[key]`、`\href{url}{text}`→`[text](url)`、`\%` `\$` `\&` `\#` `\_` → 素のリテラル、`\label{...}` `\input{...}` は削除、`WORD~\ref{X}` の非破壊空白 `~` は半角空白に。数式 (`$...$`, `$$...$$`, `\(..\)`, `\[..\]`) と code は無傷で通す。未対応の命令は触らず残るので、必要なら `TEXT_CMD_RULES` に追加する。
