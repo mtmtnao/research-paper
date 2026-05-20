@@ -12,7 +12,7 @@
 ## Summary（著者の主張）
 
 - **問題**: Chain-of-Thought (CoT) prompting は LLM の多段推論を改善するが、デフォルトの **greedy decoding** は単一の推論経路に固定され、途中のミスや局所最適に弱い。Verifier (Cobbe+ 2021) や re-ranker (Thoppilan+ 2022) は追加の教師信号や訓練を要する。
-- **手法**: **Self-consistency** という新しい decoding 戦略。CoT prompt をそのまま使い、(1) decoder からサンプリングで多様な reasoning path $(\mathbf{r}_i, \mathbf{a}_i)$ を $m$ 個生成、(2) reasoning path を周辺化し、最終回答 $\mathbf{a}_i$ について **majority vote** を取る。追加学習・追加 verifier・人手アノテーション全て不要。同一の事前学習モデルの上で動くため "self-ensemble"。Table 1 で aggregation の比較（unnormalized weighted sum, normalized weighted sum, majority vote）を行い、PaLM-540B では **majority vote と normalized weighted sum がほぼ同等**（GSM8K でそれぞれ 74.4 / 74.1）、unnormalized weighted avg は最悪（22.1）と示し、本文では実装が単純な majority vote を採用。
+- **手法**: **Self-consistency** という新しい decoding 戦略。CoT prompt をそのまま使い、(1) decoder からサンプリングで多様な reasoning path $(\mathbf{r}_i, \mathbf{a}_i)$ を $m$ 個生成、(2) reasoning path を周辺化し、最終回答 $\mathbf{a}_i$ について **majority vote** を取る。追加学習・追加 verifier・人手アノテーション全て不要。同一の事前学習モデルの上で動くため "self-ensemble"。Table 1 で 5 種類の aggregation 戦略を比較し、PaLM-540B では **majority vote と normalized weighted sum がほぼ同等**（GSM8K でそれぞれ 74.4 / 74.1）、**normalized weighted avg だけが崩壊**（22.1）と示し、本文では実装が単純な majority vote を採用。
 - **結果**: 4 モデル (UL2-20B, LaMDA-137B, PaLM-540B, GPT-3 code-davinci-001/002) × 多数の reasoning タスクで CoT に対して一貫して改善。PaLM-540B での代表ゲイン: GSM8K 56.5→74.4 (+17.9), SVAMP 79.0→86.6 (+7.6), AQuA 35.8→48.3 (+12.5), MultiArith 94.7→99.3 (+4.6), StrategyQA 75.3→81.6 (+6.3), ARC-c 85.2→88.7 (+3.5)。GPT-3 code-davinci-002 では GSM8K +17.9, SVAMP +11.0, AQuA +12.2, ARC-c +3.9。CoT が standard prompting より悪化する NLP タスク（ANLI R1/R2/R3, e-SNLI, RTE）でも self-consistency は両方を上回る（例: e-SNLI 81.0→88.4, RTE 79.1→86.3）。Sample-and-rank, beam search, prompt permutation/multi-prompt ensemble すべてに勝つ（LaMDA-137B GSM8K で 40 path SC=27.7 vs prompt-permutation ensemble=19.2）。imperfect prompt (中間数値をランダムに壊した CoT) でも 14.9→23.4 と回復、zero-shot CoT との組み合わせは 43.0→69.2 (PaLM-540B GSM8K)。10 runs × 40 samples 平均、temperature は UL2/LaMDA で T=0.5, k=40、PaLM で T=0.7, k=40、GPT-3 で T=0.7 (no top-k)。
 - **貢献**: (1) 教師信号も追加モジュールも不要な "sample-and-marginalize" decoding を提案、(2) reasoning 系統の幅広いベンチマーク (AddSub, MultiArith, ASDiv, AQuA, SVAMP, GSM8K, CSQA, StrategyQA, ARC-e/c, Letter, Coinflip) で当時の SoTA を多数更新、(3) decoding 多様性が beam search よりも reasoning 精度に効くこと、aggregation 重み付けはほぼ majority vote と等価であることを実証、(4) 「最終回答の一致率 = consistency」を **モデルの不確実性指標** として使える（Figure 7: GSM8K で consistency と accuracy が高相関）と示唆。
 
@@ -60,6 +60,8 @@
 - 設定詳細: 40 samples × 10 runs 平均, 標準偏差 ≤0.5 のため Table 2/3 では省略。temperature: UL2/LaMDA T=0.5 k=40, PaLM T=0.7 k=40, GPT-3 T=0.7 no top-k。
 - imperfect prompt: 中間数値だけ random に置換、最終回答だけ正解を残した CoT で 17.1→14.9→(+SC)23.4 (LaMDA-137B GSM8K)。
 - zero-shot CoT (PaLM-540B GSM8K): 43.0→69.2 (+26.2)。
+- (verified 2026-05-20) Summary の aggregation 比較で「unnormalized weighted avg が最悪 (22.1)」と誤っていたのを「normalized weighted avg が最悪 (22.1)」に訂正 (main.tex Table 1, L257-258: Weighted avg (unnormalized)=56.3, Weighted avg (normalized)=22.1)。
+- (verified 2026-05-20) Related Papers の評価ベンチマーク列挙から「Hendrycks+ MMLU」を削除し、実際に使用されている MAWPS / ANLI / e-SNLI を追加 (main.tex §3.1 のタスク一覧、Table 5 の NLP タスク。MMLU はこの論文では使用されていない)。
 
 ## Related Papers
 
@@ -70,4 +72,4 @@
 - Du+ 2023, Multi-Agent Debate (arXiv-2305.14325) — SC を majority voting baseline として明示的に超えると主張する後続。
 - Yao+ 2023, Tree of Thoughts — SC を「単純なフラット sampling」と位置付け、探索構造を入れた一般化。
 - Holtzman+ Nucleus sampling / Fan+ top-k sampling — SC が前提とする多様サンプリング手法。
-- Hendrycks+ MMLU, Cobbe+ GSM8K, Patel+ SVAMP, Ling+ AQuA, Talmor+ CommonsenseQA, Geva+ StrategyQA, Clark+ ARC — 評価ベンチマーク群。
+- Cobbe+ GSM8K, Patel+ SVAMP, Ling+ AQuA, Talmor+ CommonsenseQA, Geva+ StrategyQA, Clark+ ARC, Koncel-Kedziorski+ MAWPS (AddSub/MultiArith/ASDiv), Nie+ ANLI, Camburu+ e-SNLI — 評価ベンチマーク群。

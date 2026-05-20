@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/2005.14165
 - source: ../papers/arXiv-2005.14165v4/
 - authors: Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh, Daniel M. Ziegler, Jeffrey Wu, Clemens Winter, Christopher Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Ilya Sutskever, Dario Amodei (OpenAI)
-- venue / year: NeurIPS 2020
+- venue / year: 2020（TeX は \date{2020} と neurips_2019.sty 同梱／実掲載先は TeX 中には明示なし）
 - tags: [LLM, scaling, few-shot, in-context-learning, GPT-3]
 - read_date: 2026-05-12
 
@@ -13,7 +13,7 @@
 
 - **問題**: 「pre-train → 大量ラベル付きデータで fine-tune」というパラダイムは、タスクごとに数千〜数十万件の教師データが要る。これは (1) 実用上のコスト、(2) 大モデル × 狭い fine-tune 分布での spurious correlation / OOD 一般化の弱さ、(3) 人間は数例または自然言語の指示だけで新タスクをこなす、という3点で限界。先行の in-context learning (GPT-2) は Natural Questions 4% など fine-tune に遠く及ばなかった。
 - **手法**: 同じ Transformer 言語モデルを **3桁スケール（125M → 175B）** で 8 サイズ学習し、勾配更新なしの zero-shot / one-shot / few-shot（K = 10〜100 のデモを context に詰める）で評価。アーキは GPT-2 と同じ（modified init / pre-norm / reversible tokenization）に Sparse Transformer 風の alternating dense + locally banded sparse attention を加えたもの。context window $n_{\mathrm{ctx}}=2048$。データは CommonCrawl をフィルタリング＋fuzzy 重複除去した 410B tokens（mix 60%）に、WebText2（19B / 22%）、Books1（12B / 8%）、Books2（55B / 8%）、Wikipedia（3B / 3%）を「質の高いものは重く」サンプリング。全モデル合計 300B tokens を学習。175B モデルは 96 層・$d_{\mathrm{model}}$=12288・96 heads・batch 3.2M tokens・lr $0.6\times 10^{-4}$。V100 クラスタ（Microsoft 提供）で model parallel。
-- **結果**: 24+ 個の NLP ベンチマークで scale と共に few-shot 性能が滑らかに向上し、log-loss は 100K〜175B の **10桁** にわたって power-law にほぼ従う。代表値: PTB ppl **20.50（SOTA を 15pt 更新, zero-shot）**, LAMBADA few-shot **86.4%**（先行 SOTA +18%）, TriviaQA few-shot **71.2%**（open-domain SOTA RAG 68.0 を上回る、closed-book で fine-tune 不要）, NaturalQS few-shot 29.9（T5-11B+SSM 36.6 に未達）, WebQS few-shot 41.5（T5-11B+SSM 44.7 に肉薄）, SuperGLUE few-shot 71.8（BERT-Large 69.0 超え, fine-tune SOTA 89.0 には未達）, COPA 92.0, WSC 80.1, **WiC 49.4（=chance）**, ANLI R3 は GPT-3 でやっと chance 超え。算術: 2D加算100%, 2D減算98.9%, 3D加算80.2%, 3D減算94.2%, 4D 25–26%, 5D 9–10%, 2D乗算29.2%, 1桁複合(1DC)21.3%。175B 生成のニュース記事を人間が機械生成と見抜く正答率は **約52%（≒chance, control model は約88%）**。翻訳は into-English で先行 unsupervised NMT 超え、En→Ro は -10 BLEU と非対称（GPT-2 由来の BPE が英語寄り）。
+- **結果**: 24+ 個の NLP ベンチマークで scale と共に few-shot 性能が滑らかに向上し、log-loss は Kaplan+2020 の power-law を **さらに 2 桁** 延長してもごく僅かな逸脱しか観測されない（results.tex / compute.tex caption "continues for an additional two orders of magnitude"）。代表値: PTB ppl **20.50（SOTA を 15pt 更新, zero-shot）**, LAMBADA few-shot **86.4%**（先行 SOTA +18%）, TriviaQA few-shot **71.2%**（open-domain SOTA RAG 68.0 を上回る、closed-book で fine-tune 不要）, NaturalQS few-shot 29.9（T5-11B+SSM 36.6 に未達）, WebQS few-shot 41.5（T5-11B+SSM 44.7 に肉薄）, SuperGLUE few-shot 71.8（BERT-Large 69.0 超え, fine-tune SOTA 89.0 には未達）, COPA 92.0, WSC 80.1, **WiC 49.4（=chance）**, ANLI R3 は GPT-3 でやっと chance 超え。算術: 2D加算100%, 2D減算98.9%, 3D加算80.2%, 3D減算94.2%, 4D 25–26%, 5D 9–10%, 2D乗算29.2%, 1桁複合(1DC)21.3%。175B 生成のニュース記事を人間が機械生成と見抜く正答率は **約52%（≒chance, control model は約88%）**。翻訳は into-English で先行 unsupervised NMT 超え、En→Ro は -10 BLEU と非対称（GPT-2 由来の BPE が英語寄り）。
 - **貢献**: (1) 175B autoregressive LM の訓練と公開的な実証、(2) zero/one/few-shot を「タスク特定データへの依存度の連続軸」として体系化、(3) 8 モデルサイズで in-context learning が scale と共に強化されること（zero/one/few-shot の gap が拡大）を示した、(4) ニュース記事生成の human evaluation で「人が見分けられない」水準を示した、(5) 13-gram overlap による系統的な test-set contamination 解析と影響評価、(6) bias / 誤用 / エネルギーを含む Broader Impacts の枠組み提示。
 
 ## Takeaway（自分にとっての要点）
@@ -75,3 +75,8 @@
 - Hinton+ 2015, distillation — limitations が future work として挙げる軽量化方向。
 - Ziegler+ 2019, RL from human feedback / Chen+ 2019, UNITER — limitations が示唆する次の方向（後の InstructGPT / マルチモーダル路線）。
 - Zellers+ 2019 GROVER, Gehrmann+ 2019 GLTR, Ippolito+ 2019 — 機械生成テキストの自動検出 baseline。
+
+---
+
+- (verified 2026-05-20) venue を「NeurIPS 2020」→ TeX 根拠ベースの記述に修正 (main.tex L5 `neurips_2019` style, L127 `\date{2020}`)。
+- (verified 2026-05-20) Summary 結果中の "10桁にわたって power-law" を、TeX 実物 (content/3_results/results.tex, graphs/compute.tex caption) の "additional two orders of magnitude" に合わせて訂正。

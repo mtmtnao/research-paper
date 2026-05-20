@@ -55,11 +55,12 @@
 - "the effective magnitude of the steps taken in parameter space at each timestep are approximately bounded by the stepsize setting $\alpha$, i.e., $|\Delta_t| \lessapprox \alpha$. This can be understood as establishing a *trust region* around the current parameter value." (§2.1)
 - "With a smaller SNR the effective stepsize $\Delta_t$ will be closer to zero ... a form of automatic annealing." (§2.1)
 - "AdaGrad corresponds to a version of Adam with $\beta_1 = 0$, infinitesimal $(1-\beta_2)$ and a replacement of $\alpha$ by an annealed version $\alpha_t = \alpha \cdot t^{-1/2}$." (§5)
-- "Our convergence analysis does not apply to non-convex problems, we empirically found that Adam often outperforms other methods in such cases." (§6.2)
+- "Although our convergence analysis does not apply to non-convex problems, we empirically found that Adam often outperforms other methods in such cases." (§6.2)
 - "We notice the second moment estimate $\hat v_t$ vanishes to zeros after a few epochs and is dominated by the $\epsilon$ in algorithm 1." (§6.3, CNN 実験での自白)
 - AdaMax: $u_t = \max(\beta_2 \cdot u_{t-1}, |g_t|)$, $\theta_t \leftarrow \theta_{t-1} - (\alpha/(1-\beta_1^t)) \cdot m_t / u_t$, $|\Delta_t|\le\alpha$（§7.1, Algorithm 2）
 - Acknowledgments で "Thanks to Kai Fan from Duke University for spotting an error in the original AdaMax derivation." — 投稿後修正された経緯がある。
 - Theorem 4.1 の仮定: $\|\nabla f_t\|_2 \le G$, $\|\nabla f_t\|_\infty \le G_\infty$, $\|\theta_n - \theta_m\|_2 \le D$, $\|\theta_m - \theta_n\|_\infty \le D_\infty$, $\beta_1^2/\sqrt{\beta_2} < 1$, $\alpha_t=\alpha/\sqrt t$, $\beta_{1,t}=\beta_1 \lambda^{t-1}$。
+- (verified 2026-05-20) §6.2 引用の冒頭を原文通り "Although our convergence analysis..." に修正（0_adam_main.pdf p.6, §6.2 本文）。他の記述（Algorithm 1/2、Theorem 4.1 仮定、§2.1 trust region、§5 AdaGrad-as-Adam-limit、§6.1〜6.4 実験条件、Acknowledgments、bbl 参照）は PDF 本文と一致を確認。
 
 ## Related Papers
 

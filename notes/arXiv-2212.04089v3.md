@@ -15,7 +15,7 @@
 - **問題**: 事前学習済みモデルの振る舞いを後から「編集」したい場面（下流タスクの精度向上、バイアス除去、特定タスクの忘却、新情報への更新）は多いが、既存の編集法（追加学習・patching・editing）は学習を伴うため重い。学習に頼らずモデルを編集する統一的な枠組みが欲しい。
 - **手法**: タスク $t$ に対する **task vector** を $\tau_t = \theta_\textrm{ft}^t - \theta_\textrm{pre}$（fine-tune 後の重み − 事前学習重み、要素ごと差）として定義し、$\theta_\textrm{new} = \theta + \lambda \tau_\textrm{new}$ で適用する（$\lambda$ は held-out 検証集合で決定）。task vector に対し3つの算術演算を定義: (1) **negation** $-\tau$（忘却/挙動抑制）、(2) **addition** $\sum_i \tau_i$（マルチタスク化や単一タスク強化）、(3) **analogy** $\tau_C + (\tau_B - \tau_A)$（"A:B :: C:D" の関係でデータの無い D を改善）。要素ごとの重み演算のみで、追加学習も推論時オーバーヘッドも無い。
 - **結果**:
-  - *Negation – 画像*: CLIP ViT-L/14 で 8 タスク平均精度を Fine-tuned 94.0% → Negative task vector 19.0%（−45.8pt の忘却）、ImageNet コントロールは 75.5→72.9（−2.6pt）。Gradient ascent は target 3.93%/control 16.3% でコントロール崩壊、Random vector は forget できず 60.9%/72.9%（Table 1）。
+  - *Negation – 画像*: CLIP ViT-L/14、8 タスク平均で Pre-trained 64.8% → Negative task vector 19.0%（−45.8pt の忘却。参考までに Fine-tuned は 94.0%）。ImageNet コントロールは Pre-trained 75.5 → Negative 72.9（−2.6pt）。Gradient ascent は target 3.93%/control 16.3% でコントロール崩壊、Random vector は forget できず 60.9%/72.9%（Table 1）。
   - *Negation – 言語*: GPT-2 Large で toxic generation 比率を 4.8% → 0.8%（6 倍減）、avg toxicity 0.06→0.01、WikiText-103 perplexity は 16.4→16.9（+0.5）。Fine-tuned on non-toxic（1.8% / 17.2 ppl）より両指標で優れる。Gradient ascent は ppl > 10$^{10}$ で破綻（Table 2）。
   - *Addition – 画像*: CLIP の 8 タスクから 2 つを足すと、専門 fine-tuned 2 モデル使用時の **98.9%** 正規化精度に到達。$2^8$ 通りの部分集合を試行し、全 8 タスクを足した最良モデルは平均 91.2% を維持（Fig. 2-3, §4.1）。
   - *Addition – NLP*: T5-base を GLUE 4 タスクで fine-tune → さらに Hugging Face Hub 上の 427 候補 task vector を加算。Avg 78.1 → 78.6（MRPC +0.8, RTE +0.2, CoLA +0.7, SST-2 +0.2、Table 3）。
@@ -30,7 +30,7 @@
 - **Negation が忘却に効くがコントロール劣化が小さい**点は実用的に重要。gradient ascent はコントロールを壊すので unlearning には使いにくいが、negation は ImageNet を 2.6pt しか下げずに target を 45.8pt 落とせる。RLHF の代替/補完として toxic 行動の抑制に直接使える可能性がある（GPT-2 Large で 6× 削減、ppl +0.5）。
 - **task vector 同士が概ね直交**（Fig. 5 cos sim）であることが addition で干渉が小さい理由として提示されている。意味的に近いタスク（MNIST/SVHN/GTSRB の digit 系、EuroSAT/RESISC45 の衛星系）だけ高 cos sim。これは「ベクトル算術」というメタファーが weight space で実際に成立する条件として重要。
 - **学習率に敏感**: task vector を使う場合は fine-tune 単体より低 LR を推奨。NLP で他者のチェックポイントを混ぜると分散が大きい理由として LR を疑っている（discussion）。
-- **中間 task vector が早期に方向収束**（Fig. 6）→ 完全 fine-tune を待たずに加算でき、計算節約の余地がある。
+- **中間 task vector が早期に方向収束**（Fig. 7 = fig:intermediate）→ 完全 fine-tune を待たずに加算でき、計算節約の余地がある。
 - analogy で「教師なし LM 由来の差分」が sentiment ベクトルを別ドメインに転写できる、というのは weight space の差が "ドメイン差" を粗くエンコードしている示唆として面白い。
 
 ## Critical Thoughts（評価・疑問）
@@ -61,7 +61,7 @@
 
 - 定義: $\tau_t = \theta_\textrm{ft}^t - \theta_\textrm{pre}$、適用: $\theta_\textrm{new} = \theta + \lambda \tau_\textrm{new}$、$\lambda$ は held-out で決定（§2）。
 - "Negating a task vector decreases performance on the target task, with little change in model behavior on control tasks." (abstract)
-- ViT-L/14 で negation → target 94.0→19.0、control（ImageNet）75.5→72.9（Table 1）。
+- ViT-L/14 で negation → target Pre-trained 64.8 → Negative 19.0（−45.8pt、Fine-tuned 比較値は 94.0）、control（ImageNet）75.5 → 72.9（Table 1）。
 - GPT-2 Large で toxic 4.8%→0.8%、avg toxicity 0.06→0.01、WikiText-103 ppl 16.4→16.9（Table 2）。Toxicity の task vector 学習は Civil Comments の toxicity > 0.8 で fine-tune したものを negate。
 - CLIP 画像 8 タスクで 2 vector 加算 = 専門 fine-tune 2 個と比較し 98.9% 正規化精度、8 vector 全加算で 91.2%（§4.1）。
 - T5-base + HF Hub 427 candidates: GLUE 平均 78.1→78.6（Table 3）。$\lambda$ と best checkpoint を held-out で選ぶ。
@@ -71,6 +71,8 @@
 - 中間 task vector は早期に最終 vector の方向に収束する（Fig. intermediate, §6）。
 - 著者明記の限界: 同一 architecture かつ同一 pre-trained 初期化からの fine-tune に限定（§6 Limitations）。HF Hub に 3,000+ BERT-base, 800+ T5-small の同一初期化チェックポイントがあるため実用上は致命傷ではない、とも書いている。
 - コード: https://github.com/mlfoundations/task_vectors
+- (verified 2026-05-20) Summary §結果 / Notes ViT-L/14 行を訂正: 「Fine-tuned 94.0 → Negative 19.0 で −45.8pt」は誤り。Table 1 と 03_negation.tex の caption が示す通り −45.8pt は Pre-trained 64.8 → Negative 19.0 の差。Fine-tuned 94.0 は別の baseline。
+- (verified 2026-05-20) Takeaway の「Fig. 6（intermediate task vector）」を Fig. 7 に修正。06_discussion.tex の図順では Fig 5=cossim, Fig 6=lr, Fig 7=intermediate（label: fig:intermediate）。
 
 ## Related Papers
 

@@ -42,7 +42,7 @@
   - 人手で 200 trajectory にラベル付けした failure mode 分析を載せており、hallucination 0% を主張する根拠が定量化されている。
 - **弱み / 疑問**:
   - HotpotQA 単体では CoT-SC (33.4) に ReAct (27.4) は負けており、ReAct が "勝つ" のは hybrid（35.1）のとき。タイトルの "synergy" は **ReAct と CoT のシステム的 hybrid** で初めて成立する、というのは abstract から少し控えめにしか読めない。
-  - ALFWorld の 71% は best-of-6 prompt の選択結果で、avg は 57%。prompt 選択の variance がかなり大きく（Table 1 の Act/ReAct/IM ともに avg vs. best of 6 のギャップが 10pt 以上ある）、prompt 設計依存性は強そう。
+  - ALFWorld の 71% は best-of-6 prompt の選択結果で、avg は 57%（Table 1）。ReAct 自体で avg→best-of-6 が 57→71 と 14pt 開いており、prompt 設計依存性は強そう（一方 ReAct-IM の avg→best-of-6 は 48→53、Act は Table 1 に best-of-6 のみで avg 値が報告されていない）。
   - 著者自身 limitations として認めている点: (a) 複雑タスクで demonstration が in-context window を超える、(b) prompting だけだと ReAct は学びにくく finetuning が要る、(c) reasoning error 47%（同じ thought/action を繰り返すループ）が頻発し greedy decoding に起因と示唆、(d) supervised SoTA から大差（HotpotQA 35.1 vs. 67.5）。
   - WebShop の比較は IL/IL+RL に対するもので、**token budget や計算コストの公正比較**にはなっていない（in-context prompting と数千～万 traj の学習が直接比較されている）。
   - ReAct の thought はモデルが内部で自由に書くので、`finish[]` を呼ばずに延々と探索したり、`search` を繰り返すループに陥る挙動が頻繁。ハードな step 上限・FEVER で 5 step、HotpotQA で 7 step というのは経験的に決めただけで、原理的解決ではない。
@@ -77,3 +77,6 @@
 - Shridhar+ 2020, ALFWorld / BUTLER — 評価環境と IL ベースライン。
 - Yang+ 2018, HotpotQA / Thorne+ 2018, FEVER / Yao+ 2022, WebShop — 評価データセット。
 - Chowdhery+ 2022, PaLM / Brown+ 2020, GPT-3 — base LM。
+
+- (verified 2026-05-20) Critical Thoughts の ALFWorld variance に関する記述を修正。Table 1（iclr2023/table/rl.tex）では Act は best-of-6 のみで avg が無く、ReAct-IM の avg→best-of-6 ギャップは 5pt（48→53）。「Act/ReAct/IM 全てが 10pt 以上のギャップ」という記述は誤りだったので、ReAct 単体の 14pt ギャップ（57→71）に絞って書き直し。
+- (verified 2026-05-20) Summary / Takeaway / Critical Thoughts の数値・固有名詞・引用文を text/abstract, text/intro, text/method, text/experiments_language, text/experiments_rl, text/discussion, table/reasoning, table/rl, table/human_study, table/gpt3 と突き合わせ、それ以外の記述は TeX 根拠が取れている事を確認。

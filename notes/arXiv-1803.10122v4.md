@@ -61,7 +61,7 @@
 
 ## Notes / Quotes
 
-- "Our world model is only an approximate probabilistic model of the environment, it will occasionally generate trajectories that do not follow the laws governing the actual environment." (Cheating the World Model)
+- "Because our world model is only an approximate probabilistic model of the environment, it will occasionally generate trajectories that do not follow the laws governing the actual environment." (4.5 Cheating the World Model)
 - "We find agents that perform well in higher temperature settings generally perform better in the normal setting. In fact, increasing $\tau$ helps prevent our controller from taking advantage of the imperfections of our world model." (VizDoom 4.3)
 - "$\tau=0.1$ → the monsters inside this dream environment fail to shoot fireballs ... due to mode collapse. ... Whatever policy learned inside of this dream will achieve a perfect score of 2100 most of the time, but will obviously fail when unleashed into the harsh reality of the actual world, underperforming even a random policy." — mode collapse の具体例。
 - パラメータ内訳（Table）: CarRacing は VAE 4,348,547 / MDN-RNN 422,368 / **Controller 867**、Doom は VAE 4,446,915 / MDN-RNN 1,678,785 / **Controller 1,088**。
@@ -70,12 +70,15 @@
 - 訓練設定: V/M は random policy 10,000 rollout、1 GPU 1 時間未満、MDN-RNN は 20 epochs、5 Gaussian mixtures。CMA-ES pop=64、各 agent 16 rollouts、CarRacing は 1800 generations で 900.46/1024。
 - 既知の限界（Discussion）: VAE が task-irrelevant な特徴を学ぶ、LSTM の容量限界・catastrophic forgetting、step-by-step planning に留まり階層化していない。
 - TeX に明示されていない事項: \textit{Learning to Think} (Schmidhuber 2015) で示唆されている「C が M の subroutine を呼び出す」スキームは本論文では実装していない（"Experiments with those more general approaches are left for future work."）。
+- (verified 2026-05-20) Cheating the World Model 引用文を TeX 通り "Because our world model..." に修正、section ラベルを 4.5 に明示 (main.tex L540, section "Cheating the World Model")。
+- (verified 2026-05-20) Kingma & Welling の年を (2014) → (2013) に修正 (main.bbl L383: \bibitem[Kingma \& Welling(2013)])。
+- (verified 2026-05-20) Related Papers の Schmidhuber 1990 系列の citation key を s05_cm → s05_making_the_world_differentiable に修正 (main.bbl L615: \bibitem[Schmidhuber(1990{\natexlab{a}})]{s05_making_the_world_differentiable})。
 
 ## Related Papers
 
-- Schmidhuber, \textit{Making the World Differentiable} (1990) ほか s05_cm / s05a_cm / s05b_rl — 本論文の思想的源流である C–M スキーム。
+- Schmidhuber, \textit{Making the World Differentiable} (1990) ほか s05_making_the_world_differentiable / s05a_cm / s05b_rl — 本論文の思想的源流である C–M スキーム。
 - Schmidhuber, \textit{On Learning to Think} (2015, arXiv:1511.09249) — 用語と枠組みを直接借りている。
-- Kingma & Welling, VAE (2014) — V モデルの直接の祖。
+- Kingma & Welling, VAE (2013, main.bbl 表記) — V モデルの直接の祖。
 - Bishop, Mixture Density Networks (1994) / Graves, \textit{Generating Sequences with RNNs} (2013) / Ha, SketchRNN — MDN-RNN の系譜。
 - Hansen, CMA-ES — controller 最適化に使用。
 - Deisenroth & Rasmussen, PILCO — 確率的 dynamics model + policy search の代表。GP ベースで高次元 pixel には向かない、と本論文が対比。

@@ -28,7 +28,7 @@
 
 - DPO は「RL を使わない RLHF」というより、**RLHF の KL 制約最適解の閉形式から $r$ を消去するトリック**。policy 自身が implicit reward $\hat r_\theta(x,y) = \beta\log\frac{\pi_\theta(y\mid x)}{\piref(y\mid x)}$ を運ぶ。Theorem 1 によって表現力が落ちないことが保証されており、「PPO の近似ではなく等価変形」だと主張できる点が強い。
 - 勾配の $\sigma(\hat r_\theta(x,y_l) - \hat r_\theta(x,y_w))$ という重みが本質的。これを外す（単なる SFT on $y_w$ + unlikelihood on $y_l$）と degenerate な「when when when ...」を吐く（Appendix Table 6）。Unlikelihood は単独だと壊れる。
-- 実装が衝撃的に短い（Appendix のコードは 15 行）。$\beta$, バッチ 64, RMSprop, lr 1e-6 線形 warmup 150 step が default。TL;DR のみ $\beta=0.5$。逆に言えば**ほぼハイパラ探索なしでこの強さ**は再現性の意味で大きい。
+- 実装が衝撃的に短い（Appendix B の PyTorch コードはコア処理が 1 行の `F.logsigmoid(beta * (pi_logratios - ref_logratios))` で済む短さ）。default は $\beta=0.1$, batch 64, RMSprop, lr 1e-6 を 150 step で 0→1e-6 に線形 warmup。TL;DR のみ $\beta=0.5$。逆に言えば**ほぼハイパラ探索なしでこの強さ**は再現性の意味で大きい。
 - PPO が温度に脆い（高温で base モデル並みに崩壊）一方 DPO はロバスト。Frontier の比較で **PPO-GT (ground-truth reward オラクル) すら超える** のは、PPO 側のサンプリング分散・value baseline・PPO クリップなどの実装ロスが効いている可能性を示唆している。
 - OOD 汎化（TL;DR→CNN/DailyMail）でも勝つ。「DPO は報酬モデルを陽に持たないので汎化が弱いはず」という直感的批判への先回り反論として収録されている。
 - Anthropic HH では SFT モデルが存在しないので Preferred-FT で $\piref$ を作る → distribution shift を避けるための実用的な工夫。public 嗜好データを使う多くの再現プロジェクトで効く所作。
@@ -63,7 +63,9 @@
 - Default ハイパラ: $\beta=0.1$, batch 64, RMSprop, lr 1e-6, 150 step linear warmup（TL;DR のみ $\beta=0.5$）。
 - 勾配の重み $\sigma(\hat r_\theta(x,y_l) - \hat r_\theta(x,y_w))$ を外すと degenerate 生成（Appendix Table on unlikelihood, 「when when ...」を吐く実例）。
 - 著者明示の Limitations: (i) OOD 汎化の包括的検証が未了、(ii) self-labeling で unlabeled prompt を活用できるか未検証、(iii) reward over-optimization が DPO でも起きるかは Fig 3-right の僅かな低下が示唆するに留まる、(iv) 6B より大きいモデルへのスケーリング未検証、(v) GPT-4 評価が prompt sensitive、(vi) 言語以外のモダリティ（生成モデル一般）への応用は future work。
-- 人間スタディ参加者は Stanford 在学・卒業の STEM 学生 25 名（Appendix にフルネーム掲載）。GPT-4 と人間の一致率は人間同士の一致と同水準。
+- 人間スタディ参加者は Stanford 在学/卒業/訪問者の STEM (主に CS) フォーカス 25 名（1 名は遅延提出で最終解析から除外、Appendix C.4 にフルネーム掲載）。GPT-4 と人間の一致率は人間同士の一致と同水準。
+- (verified 2026-05-20) "Appendix のコードは 15 行" を実 verbatim 行数と照合し、論文には明示的な行数記述が無いため、コア処理が 1 行で書ける短さである旨に書き直した（main.tex §B, lines 556–581）。
+- (verified 2026-05-20) 人間スタディの母集団記述を App C.4 の原文（Stanford students/recent graduates/visitors, STEM (mainly CS), 25 名中 1 名は遅延で除外）に合わせて精緻化（main.tex, app:human-study）。
 
 ## Related Papers
 

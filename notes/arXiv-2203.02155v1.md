@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/2203.02155
 - source: ../papers/arXiv-2203.02155v1/
 - authors: Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Carroll L. Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul Christiano, Jan Leike, Ryan Lowe (OpenAI)
-- venue / year: NeurIPS 2022 (arXiv preprint 2022-03)
+- venue / year: arXiv 2022-03（TeX は neurips_2021.sty 同梱／TeX 中に明示の掲載先記述なし）
 - tags: [RLHF, alignment, InstructGPT, LLM, instruction-following]
 - read_date: 2026-05-12
 
@@ -62,6 +62,8 @@
 - inter-labeler agreement: training 72.6±1.5%, held-out 77.3±1.3%（§3.4）
 - RM held-out accuracy 69.6±0.9% vs train-distribution 72.4±0.4%（§4.1）
 - Dataset sizes: SFT train 11,295 labeler + 1,430 customer; RM train 6,623 labeler + 26,584 customer; PPO train 31,144 customer（Table: dataset-size）
+- (verified 2026-05-20) venue 行を「NeurIPS 2022」から「arXiv 2022-03（neurips_2021.sty 同梱／TeX に掲載先明示なし）」に修正。根拠: neurips_2021.sty の \@neuripsyear=2021 のみで、本文・abstract に NeurIPS 2022 とは明示されていない。
+- (verified 2026-05-20) 数値・固有名詞は TeX で裏取り済 (neurips_2021.tex / automatic_evals_table.tex / neurips_2021.bbl): 85±3% / 71±4%, 73.4±2% vs T0 26.8±2% / FLAN 29.8±2%, 78±4% / 79±4%, hallucination 21% vs 41%, inter-labeler 72.6±1.5% / 77.3±1.3%, RM 69.6±0.9% / 72.4±0.4%, 4.9 / 60 / 3,640 PF-days, TruthfulQA true+info QA prompt 175B PPO 0.752 vs GPT-3 0.251, SFT/RM/PPO dataset sizes, K=4-9, β/γ, 40 contractors, >96% English, SFT 16 epochs / dropout 0.2.
 
 ## Related Papers
 

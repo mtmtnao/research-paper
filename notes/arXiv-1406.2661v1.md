@@ -57,13 +57,15 @@
 - 既知の限界 (§"Advantages and disadvantages"): "no explicit representation of $p_g(\bm{x})$" / "$D$ must be synchronized well with $G$ during training (in particular, $G$ must not be trained too much without updating $D$, in order to avoid 'the Helvetica scenario' in which $G$ collapses too many values of $\bm{z}$ to the same value of $\bm{x}$ to have enough diversity to model $p_\text{data}$)"。
 - 将来拡張（Conclusions）: 条件付き生成、学習済み近似推論、すべての条件付き $p(\bm{x}_S\mid \bm{x}_{\not S})$ のモデル化（MP-DBM の確率版）、semi-supervised、$G/D$ 協調と $\bm{z}$ 分布の改善による効率化。
 - TeX 中には明示されていない: 学習率、バッチサイズ $m$、MLP の具体的な層構成や次元、CIFAR-10 の定量比較数値。
+- (verified 2026-05-20) Related Papers の "Bengio et al. ICML 2013/2014, GSN" 表記を分割修正。ICML 2013 (`Bengio-et-al-ICML2013`, adversarial.bbl) は "Better mixing via deep representations" であり GSN 論文ではないため、ICML 2013 (Better mixing) と ICML 2014 (Deep GSN, Table 1 比較対象) を別エントリにした。
 
 ## Related Papers
 
 - Hinton et al. 2006, Deep Belief Networks — undirected/directed ハイブリッドの代表、比較対象（DBN）。
 - Salakhutdinov & Hinton 2009, Deep Boltzmann Machines — undirected 系で MCMC mixing 問題の代表。
 - Hyvärinen 2005, Score Matching / Gutmann & Hyvärinen 2010, NCE — 解析的密度を要する代替学習基準。本研究は NCE の「discriminative criterion で生成モデルを fit」する精神を、固定 noise → 別の判別器に置き換えた拡張と位置付けられる。
-- Bengio et al. ICML 2013/2014, Generative Stochastic Networks — Markov chain を学習する直接の比較対象（Deep GSN として Table 1 に登場）。
+- Bengio et al. ICML 2013, "Better mixing via deep representations" — MCMC mixing 問題の代表的引用先（Related work で引用）。
+- Bengio et al. ICML 2014, "Deep generative stochastic networks trainable by backprop" — Markov chain を学習する直接の比較対象（Deep GSN として Table 1 に登場）。
 - Kingma & Welling 2014, Auto-Encoding Variational Bayes / Rezende et al. 2014, Stochastic Backpropagation — 同時期の back-prop で生成モデルを学習する系統。
 - Goodfellow et al. 2013, Maxout Networks — 判別器に採用された活性化。
 - Hinton et al. arXiv 2012, Dropout — 判別器の正則化。

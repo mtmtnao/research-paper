@@ -55,6 +55,7 @@
 - 力のピーク位置は X ≈ R 付近（"a peak locates at the radius of skyrmions since the force stems mostly from the transition part of the magnetization (the domain wall) overlapping the potential jump at X=0"）。
 - Fig.2 caption に明記された (R, w) 3 セット: (25.55, 11.35), (24.60, 8.05), (7.4, 7.9) nm。F_wall ピークはそれぞれ約 1.4 / 1.05 / 0.6 ×10⁻¹² N。
 - 運用上のメモ: papers/arXiv-2005.04860v1/ には TeX ソースが含まれず source.pdf のみ。本ノートは PDF から起こしている。
+- (verified 2026-05-20) source.pdf 全 10 ページを通読して再検証。タイトル / 著者 8 名・所属 / Abstract / Introduction / 式 (1)(2)(3)(4)(5) / Discussion の "such a crude model" 等の文言 / Fig.1 (K_− > K_+ 図) / Fig.2 caption の (R, w) = (25.55,11.35)(24.60,8.05)(7.4,7.9) nm および inset の ×10⁻¹⁴ N スケール / References 1–19 を PDF と突合し、ノート本文と齟齬無しを確認。Néel skyrmion (q=1, γ_helicity=0 or π) という限定も Method 末尾と一致。引用文 5 件はすべて PDF 原文と完全一致。修正不要。
 
 ## Related Papers
 

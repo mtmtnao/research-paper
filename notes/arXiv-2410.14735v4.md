@@ -41,7 +41,7 @@
 
 - **強み**:
   - 8B モデルで AgentBench 平均 52.4 と gpt-3.5-turbo（53.7）にほぼ並ぶ数値はインパクトがある。特に OS で base 25.2 → 42.6 と大きく動く。
-  - アブレーション（Table 2）が clean: QD → cyclic → +SVD → +Elite と各 component が +1.7, +2.3, +0.7 pt 単調に効いており、設計の貢献分解が説得力ある。
+  - アブレーション（Table 2）が clean: QD → cyclic → +SVD → +Elite と各 component が +1.8, +2.3, +0.7 pt 単調に効いており、設計の貢献分解が説得力ある（ただし Gaussian mutation の trial2 は no-mutation より -0.9 と非単調）。
   - SAM への横展開で「LLM だけの話ではない」と示している。class of model merging × QD 全般に通用するというメッセージが立っている。
   - Catastrophic forgetting の定量（MBPP expert: Reasoning 0.57）を示した上で CycleQD が 0.95 と落とさない、という対比は実用上重要な数値。
 - **弱み / 疑問**:
@@ -70,6 +70,8 @@
 - 既知の限界（sec5）: "model merging hinges on the compatibility of the source models. CycleQD may encounter challenges when the expert models originate from highly divergent settings."
 - SAM 実験での model similarity 定義: $s = (1/L)\sum_i \cos(\mathrm{diag}(\Sigma_{i,A}), \mathrm{diag}(\Sigma_{i,B}))$、Avg score と相関 0.83（sec4.2）。
 - code: https://github.com/SakanaAI/CycleQD （abstract footnote）
+- (verified 2026-05-20) Table 1/2/3/4 の全数値 (MBPP 76.4 / DB 38.2 / OS 42.6 / Avg 52.4 ほか) と base 比 (32.6 → 52.4)、アブレーション 47.6/49.4/48.5/51.7/52.4、引用キー (akiba2024evolutionary, ilharco2022editing, pugh2016quality, mouret2015illuminating, pierrot2022multi, fedprox 等) を tables/*.tex, sec3_methods.tex, sec4_experiments.tex, sec5_conclusion.tex, iclr2025_conference.bbl で裏取り。
+- (verified 2026-05-20) Critical Thoughts のアブレーション増分を +1.7 → +1.8 (47.6→49.4) に修正、Gaussian mutation で非単調な点を補足 (tables/table2_ablation_studies.tex)。
 
 ## Related Papers
 

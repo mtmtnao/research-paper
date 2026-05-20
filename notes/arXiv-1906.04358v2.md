@@ -24,7 +24,7 @@
 ## Takeaway（自分にとっての要点）
 
 - 「重みを学習しない」の本質は重みを 1 個に共有して固定するだけ、という非常に身もふたもない簡素化。重みを定数化したことで「アーキ自体の性能」だけが残り、評価が一意になる ← この発想はそのまま他の構造探索にも転用可能。
-- 活性化関数の多様性（linear/step/sin/Gaussian/abs など）が WANN を成立させる肝。重みで自由度を稼げない分、関数形式で「対称性・周期・反転」などの関係を表現させている。ReLU だけでは厳しいと著者も認めている（appendix）。
+- 活性化関数の多様性（linear/step/sin/Gaussian/abs など）が WANN を成立させる肝。重みで自由度を稼げない分、関数形式で「対称性・周期・反転」などの関係を表現させている。著者自身は appendix で「ReLU や sigmoid だけでも実装は可能だっただろうが、多様な活性化のおかげで対称性・反復のような関係をよりコンパクトに表現できる」「線形活性のみでは可能と確信できない」とコメント。
 - 多目的化のうち 20% を `max performance` に振り替えるトリックは、「複数追加が揃って初めて性能が上がる」場面で stepping stone を残すための実装的工夫。NSGA-II ベースの NAS 全般で参考になる。
 - 共有重み 1 個 → 異なる値で複数インスタンス → アンサンブル、という self-ensemble は意外と効くので、「1 つのネットワーク、複数の重みでマルチタスク」みたいな設計（後の HyperNet / soft mask 系の前哨）として読める。
 - WANN が個別重みをランダムに振ると壊れる（CartPoleSwingUp で 57±121）こと、つまり「符号と相対関係に強く依存している」点は、「アーキは関係性をエンコードしている」という主張の裏側の制約として重要。
@@ -61,6 +61,8 @@
 - appendix 60: 単一固定値 0.7 で学習すると速いが 0.6 でテストすると完全に壊れる → 範囲サンプリングが汎化に必須。
 - appendix: gradient-based fine-tuning（JAX）より CMA-ES / population REINFORCE のほうが WANN の MNIST 上で良い、landscape の問題。
 - ハイパラ（appendix）: SwingUp pop=192/gen=1024、Biped pop=480/gen=2048、CarRace pop=64/gen=1024、MNIST pop=960/gen=4096。
+- Champion network 接続数（36_controlFig.tex）: SwingUp 52, Biped 210, CarRacing 245。
+- (verified 2026-05-20) 数値・固有名詞・引用先を main.tex / 21,23_method / 30,31_control / 32_controlTable / 34_class / 37_classDiagram / 40_discuss / 60_appendix / main.bbl で再確認。Takeaway の活性化関数記述を appendix 60_appendix.tex に合わせて「ReLU だけでは厳しい」→「線形活性のみでは可能と確信できない（ReLU/sigmoid なら可能）」へ訂正。
 
 ## Related Papers
 

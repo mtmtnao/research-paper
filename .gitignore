@@ -1,5 +1,8 @@
 # arXiv の TeX ソース一式（容量が大きいため git 管理から除外）
 papers/
 
+# note.py / verify_notes.py のログ・state ファイル（自動生成・冪等化用）
+logs/
+
 # macOS
 .DS_Store

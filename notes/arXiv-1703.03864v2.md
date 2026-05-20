@@ -61,12 +61,13 @@
 - Algorithm 1 のコア update: θ_{t+1} ← θ_t + α · (1/(nσ)) Σ_i F_i ε_i with ε_i ~ N(0, I)（Algorithm 1, line 5）。
 - "The only information obtained by each worker is the scalar return of an episode: if we synchronize random seeds between workers before optimization, each worker knows what perturbations the other workers used, so each worker only needs to communicate a single scalar to and from each other worker to agree on a parameter update."（§2.1）
 - "ES is invariant to action frequency and delayed rewards, tolerant of extremely long horizons, and does not need temporal discounting or value function approximation."（Abstract）
-- "Without these [virtual batch normalization] reparameterizations ES proved brittle in our experiments, but with these reparameterizations we achieved strong results over a wide variety of environments."（§1, finding 1）
+- "Without these methods ES proved brittle in our experiments, but with these reparameterizations we achieved strong results over a wide variety of environments."（§1, finding 1。"these methods" = virtual batch normalization + その他の policy reparameterization）
 - ES vs PG 分散比較（§3.1）: Var[∇F_PG] ≈ Var[R] · Var[∇log p(a;θ)] は T 個の項の和なので T に比例して増えるが、Var[∇F_ES] ≈ Var[R] · Var[∇log p(θ̃;θ)] は T と独立。
 - "we did not see benefit from adapting σ during training, and we therefore treat it as a fixed hyperparameter instead."（§2.1, σ 適応について）
 - Limitations 周辺の率直な記述: 51 Atari game 中「performed better on 23 games tested, and worse on 28」（§1）。データ効率は A3C 比 3-10x 悪化、「partly offset by a reduction in required computation of roughly 3x due to not performing backpropagation and not having a value function」(§1)。
 - 1,440 CPU 並列で 3D Humanoid を 10 分（Figure 1）。18 cores だと 657 分（11 時間）。
 - Future work（§6）: meta-learning（learning-to-learn）への応用、低精度 NN 実装との組み合わせ。
+- (verified 2026-05-20) §1 finding 1 の引用文を原文どおりの "Without these methods..." に訂正（元ノートは "[virtual batch normalization]" を埋め込んで "methods" を "reparameterizations" に置換していた）。根拠: es_arxiv_v2.pdf §1, finding 1。他は TeX (実体は es_arxiv_v2.pdf) との突合で全箇所裏取り済み: 著者名、Table 1 の MuJoCo 比、Table 2 の Atari スコア、Figure 1 (18→657min, 1440→10min)、Figure 2 (frame-skip 1-4)、Algorithm 1/2、§1 finding 3 (23-28 game, 3-10x データ, ~3x 計算節約)、§2.1 (shared seeds, σ 固定, antithetic, fitness shaping)、§2.2 (VBN, 10 bin 離散化)、§3.1 (Var の T 依存)、§3.2 (intrinsic dimension, larger network better, Kawaguchi 2016)、§6 (future work)、references。
 
 ## Related Papers
 

@@ -63,7 +63,9 @@
 - 失敗モード自白: 自己再起動コードで Python プロセス増殖、毎ステップ checkpoint 保存で TB 級ストレージ、time limit を自分で書き換える、unknown lib import。"We recommend strict sandboxing ... such as containerization, restricted internet access (except for Semantic Scholar), and limitations on storage usage." (§Limitations)
 - NanoGPT 系で「a few of its ideas effectively cheat by subtly leaking information from future tokens, which results in lower perplexity.」(§5.2)
 - "We do not recommend taking the scientific content of this version of \textsc{The AI Scientist} at face value. Instead, we advise treating generated papers as hints of promising ideas." (§Limitations)
-- 計算機: 各 run は 50 アイデア / 約 12h / 8×H100、コスト総額 ~\$250 (Sonnet/GPT-4o), ~\$10 (DeepSeek), ~\$120 (Llama-3.1 405b)。Reviewer 1 件あたり \$0.25–\$0.50。
+- 計算機: 各 run は 51〜52 アイデア / 約 12h / 8×H100、各テンプレあたり総額 Sonnet 3.5 ~\$250、GPT-4o ~\$300、DeepSeek Coder ~\$10、Llama-3.1 405b ~\$120 (Tables 3–5)。Reviewer 1 件あたり \$0.25–\$0.50 (§4)。
+- (verified 2026-05-20) GPT-4o のコストを ~\$250 から ~\$300 に訂正し、Sonnet/GPT-4o を分離。根拠: main.tex L650-653 (tab:diff_papers), L741-744 (tab:nlp_papers), L810-813 (tab:grokking_papers) いずれも GPT-4o は ~\$300。
+- (verified 2026-05-20) 他の数値（balanced acc 0.65/0.66、F1 0.57/0.49、相関 0.14/0.18、Diffusion 49/38/38、KL 0.989→0.862、SWE Bench 18.9% 等）は main.tex (§4 tab:reviewer, §5 case study, §6 各 tab:*, §2 Aider) と一致を確認。
 
 ## Related Papers
 

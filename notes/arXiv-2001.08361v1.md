@@ -71,12 +71,13 @@
 - $C^\ast\!\sim\!10^4$ PF-days, $N^\ast\!\sim\!10^{12}$ params, $L^\ast\!\sim\!1.7$ nats/token で $L(C_\mathrm{min})$ と $L(D)$ が交差 → そこで scaling laws は破綻する見込み（§5.3）。
 - 著者明示の限界（§Caveats）: 理論なし／$B_\mathrm{crit}$ の外挿に不安／小データ域と正則化を tune していない／$C\!\approx\!6NBS$ は $n_\mathrm{ctx}\gtrsim 12 d_\mathrm{model}$ で破綻／init・momentum 等の hyperparam tuning が不十分／LR は target loss 依存で短い run は未探索。
 - 「核となる scaling laws の数値は WebText2 / BPE tokenizer 依存。$N_c, D_c$ に fundamental meaning はなく、指数 $\alpha$ だけが意味を持つ」(§1.1)。
+- (verified 2026-05-20) Related Papers の Hestness+ 2019 の会議名を SC'19 → PPoPP'19 に修正（main.bbl: "Proceedings of the 24th Symposium on Principles and Practice of Parallel Programming, PPoPP '19"）。Summary／Takeaway／Critical Thoughts の数値・固有名は main.tex（abstract, §1.1, §3, Tables of $L(N,D)$ / $L(N,S)$ fits, App. A Tables, §Caveats, §5.3, footnote on WebText2 stats）と再照合し、その他は問題なし。
 
 ## Related Papers
 
 - McCandlish+ 2018 "An Empirical Model of Large-Batch Training" (arXiv 1812.06162) — critical batch size と gradient noise scale。本論文の $B_\mathrm{crit}$ の理論基盤。
 - Radford+ 2019 (GPT-2) — WebText の元データセット・BPE tokenizer・(48, 1600) baseline モデル。
-- Hestness+ 2017/2019 (arXiv 1712.00409, "Beyond Human-Level Accuracy" SC'19) — 最も近い先行研究。ただし彼らは super-linear な $D$-$N$ スケーリングを報告。本論文は sub-linear と逆の結論。
+- Hestness+ 2017/2019 (arXiv 1712.00409, "Beyond Human-Level Accuracy" PPoPP'19) — 最も近い先行研究。ただし彼らは super-linear な $D$-$N$ スケーリングを報告。本論文は sub-linear と逆の結論。
 - Rosenfeld+ 2019 (arXiv 1909.12673) — 同種の $L(N,D)$ ansatz を独立に提案（脚注で同時期と言及）。
 - Tan & Le 2019 EfficientNet (arXiv 1905.11946) — 画像でのスケーリング比較対象。
 - Vaswani+ 2017 (Transformer), Dehghani+ 2018 Universal Transformer (arXiv 1807.03819) — アーキテクチャ比較。

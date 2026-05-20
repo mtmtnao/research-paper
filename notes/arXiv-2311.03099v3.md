@@ -18,7 +18,7 @@
   - **embedding 保存**: DARE は層ごとの cosine similarity が $p=0.9$ でも >0.95。rescale 無しの DropOnly は WizardMath-7B で $p=0.5/0.9$ のとき 0.85/0.68 まで落ちる。
   - **decoder merging（Table 1, Llama-2-13b 系）**: WizardLM-13B / WizardMath-13B / llama-2-13b-code-alpaca を Task Arithmetic + DARE で merge。LM & Math & Code vs LM 単体で AlpacaEval +3.10%、LM & Math vs Math 単体で GSM8K +3.18%、LM & Code vs Code 単体で MBPP +19.57%。TIES-Merging では LM & Math & Code が AlpacaEval 72.50（単体最高 LM 67.20 を上回る）。
   - **encoder merging（GLUE）**: 平均改善は Average/Task Arithmetic/Fisher/RegMean/TIES でそれぞれ +0.58%/+0.36%/+0.37%/-0.03%/+0.84% と控えめ。
-  - **7B 実応用**: supermario_v2 が Open LLM Leaderboard で **2024-01-28 時点で 7B 部門 1 位**（Average 75.49、構成元 WildMarcoroni-7B/WestSeverus-7B の 75.29 を上回る）。supermario_v1 も 74.85 で構成元（NeuralBeagle14-7B 74.74, Beagle14-7B 74.76）を超える。
+  - **7B 実応用**: supermario_v2 が Open LLM Leaderboard で **2024-01-28 時点で 7B 部門 1 位**（Average 75.49、構成元 WildMarcoroni-Variant1-7B/WestSeverus-7B-DPO-v2 の 75.29 を上回る）。supermario_v1 (構成元: NeuralBeagle14-7B + Turdus、いずれも Beagle14-7B から派生) も Average 74.85 で NeuralBeagle14-7B (74.74) を上回る（Turdus の Leaderboard 結果は不掲載のため Table 2 では代替として Beagle14-7B 74.76 が併記されている）。
   - **限界条件**: WizardCoder-Python-13B を CodeLlama-13b-Python ではなく Llama-2-13b を pre-train として DARE すると、$p=0.1$ で HumanEval/MBPP が 63.41/55.4 → 0.0/0.0 に崩壊。delta の絶対値が >0.01 になる継続事前学習系では DARE は機能しない。fine-tuned（pre+delta 全体）を直接 drop すると $p=0.1$ で WizardLM-13B AlpacaEval 67.20→8.56、WizardMath-13B GSM8K 64.22→0.38 等、壊滅的。
   - **MP との比較**: Magnitude-based Pruning（MP）に勝ち、特に高 $p$ で差が拡大。MP に rescale を足すと逆に悪化（$p=0.7$ で AlpacaEval 43.85→10.61、GSM8K 46.70→0.37）。
 - **貢献**: (1) SFT delta の極端な冗長性を経験的・理論的に示した、(2) 学習・GPU 不要の超単純な疎化手法 DARE、(3) 既存 merging 手法の汎用 plug-in としての有効性、(4) 「SFT は新しい能力を導入するのではなく pre-trained の能力を unlock しているだけ」という解釈を delta vs fine-tuned のドロップ実験で裏付け、(5) Hugging Face / mergekit / peft で実用採用された Open LLM Leaderboard 1 位モデル supermario_v2 を公開。
@@ -68,6 +68,7 @@
 - DropOnly（rescale なし）: WizardMath-7B で $p=0.5/0.9$ のとき cosine sim 0.85/0.68。DARE は >0.95 を維持（section-4-rescale-operation）。
 - MP + rescale は MP より悪い: $p=0.7$ で AlpacaEval 43.85→10.61、GSM8K 46.70→0.37、HumanEval 21.34→3.05（section-4 MP comparison）。
 - WizardCoder-Python-13B を Llama-2-13b backbone で DARE すると $p=0.1$ で HumanEval/MBPP 63.41/55.4 → 0.0/0.0（section-4 "When Can DARE Be Used?"）。
+- (verified 2026-05-20) supermario_v1 の構成元を「NeuralBeagle14-7B / Beagle14-7B」から「NeuralBeagle14-7B / Turdus（共に Beagle14-7B 派生）」に訂正。Beagle14-7B は Turdus の Leaderboard 結果欠落のため Table 2 に代替掲載されているだけで、実際の構成元ではない（根拠: Appendix.tex `section-appendix-details_7b_merged_model_leaderboard`）。
 
 ## Related Papers
 

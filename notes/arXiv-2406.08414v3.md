@@ -56,13 +56,14 @@
 ## Notes / Quotes
 
 - "The best performing of these we call \textit{Discovered Preference Optimization} (DiscoPOP), a novel algorithm that adaptively blends logistic and exponential losses." (abstract)
-- "Surprisingly, the DiscoPOP function has a non-convex segment and negative gradients at the starting point $\rho = 0$. This is potentially helpful for introducing a curriculum or for stochasticity." (§5.1)
-- "LRML struggles to converge when $\beta$ is too low ($\beta \leq 0.01$) or too high ($\beta \geq 2.5$), likely because $\beta \neq 0.05$ was never seen or used during the discovery process." (§5.2 Limitations)
-- "we should constrain the exploring LLM to uphold the $\beta$ multiplication with the input before any other calculations are done with the difference of log-ratios $\rho$." (Appendix D 冒頭)
+- "Surprisingly, the DiscoPOP function has a non-convex segment and negative gradients at the starting point $\rho = 0$. This is potentially helpful for introducing a curriculum or for stochasticity." (§6.1 Log Ratio Modulated Loss (DiscoPOP))
+- "LRML struggles to converge when $\beta$ is too low ($\beta \leq 0.01$) or too high ($\beta \geq 2.5$), likely because $\beta \neq 0.05$ was never seen or used during the discovery process." (§6.2 Limitations of DiscoPOP)
+- "we should constrain the exploring LLM to uphold the $\beta$ multiplication with the input before any other calculations are done with the difference of log-ratios $\rho$." (Appendix E Discovered Objective Functions 冒頭)
 - "After evaluating approximately $100$ objective functions, we catalogued the best-performing ones in Table 1." (§4.2)
 - システムプロンプトは "You are a machine learning researcher who is testing out different RLHF loss functions. ... You are deeply familiar with binary classification losses from the literature. Be creative and reference prior literature when possible." (Appendix A)
-- Robustness ablation (Appendix C-fig:vlm_discovery): sampling temperature {0.1, 0.5, 1.0}・top-K context・thought/error message の有無に対して CIFAR-10 discovery は概ね robust（3 seed 平均）。
-- IMDb local optima 解析: $f_{lrml}(-2.3714)=0.7859$（local min）, $f_{lrml}(1.44012)=0.8783$（local max）、両 optima 間に落ちる訓練 sample は 1.35%、|r_w - r_l| が 0.981 (全体 3.861)。
+- Robustness ablation (Appendix D \"Discovery Robustness with respect to LLM Hyperparameters\", fig:vlm_discovery): sampling temperature {0.1, 0.5, 1.0}・top-K context・thought/error message の有無に対して CIFAR-10 discovery は概ね robust（3 seed 平均）。
+- IMDb local optima 解析: $f_{lrml}(-2.3714)=0.785929$（local min）, $f_{lrml}(1.44012)=0.87829$（local max）、両 optima 間に落ちる訓練 sample は 1.35%、|r_w - r_l| が 0.981 (全体 3.861)。
+- (verified 2026-05-20) Notes/Quotes 内のセクション参照を修正: §5.1→§6.1, §5.2→§6.2 (Analysis of DiscoPOP は §6), Appendix D→Appendix E (Discovered Objective Functions), robustness ablation の場所を Appendix D の subsection に訂正 (根拠: DiscoveredPreferenceOptimization.tex L528, L559, L873, L940, L956)。
 
 ## Related Papers
 

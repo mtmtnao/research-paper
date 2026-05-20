@@ -21,7 +21,7 @@
   - **Position-wise FFN**: $\mathrm{FFN}(x)=\max(0,xW_1+b_1)W_2+b_2$、$d_{\text{model}}=512$, $d_{ff}=2048$。
   - **Positional Encoding**: 学習なしの正弦/余弦 $PE_{(pos,2i)}=\sin(pos/10000^{2i/d_{\text{model}}})$、$PE_{(pos,2i+1)}=\cos(\cdot)$。任意のオフセット $k$ に対し $PE_{pos+k}$ を $PE_{pos}$ の線形関数で表せるので相対位置学習に有利と仮説。学習済み positional embedding と「ほぼ同性能」（Table 2 行 E）だが、訓練時より長い系列への外挿を期待して sinusoidal を採用。
   - 入出力 embedding と pre-softmax 線形層は重み共有、embedding は $\sqrt{d_{\text{model}}}$ 倍する。
-- **結果**: WMT 2014 EN-DE で **Transformer (big) 28.4 BLEU**（既存 best ensemble +2.0 BLEU 超）、base でも **27.3 BLEU** で過去の全 single/ensemble モデルを上回り、訓練 FLOPs は $3.3\times10^{18}$ と ConvS2S の 1/3 以下。WMT 2014 EN-FR は **big 41.8 BLEU** で新 single-model SOTA、訓練は 8 GPU × 3.5 日（base は 12 時間）。汎化検証として WSJ 英語句構造解析で **WSJ-only 4 層 Transformer が F1=91.3**（RNNG 91.7 に次ぐ）、semi-supervised で **F1=92.7** と多くの先行を上回る（task-specific tuning ほぼなし）。Self-Attention 層は計算量 $O(n^2 d)$ で並列演算は $O(1)$, 最大経路長 $O(1)$、recurrent の $O(n)$、conv の $O(\log_k n)$ と比較して長距離依存に有利（Table 1）。
+- **結果**: WMT 2014 EN-DE で **Transformer (big) 28.4 BLEU**（既存 best ensemble +2.0 BLEU 超）、base でも **27.3 BLEU** で過去の全 single/ensemble モデルを上回り、訓練 FLOPs は $3.3\times10^{18}$ と ConvS2S ($9.6\times10^{18}$) の約 1/3。WMT 2014 EN-FR は **big 41.8 BLEU** で新 single-model SOTA、訓練は 8 GPU × 3.5 日（base は 12 時間）。汎化検証として WSJ 英語句構造解析で **WSJ-only 4 層 Transformer が F1=91.3**（RNNG 91.7 に次ぐ）、semi-supervised で **F1=92.7** と多くの先行を上回る（task-specific tuning ほぼなし）。Self-Attention 層は計算量 $O(n^2 d)$ で並列演算は $O(1)$, 最大経路長 $O(1)$、recurrent の $O(n)$、conv の $O(\log_k n)$ と比較して長距離依存に有利（Table 1）。
 - **貢献**: (1) RNN/CNN なしで self-attention のみで構築された初の系列変換モデル、(2) WMT'14 EN-DE/EN-FR で訓練コスト激減しつつ SOTA、(3) multi-head + scaled dot-product + sinusoidal PE のレシピを提示、(4) attention 層・head 数・$d_k$・dropout・PE の網羅的アブレーション（Table 2）、(5) 翻訳以外（英語句構造解析）への直接転用で汎用性を示した。
 
 ## Takeaway（自分にとっての要点）
@@ -40,7 +40,7 @@
 
 - **強み**:
   - 「並列化」「経路長」「層あたり計算量」という 3 軸での recurrent / conv / self-attention 比較表（Table 1）が極めてクリアで、後続研究の議論の土台になっている。
-  - SOTA 取得と訓練コスト削減の両立。EN-DE で best ensemble を ensembe なしで超え、FLOPs は ConvS2S の 1/3 弱（base $3.3\times10^{18}$ vs ConvS2S $9.6\times10^{18}$）。
+  - SOTA 取得と訓練コスト削減の両立。EN-DE で best ensemble を ensembe なしで超え、FLOPs は ConvS2S の約 1/3（base $3.3\times10^{18}$ vs ConvS2S $9.6\times10^{18}$）。
   - アブレーション（Table 2）が広く、head 数 / $d_k$ / 層数 $N$ / $d_{\text{model}}$ / $d_{ff}$ / dropout / label smoothing / PE の各軸を 1 個ずつ動かしていて読みやすい。
   - 翻訳から離れた句構造解析でも task-specific tuning をほぼせずに F1=91.3 を出していて、汎用性の主張が薄っぺらくない。
 - **弱み / 疑問**:
@@ -75,6 +75,7 @@
   - parsing: WSJ Section 23 F1 = 91.3 (WSJ-only) / 92.7 (semi-sup)、4 層 $d_{\text{model}}=1024$
 - 著者が明示している limitation: "self-attention could be restricted to considering only a neighborhood of size $r$ ... We plan to investigate this approach further in future work." (why_self_attention.tex) と Conclusion の "local, restricted attention mechanisms to efficiently handle large inputs and outputs such as images, audio and video" "Making generation less sequential is another research goal."
 - 可視化（visualizations.tex）: layer 5/6 で long-distance dependency（"making ... more difficult"）、anaphora resolution（'its'）、構文構造を捉える head の存在を例示。あくまで qualitative。
+- (verified 2026-05-20) FLOPs 比の記述「ConvS2S の 1/3 以下 / 1/3 弱」を「約 1/3」に修正 (results.tex Table 1: Transformer base $3.3\times10^{18}$ vs ConvS2S $9.6\times10^{18}$、比は約 0.344 で 1/3 より僅かに大きい)。
 
 ## Related Papers
 

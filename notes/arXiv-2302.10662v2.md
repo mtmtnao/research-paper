@@ -63,10 +63,11 @@
 - 証明の鍵: distance-minimizing tree decomposition と "reeling in (the snakes) $a$ and $b$" 操作（Subcase 3.2、Subcase 4.1）。
 - display graph 版で 1 短くできる根拠は、ladder の右端側にも biconnectivity 由来の cycle が "buffer" の役を果たすこと（Fig. `fig:buffercycle`）。
 - Discussion: proof は constructive にできる、各 square に高々 1 chord ある ladder にも proof technique は通る、低 pathwidth 再帰構造への一般化と $O(n^4)$ より速い ladder 検出は open、3 本以上の tree への一般化も open。
+- (verified 2026-05-20) Related Papers の [kelk2017treewidth] のタイトル・著者を訂正 ("A note on convex characters..." → "Treewidth distance on phylogenetic trees" by Kelk, Stamoulis & Wu, TCS 2018) — 根拠: afterALMOB.bbl の \bibitem{kelk2017treewidth}
 
 ## Related Papers
 
-- Kelk & Stamoulis, "A note on convex characters, Fibonacci numbers and exponential-time algorithms" / [kelk2017treewidth]（display graph と treewidth の関係、subtree reduction が treewidth-preserving、common chain の open problem の原典）
+- Kelk, Stamoulis & Wu, "Treewidth distance on phylogenetic trees", Theoretical Computer Science 731, 99–117 (2018) / [kelk2017treewidth]（display graph と treewidth の関係、subtree reduction が treewidth-preserving、common chain の open problem の原典）
 - Bryant & Lagergren [bryant2006compatibility] — display graph の定義と多 tree への拡張。
 - Allen & Steel [AllenSteel2001] — common chain reduction rule の原典。
 - Janssen et al. [janssen2018treewidth], van Iersel et al. [van2022embedding] — display graph の treewidth を使った系統樹間距離計算と Courcelle 定理応用。

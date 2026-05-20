@@ -11,7 +11,7 @@
 
 ## Summary（著者の主張）
 
-- **問題**: LLM agent が長 horizon タスク（dozens〜hundreds of steps）を解く際、interaction history と observation が累積して context が際限なく膨らむ。推論コストが O(n) で増えるだけでなく、無関係情報が混じって意思決定の質も下がる。既存の context compression は (a) 対話 memory（MemGPT 系）、(b) 単一 step の document/RAG 圧縮（Selective Context, LongLLMLingua, recomp）、(c) KV-cache 圧縮（LightThinker）に分かれ、いずれも「multi-step かつ heterogeneous な agent context」には不十分。agent 専用の Mind2Act / openhands-condenser / SWE-agent 系も「naive prompting か narrow domain」止まり。
+- **問題**: LLM agent が長 horizon タスク（dozens〜hundreds of steps）を解く際、interaction history と observation が累積して context が際限なく膨らむ。推論コストが O(n) で増えるだけでなく、無関係情報が混じって意思決定の質も下がる。既存の context compression は (a) 対話 memory（MemGPT 系）、(b) 単一 step の document/RAG 圧縮（Selective Context, LongLLMLingua, recomp）、(c) KV-cache 圧縮（LightThinker）に分かれ、いずれも「multi-step かつ heterogeneous な agent context」には不十分。agent 専用の Mind2Act / ContextualizeWeb / openhands-condenser / SWE-agent 系も「naive prompting か narrow domain」止まり（§2）。
 - **手法**: **Agent Context Optimization (Acon)** — gradient-free な圧縮 guideline（自然言語 prompt）最適化フレームワーク。
   - **2 種類の圧縮**: history compression（$|h_t| > T_{\sf hist}$ のとき適用）と latest observation compression（$|o_t| > T_{\sf obs}$ のとき適用）。直近の (action, observation) pair は常に保持。
   - **目的関数**: $\max_\psi \mathbb{E}[\mathcal{R}(s_T(\psi))] - \lambda\,\mathbb{E}[C(\mathcal{H}'(\psi))]$。reward は sparse・gold 圧縮なし・コストが離散なので RL は高コストかつ高分散。
@@ -19,9 +19,9 @@
   - **Compression maximization step (CO)**: 続けて「圧縮版で成功した task」の trajectory だけ見て「実際にどの情報が使われたか」を analyzer LLM に出させ、$\mathcal{P}^{(1)} \to \mathcal{P}^{(2)}$ にして短さ寄りに refine。
   - **Distillation**: 最適化済み teacher（gpt-4.1）の圧縮出力 $(x,y)$ で student（Qwen3-14B / 8B, Phi-4 等）を SeqKD + LoRA (rank 16, $\alpha$=32, lr $10^{-4}$, 3 epoch) で訓練。inference 時には小さい compressor を agent と切り離して使う。
 - **結果**: agent と compressor 両方に `gpt-4.1` を使った主実験。
-  - **AppWorld test-normal (168 task)**: No compression Acc 56.0 / Peak 9.93k tok。Acon UT 51.2 / 7.17k、Acon UT+CO **56.5** / 7.33k（peak −26%）。FIFO 45.8, Retrieval 27.4, LLMLingua 39.3, Prompting 43.5 を圧倒。特に hard (63 task) で No-comp 39.7 に対し他 baseline は 7.9–23.8 まで崩れる一方 Acon は 28.6–31.8 を維持。
+  - **AppWorld test-normal (168 task)**: No compression Acc 56.0 / Peak 9.93k tok。Acon UT 51.2 / 7.17k、Acon UT+CO **56.5** / 7.33k（peak −26%）。FIFO 45.8, Retrieval 27.4, LLMLingua 39.3, Prompting 43.5 を圧倒。特に hard (63 task) で No-comp 39.7 に対し他 baseline は 7.9–23.8 まで崩れる一方 Acon は history で 28.6–30.2、observation で 27.0–31.8 を維持（Table 1）。
   - **OfficeBench (95 test)**: No-comp 76.84、Acon UT **74.74** / Peak 7.27→4.93k（−32%）。
-  - **8-objective QA (100 test)**: No-comp EM 0.366 / F1 0.488 / Peak 10.35k。Acon UT **EM 0.373 / F1 0.494** / Peak 4.71k（−54.5%）、Dependency 3.32→1.57（−61.5%）。UT のみで no-compression を上回る稀有なケース。
+  - **8-objective QA (100 test)**: No-comp EM 0.366 / F1 0.488 / Peak 10.35k / Dep 3.32。Acon UT (history) **EM 0.373 / F1 0.494** / Peak 4.71k（−54.5%）、Dep 1.57（−52.7%）。UT のみで no-compression を F1 で上回る稀有なケース。なお paper §4.1 本文は「peak −54.5% / dep −61.5%」と書いているが、−61.5% は obs UT 行（3.32→1.28）と数値が一致しており、history UT 行との conflate と推定（要注意）。
   - **Compressor distillation**: gpt-4.1 compressor → Qwen3-14B / 8B / Phi-4 / gpt-4.1-mini に LoRA distill しても teacher の **>95%** を維持。
   - **Small agent benefits**: agent 自体を小モデルにすると効果がさらに大きい。Qwen3-14B が AppWorld 26.8% → 33.9%（+32% rel）、8-obj QA EM 0.158 → 0.197（+46% rel）、OfficeBench +20%。
   - **Optimizer ablation (AppWorld)**: `o3` + contrastive feedback **51.2**、contrastive 抜き 50.6、`gpt-4.1` optimizer 47.6、`gpt-5` 50.6。
@@ -72,6 +72,10 @@
 - Threshold 既定値: $T_{\sf hist}=4096$ (AppWorld/OfficeBench), 2048 (8-obj QA); $T_{\sf obs}=1024$ (AppWorld), 512 (OfficeBench), 400 (8-obj QA)。
 - API 価格: gpt-4.1 = \$3.00 / 1M input, \$0.75 cached, \$12 output（2025 年 9 月時点で計算）。
 - LoRA: rank 16, α=32, lr 1e-4, 3 epoch, batch 4, seq 10k, AdamW + 5% warmup + wd 0.01, 1×A100 80GB。
+- (verified 2026-05-20) 8-obj QA UT 行の dependency 削減率を −61.5% → −52.7% に修正（tables/3_4_officebench_qa.tex, table tab:3_qa_main）。paper §4.1 本文の 61.5% は obs UT 行（1.28）と一致しており、history UT 行（1.57）とは整合しない点を併記。
+- (verified 2026-05-20) AppWorld hard split での Acon の精度範囲を「28.6–31.8」→「history 28.6–30.2 / obs 27.0–31.8」に分けて記述（tables/1_appworld_gpt-4.1.tex）。
+- (verified 2026-05-20) agent-specific compression baselines に ContextualizeWeb を追加（text/2_related_works_v2.tex L13）。
+- (verified 2026-05-20) Threshold / LoRA / API 価格 / Optimizer ablation / Distillation 95% 保持 / 結果数値（AppWorld, OfficeBench, 8-obj QA の主要セル）を text/4_experiments.tex, text/999_appendix.tex, tables/1_appworld_gpt-4.1.tex, tables/3_4_officebench_qa.tex, tables/11_12_one_row.tex で逐一確認、いずれも整合。
 
 ## Related Papers
 

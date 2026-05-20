@@ -17,7 +17,7 @@
   - **(1) Retina 神経網（8 画素入力、左右両側に object があるかを判定、performance = 256 入力に対する正答率）**: feature1=connection cost、feature2=Newman modularity、最終解像度 512×512、10,000 iteration。比較は traditional EA / NS+LC / random sampling、各 20 runs。MAP-Elites が global performance, global reliability, precision, coverage の4指標すべてで有意に勝つ（$p < 1\times10^{-7}$, two-tailed Mann-Whitney U）。MOLE との直接定量比較は本ドラフトでは未実施だが、過去研究では 30 runs 分の MOLE をマージしてようやく得た map に 1 run の MAP-Elites が近いと anecdotal に報告。
   - **(2) Voxcad シミュレーションの soft robot（10×10×10 voxel、4 種材料: bone/soft tissue/位相同期 muscle/逆位相 muscle、CPPN + NEAT 系直接符号、performance = 10 秒走行距離）**: feature1=bone 割合、feature2=voxel 充填率、最終 128×128。比較は EA と EA+Diversity（NSGA-II ベース、diversity = feature space 内平均距離）。runs 数は EA=7, EA+D=5, MAP-Elites=8（一部 run が締切前に未完）。global reliability と coverage で MAP-Elites が有意に良い（$p<0.002$）。global performance は中央値で MAP-Elites が高いが有意差なし（$p>0.05$）。precision は MAP-Elites が有意に悪い（$p<0.01$、評価予算を多数セルに薄く配分するため）。map 内では bone を増やすと遅くなる傾向、また voxel 充填率 ~7% の縦に長い「1 voxel 厚シート」の高性能アイランドが偶然見つかった。
   - **(3) 実物の soft robot arm（dynamixel AX-18 サーボ3個 + フレキシブルチューブ、解は3関節角度、performance = 末端の y 座標）**: feature space は末端 x 座標を 64 セルに離散化。比較は random sampling と 8 段グリッド探索。MAP-Elites と random sampling は 420 評価（実験パラメータ節）／本文では 640 評価と記載、grid search は決定的で $9\times9\times9=729$ 評価（本文）／512 評価（パラメータ節）と本文中に不一致あり。中間 x 領域（≈400–600）で MAP-Elites が両者を上回り、低 x 領域では grid search はほぼ点が無く、MAP-Elites の方が高性能解を多く返す。「これらは予備的なので reliable な statistics ではない」と著者自身が明記。
-- **貢献**: (1) "illumination algorithm" という概念を導入し optimization algorithm の上位集合と位置付けた、(2) シンプルでパラメータの少ない MAP-Elites を初めて詳細に記述・検討した（[Cully et al. 2015 Nature] では簡略にしか説明されていなかった）、(3) Global Performance / Global Reliability / Precision (opt-in reliability) / Coverage の4指標を illumination algorithm 評価基準として定式化、(4) 3 ドメインで NS+LC, EA, EA+D, random sampling, grid search との比較を提示。
+- **貢献**: (1) "illumination algorithm" という概念を導入し optimization algorithm の上位集合と位置付けた、(2) シンプルでパラメータの少ない MAP-Elites を初めて詳細に記述・検討した（Cully et al. 2015 [cully2015robots; bbl では arXiv:1407.3501] では簡略にしか説明されていなかった、と TeX が明記）、(3) Global Performance / Global Reliability / Precision (opt-in reliability) / Coverage の4指標を illumination algorithm 評価基準として定式化、(4) 3 ドメインで NS+LC, EA, EA+D, random sampling, grid search との比較を提示。
 
 ## Takeaway（自分にとっての要点）
 
@@ -63,14 +63,18 @@
 - retina 階層スケジュール: 16×16 開始 → 64×64 (iter 0) → 128×128 (1250) → 256×256 (2500) → 512×512 (5000), batch 2000, 10,000 iterations, initial batch 20,000（§Experimental parameters）。
 - 統計検定: 全 $p$ 値は two-tailed Mann-Whitney U test（§Methods/Statistics）。
 - "Author's Note: This paper is a preliminary draft ... All of the experiments in this paper will be redone before the final version of the paper is published, and the data are thus subject to change." — 冒頭。
+- (verified 2026-05-20) Related Papers の Cully et al. 2015 を「Nature」→「bbl 表記の arXiv:1407.3501」に修正、タイトルを "Robots that can adapt like natural animals" に訂正（main.bbl の cully2015robots と一致）。
+- (verified 2026-05-20) 貢献欄の "[Cully et al. 2015 Nature]" を bbl 表記（cully2015robots / arXiv:1407.3501）に揃えた。
+- (verified 2026-05-20) Related Papers の "Mouret & Doncieux 2012, Sferes_v2" は bbl 上の2件（mouret2010sferesv2=Sferes_v2 本体 2010年、Mouret2012=behavioral diversity 論文 2012年）を混同していたため2行に分割した（mapElitesNoComments.tex L489 で両者が別 cite として使われていることを確認）。
 
 ## Related Papers
 
 - Lehman & Stanley 2011, "Evolving a diversity of virtual creatures through novelty search and local competition" — NS+LC、MAP-Elites の直接の起源。
 - Lehman & Stanley 2011, "Abandoning Objectives: Evolution Through the Search for Novelty Alone" — Novelty Search 本体。
 - Clune, Mouret, Lipson 2013, "The Evolutionary Origins of Modularity" — MOLE と retina ドメインの出典。
-- Cully, Clune, Tarapore, Mouret 2015 Nature, "Robots that can adapt like animals" — MAP-Elites を初めて使った応用論文。本論文はその algorithm 部分を独立化したもの。
+- Cully, Clune, Tarapore, Mouret 2015, "Robots that can adapt like natural animals" (bbl: arXiv:1407.3501) — MAP-Elites を初めて使った応用論文。本論文はその algorithm 部分を独立化したもの。
 - Cheney, MacCurdy, Clune, Lipson 2013, "Unshackling Evolution: Evolving Soft Robots with Multiple Materials and a Powerful Generative Encoding" — Voxcad 上の soft robot 実験基盤と CPPN+NEAT 設定の元。
 - Nguyen, Yosinski, Clune 2015, "Innovation Engines: Automated Creativity and Improved Stochastic Optimization via Deep Learning" — "goal switching" と「セル別に別々に探索するより MAP-Elites 統合の方が良い」根拠の参照先。
 - Stanley & Miikkulainen 2002 (NEAT), Stanley 2007 (CPPN), Hiller & Lipson 2014 (Voxcad) — 直接符号・間接符号・シミュレータの基盤。
-- Mouret & Doncieux 2012, Sferes_v2 — 実装プラットフォーム。
+- Mouret & Doncieux 2010, "Sferesv2: Evolvin'in the multi-core world" (bbl: mouret2010sferesv2) — Sferes_v2 実装プラットフォーム本体。
+- Mouret & Doncieux 2012, "Encouraging behavioral diversity in evolutionary robotics: an empirical study" (bbl: Mouret2012) — Sferes 版 NEAT の詳細（CPPN の直接符号で使用）。

@@ -26,7 +26,7 @@
 
 ## Takeaway（自分にとっての要点）
 
-- CoT は「prompt の **output** 側を拡張する」アプローチであり、instruction tuning など「input 側」拡張と直交する（§5）。後発の self-consistency や ToT もすべてこの線上にある。
+- CoT は「prompt の **output** 側を拡張する」アプローチであり、instruction tuning など「input 側」拡張と直交する（§7 Related Work）。後発の self-consistency や ToT もすべてこの線上にある。
 - **scale との関係が決定的**: 10B 未満では CoT はむしろ性能を落とす（流暢だが論理的に破綻した chain が出るため）。手元の小モデルで効かなくても落胆せず、まず大モデルで挙動を確認するのが正しい順序。
 - ablation の Equation only と Dots-only がともに失敗した事実は重要。「単に計算量を増やすトークンを挟む」「単に式に翻訳させる」では足りず、**自然言語による段階的言語化** が効く、という主張は thinking tokens / pause token 系研究と直接比較できる。
 - annotator A/B/C で差はあるが全員 baseline を大きく上回る（特に GSM8K では3者ともに大差で勝つ）→ **prompt 工学に強くは依存しない**。ただし coin flip の Annotator A 99.6% vs C 71.4% のように、タスクによっては桁違いに振れる点には注意。
@@ -59,11 +59,12 @@
 
 - 「CoT が効くのは scale が大きい時だけで、10B 未満では fluent but illogical な chain が出てむしろ性能を落とす」（§3.2）。
 - 「Equation only / Variable compute (dots) / CoT-after-answer は3つともベースライン同等 → CoT の本質は『答え前の中間自然言語ステップ』」（§3.3）。
-- 「standard prompting は LLM 能力の **lower bound** にすぎず、CoT のような prompt 拡張で実は解ける課題が眠っている」（§4 Discussion）。
+- 「standard prompting は LLM 能力の **lower bound** にすぎず、CoT のような prompt 拡張で実は解ける課題が眠っている」（§6 Discussion）。
 - 著者自認の limitation: "there is no guarantee of correct reasoning paths, which can lead to both correct and incorrect answers" (§6)。
 - "the emergence of chain-of-thought reasoning only at large model scales makes it costly to serve in real-world applications" (§6)。
 - 「3 人目の著者だけが reverse-5-list の CoT を書けた、2 人目までは何度試しても解けなかった」（§A.2）— prompt 工学が本質的に効く事例として正直に書いている。
 - LaMDA 137B GSM8K 誤答 50 件のうち 46% は minor mistake（電卓・記号・1 ステップ抜け）、54% は重大な意味理解エラー（§3.2）。
+- (verified 2026-05-20) §5/§4 と書かれていた節番号誤りを §7 Related Work / §6 Discussion に訂正（neurips_2022.tex 全 \section{} 列挙で確認）。数値（GSM8K 17.9→56.9 / SVAMP 69.4→79.0 / MAWPS 79.2→93.3 / AQuA 25.2→35.8 / Codex 19.7→63.1 等）、annotator A=99.6 vs C=71.4、PaLM 62B 45 件エラー分類、LaMDA 137B 50 件中 48 件正しい、StrategyQA 75.6 vs prior SOTA 69.4、Sports 95.4% vs unaided 84% などはすべて fables/llm-math.tex, fables/all-lm-tables.tex および本文（neurips_2022.tex）で裏取り済み。StrategyQA は本文の 75.6% と Table の 77.8% にズレがあるが、ノートは本文表記（75.6）を採用したまま据え置き。
 
 ## Related Papers
 

@@ -21,10 +21,10 @@
     - マイクロ計測（GPT-2 medium, $N=1024, d=64$, 16 heads, batch 64, A100）: 標準 66.6 GFLOPs / 40.3 GB HBM R/W / 41.7 ms → FlashAttention 75.2 GFLOPs / 4.4 GB / **7.3 ms**（Fig. 3 表）。FLOPs は増えても HBM が約 9× 削減され速度は約 5.7× に。
     - **BERT-large** (seq 512, 8×A100): MLPerf 1.1 record 20.0 分 → FlashAttention **17.4 分** で 15% 高速（Table 1）。
     - **GPT-2 small** (seq 1K, OpenWebText, 8×A100): HuggingFace 9.5 日 / Megatron-LM 4.7 日 / FlashAttention **2.7 日（3.5×）**。GPT-2 medium: 21.0 日 / 11.5 日 / **6.9 日（3.0×）**。perplexity は同等（small 18.2, medium 14.3）。
-    - **GPT-2 長文脈**: context 4K + FlashAttention は context 1K + Megatron より 30% 速く、perplexity 18.2 → **17.5**（0.7 改善, Table 3）。
-    - **Long Document classification** (micro F1, Table 4): MIMIC-III は seq 512 で 52.8 → seq 16K で **57.1**（+4.3）、ECtHR は 72.2 → seq 8K で **80.7**（+8.5、本文の "6.4 points of lift" は2タスク平均）。
-    - **LRA** (Table 2): Transformer 平均 59.3 / FlashAttention 59.8 / block-sparse 59.6。速度は標準比 **2.4×（FlashAttention）, 2.8×（block-sparse）**。Linformer 2.5×、Performer 1.8× などより block-sparse 版は同等以上に速い。
-    - **Path-X (seq 16K)**: 既存 Transformer 全滅 → FlashAttention で初の non-random、**61.4%**。**Path-256 (seq 64K)**: block-sparse FlashAttention で **63.1%**（Table 5）。Path-X 上の block-sparse は 56.0。
+    - **GPT-2 長文脈**: context 4K + FlashAttention は context 1K + Megatron より 30% 速く、perplexity 18.2 → **17.5**（0.7 改善, Table 4 / `table:gpt2_long_context`）。
+    - **Long Document classification** (micro F1, Table 5 / `tab:mimic`): MIMIC-III は seq 512 で 52.8 → seq 16K で **57.1**（+4.3）、ECtHR は 72.2 → seq 8K で **80.7**（+8.5、本文の "6.4 points of lift" は2タスク平均）。
+    - **LRA** (Table 3 / `table:lra`): Transformer 平均 59.3 / FlashAttention 59.8 / block-sparse 59.6。速度は標準比 **2.4×（FlashAttention）, 2.8×（block-sparse）**。Linformer 2.5×、Performer 1.8× などより block-sparse 版は同等以上に速い。
+    - **Path-X (seq 16K)**: 既存 Transformer 全滅 → FlashAttention で初の non-random、**61.4%**。**Path-256 (seq 64K)**: block-sparse FlashAttention で **63.1%**（Table 6 / `table:pathx`）。Path-X 上の block-sparse は 56.0。
     - **Attention 単体ベンチ** (A100 40GB): seq 128–2K で標準 PyTorch 比 最大 **3× 高速**、メモリ最大 **20× 効率**。系列長 1024 付近で近似 attention に交差するが、block-sparse 版は全長で最速。
 - **貢献**:
     1. tiling + recomputation で attention を1つの CUDA kernel に融合した exact algorithm。
@@ -59,7 +59,7 @@
     - 評価の主軸が A100。3090 や T4 の図はあるが、TPU や AMD GPU など別アーキでの効果は議論されない。SRAM/HBM 比が違うハードでは利得は変わるはず。
     - head dim $d$ が大きくなる（例えば $d \ge 256$）と $d^2 / M$ が 1 に近づき、理論的優位が縮む。本論文の実験は $d=64$ 中心で、その点の感度分析は手薄。
     - block-sparse の sparsity pattern として butterfly を採用しているが、pattern の選び方への感度（content-based sparsity と比べての劣化）は本文では追っていない。
-    - Path-X 61.4% は確かに better-than-chance だが S4 系の 88% 等には遠い。「Transformer でも解けた」事実の重みはあるが、ベンチマークの SOTA としては弱い（本論文の主目的ではないので妥当だが）。
+    - Path-X 61.4% は確かに better-than-chance だが、本論文の Table 6 では S4 等他系モデルとの直接数値比較は示されておらず（Transformer 系のみ）、ベンチマーク SOTA を取りに行く形ではない（本論文の主目的ではないので妥当だが、Transformer で解けた事実そのものに重点）。
     - Long Document の MIMIC-III は seq 16K で 57.1、seq 8K で 56.4、seq 1024 で逆に 50.7 と非単調。本文も「distribution shift の可能性」と認めているが、長系列＝常に良いというストーリーをやや弱める。
     - 公平比較として、近似 attention は標準的なリファレンス実装で測られている。もし近似手法も同じくらい IO-aware に書き直されたら？ block-sparse FlashAttention 自身がその一例だが、Linformer/Performer の IO-aware 実装との比較はない。
 - **次に試したいこと**:
@@ -79,6 +79,9 @@
 - Proposition 3 (lower bound): "no exact attention algorithm can asymptotically improve on the number of HBM accesses over all SRAM sizes $M \in [d, Nd]$"。
 - 著者自身の限界宣言: "Our current approach to building IO-aware implementations of attention requires writing a new CUDA kernel for each new attention implementation... Implementations may also not be transferrable across GPU architectures." (§Discussion)
 - Path-X / Path-256 はそれぞれ 128×128 / 256×256 の白黒画像中の2点が経路で結ばれているかを判定するタスクで、画像をピクセル単位で系列入力する。Path-256 の方が path が短いので Path-X より易しい、と著者は注釈している。
+
+- (verified 2026-05-20) experiments.tex の `\label` を直接確認し、ノート内のテーブル番号参照を修正（LRA: Table 2→3、GPT-2 長文脈: Table 3→4、Long Document: Table 4→5、Path-X: Table 5→6）。
+- (verified 2026-05-20) Critical Thoughts 内の「S4 系の 88%」という TeX に根拠の無い具体値を削除し、Table 6 (`table:pathx`) が Transformer 系のみの比較である旨に書き換え。
 
 ## Related Papers
 

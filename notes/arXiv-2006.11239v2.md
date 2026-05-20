@@ -20,8 +20,8 @@
   - アーキテクチャは PixelCNN++ ベースの U-Net + group normalization、Transformer sinusoidal 位置埋め込みで時刻 $t$ を全層に注入、$16\times16$ 解像度で self-attention。$T=1000$、$\beta_t$ は $10^{-4}\to0.02$ の線形スケジュール、データは $[-1,1]$ にスケーリング、$L_0$ は離散デコーダで処理。
 - **結果**:
   - **CIFAR10 unconditional**: IS $9.46\pm0.11$、**FID $3.17$（test set FID は $5.24$）**、NLL $\leq 3.75$ test (3.72 train)。当時の class-conditional 含む大半のモデルを上回り、unconditional では StyleGAN2+ADA (FID 3.26) と並ぶ。
-  - **LSUN $256^2$** (Table lsun_fid): Bedroom FID **4.90**（large, 256M params） / 6.36（114M）、Church **7.89**、Cat **19.75**。ProgressiveGAN 同等〜及ばず、StyleGAN2 にはやや劣る。
-  - **CelebA-HQ $256\times256$**: ProgressiveGAN 同等の品質を主張（定量比較は本文中に明示なし）。
+  - **LSUN $256^2$** (Table lsun_fid): Bedroom FID **4.90**（large, 256M params） / 6.36（114M）、Church **7.89**、Cat **19.75**。abstract で "sample quality similar to ProgressiveGAN" と総括（Bedroom/Cat は PGAN を上回り、Church は 7.89 vs 6.42 で僅かに下回る）。StyleGAN2 (Church 3.86, Cat 6.93) には劣る。
+  - **CelebA-HQ $256\times256$**: 図 (Fig. 1, Appendix) で定性サンプルを提示。本文中に定量 FID 比較は無い。
   - **Loss ablation (Table 2)**: $\tilde\bmu$-pred + $L$(fixed iso $\Sigma$) は FID 13.22、$\bepsilon$-pred + $L$ は 13.51 で同等。だが $\bepsilon$-pred + $L_\mathrm{simple}$ で 3.17 と一気に改善。$\tilde\bmu$-pred + MSE と learned diagonal $\bSigma$ は学習不安定で "blank"。
   - **Rate-distortion 解析**: CIFAR10 で rate 1.78 bits/dim + distortion 1.97 bits/dim (RMSE 0.95/255)。Lossless codelength の半分以上が知覚不能な細部に費やされている。
   - **Progressive 生成**: $\hat\bx_0$ を時刻ごとに復元すると、大域構造が先、細部が後で出現。
@@ -44,7 +44,7 @@
 ## Critical Thoughts（評価・疑問）
 
 - **強み**:
-  - 「数式上は等価な3つの設計選択（μ pred / ε pred / x0 pred）と重み付き/非加重 ELBO」をきれいに ablation で並べ、経験的最適解 ($\bepsilon$-pred + $L_\mathrm{simple}$) を特定している。後続が follow しやすい良いベースライン。
+  - 「数式上は等価な再パラメータ化（$\tilde\bmu$-pred / $\bepsilon$-pred）と重み付き/非加重 ELBO」を Table 2 で ablation 比較し、経験的最適解 ($\bepsilon$-pred + $L_\mathrm{simple}$) を特定している（$\bx_0$-pred は §3.2 で「early experiments で sample quality が悪かった」と本文中で言及のみ、Table 2 には入っていない）。後続が follow しやすい良いベースライン。
   - score matching, Langevin dynamics, autoregressive decoding, lossy compression という独立した4文脈すべてに diffusion を橋渡しした概念整理が秀逸。
   - 実装公開（github.com/hojonathanho/diffusion）+ 詳細な hyperparameter 開示で再現性が高い。
 - **弱み / 疑問**（著者自身が認めているもの含む）:
@@ -74,6 +74,9 @@
 - Forward posterior: $q(\bx_{t-1}|\bx_t,\bx_0)=\mathcal{N}(\tilde\bmu_t(\bx_t,\bx_0),\tilde\beta_t\bI)$、$\tilde\beta_t=(1-\bar\alpha_{t-1})/(1-\bar\alpha_t)\cdot\beta_t$（式 (6),(7)）。
 - サンプリング1ステップ: $\bx_{t-1}=\frac{1}{\sqrt{\alpha_t}}(\bx_t-\frac{1-\alpha_t}{\sqrt{1-\bar\alpha_t}}\bepsilon_\theta(\bx_t,t))+\sigma_t\bz$（Alg. 2）。
 - $L_T=D_\mathrm{KL}(q(\bx_T|\bx_0)\|\mathcal{N}(0,I))\approx 10^{-5}$ bits/dim と無視可能になるよう $\beta$ を設計（§4 冒頭）。
+- (verified 2026-05-20) Summary 結果欄の "CelebA-HQ で ProgressiveGAN 同等を主張" を削除し、abstract は LSUN についてのみ「ProgressiveGAN と同程度」と述べていることを反映（main.tex abstract, §4.1）。
+- (verified 2026-05-20) LSUN の対 ProgressiveGAN/StyleGAN2 評価を Table lsun_fid の実数値（Bedroom 4.90 vs 8.34, Church 7.89 vs 6.42, Cat 19.75 vs 37.52 / StyleGAN2 Church 3.86, Cat 6.93）に基づき書き直し（main.tex Appendix Table）。
+- (verified 2026-05-20) Critical Thoughts 強み欄の "3つの設計選択 (μ/ε/x0 pred) を ablation" を Table 2 の実際の 2 軸 ($\tilde\bmu$-pred / $\bepsilon$-pred × {L learned Σ, L fixed Σ, L_simple}) に合わせて修正、$\bx_0$-pred は §3.2 で言及のみで Table 2 に含まれていない旨を追記（main.tex §3.2, Table 2）。
 
 ## Related Papers
 

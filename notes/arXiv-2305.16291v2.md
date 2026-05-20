@@ -20,7 +20,7 @@
 - **結果**:
   - **探索**: 160 prompting iterations で 63 unique items を発見、baselines の **3.3×**（Fig. 1 / Fig. main_experiment）。移動距離は **2.3×**。
   - **Tech tree mastery**（Table 1, 3 trials, max 160 iter; 数値は到達 iteration）: Wooden tool で Voyager **6±2 (3/3)** vs AutoGPT 92±72、Stone **11±2 (3/3)** vs 94±72、Iron **21±7 (3/3)** vs 135±103、Diamond は Voyager のみ **102 (1/3)** 到達。ReAct / Reflexion は全段階 0/3。木 15.3×、石 8.5×、鉄 6.4× の高速化。
-  - **Zero-shot generalization**（Table 2, max 50 iter, 新規 world, inventory 空）: Diamond Pickaxe / Golden Sword / Lava Bucket / Compass の 4 タスク全てで Voyager は 3/3 達成（18–21 iter）。baselines は全て 0/3。AutoGPT に Voyager のスキルライブラリを"挿す"だけで 1–2/3 まで上がり、ライブラリが plug-and-play に効くことを示す。
+  - **Zero-shot generalization**（Table 2, max 50 iter, 新規 world, inventory 空）: Diamond Pickaxe / Golden Sword / Lava Bucket / Compass の 4 タスク全てで Voyager は 3/3 達成（18–21 iter）。baselines は全て 0/3。AutoGPT に Voyager のスキルライブラリを"挿す"だけで Diamond Pickaxe / Golden Sword / Compass で 1–2/3 まで上がり（Lava Bucket は 0/3）、ライブラリが plug-and-play に効くことを示す。
   - **Ablation**（Fig. ablation）: random curriculum で item 数 **-93%**、self-verification 削除で **-73%**、code 生成を GPT-3.5 にすると Voyager は **5.7×** 少ない item 数しか得られない。
   - **人間フィードバック**（Fig. human, 視覚補助）: Nether Portal や家など 3D 構造物を、人間が critic / curriculum を肩代わりすれば構築可能。
 - **貢献**: (1) LLM のみで動く初の embodied lifelong learning agent、(2) コードを action space に据えた合成可能・解釈可能スキルライブラリ、(3) 3 種フィードバックを統合する iterative prompting、(4) MineDojo 上で従来 LLM agent / 既存 Minecraft agent を大幅に上回るベンチマーク結果と、新ワールドへの zero-shot 転移の実証。
@@ -72,6 +72,8 @@
 - Broader Impacts: 物理ロボに移す場合は safety 制約を別途人間が入れる必要があると明記
 - 視覚は未対応。Nether Portal や家は人間 critic / human curriculum で代替（experiments §4.5, Fig. human）
 - skill library を AutoGPT に挿すと downstream で成績が上がる → ライブラリが plug-and-play（experiments §4.3, Table 2）
+- (verified 2026-05-20) Table 2 の AutoGPT w/ Skill Library 結果を 0–2/3 と訂正 (Lava Bucket は 0/3、Diamond Pickaxe / Golden Sword は 1/3、Compass は 2/3) (tables/downstream_table.tex)
+- (verified 2026-05-20) Related Papers の Plan4MC を Wang+ 2023 → Yuan+ 2023 に訂正、DEPS = Wang+ 2023 と分離 (ms.bbl, wang2023describe / yuan2023plan4mc)
 
 ## Related Papers
 
@@ -83,5 +85,5 @@
 - DreamCoder (Ellis+ 2020) — プログラム単位での skill 蓄積思想の源流。
 - Inner Monologue (Huang+ 2022) — 環境フィードバックを取り込むロボット計画の先行例。
 - LEVER (Ni+ 2023) / CLAIRIFY (Skreta+ 2023) — 実行結果を使ってコード生成を改善する系統。
-- Plan4MC / DEPS (Wang+ 2023) / Nottingham+ 2023 — Minecraft で LLM を high-level planner に使う近接研究（exploration 自由度の点で Voyager と差別化）。
+- DEPS (Wang+ 2023) / Plan4MC (Yuan+ 2023) / Nottingham+ 2023 — Minecraft で LLM を high-level planner に使う近接研究（exploration 自由度の点で Voyager と差別化）。
 - SPRING (Wu+ 2023) — concurrent work、ゲームマニュアルから機構を抽出する LLM agent。

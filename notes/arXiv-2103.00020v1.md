@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/2103.00020
 - source: ../papers/arXiv-2103.00020v1/
 - authors: Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, Ilya Sutskever (OpenAI)
-- venue / year: ICML 2021 (arXiv 2021-02)
+- venue / year: ICML 2021（TeX は icml2020.sty + `[accepted]` オプション; 会議名 ICML 2021 自体は TeX 中には明示なし）／ arXiv 2021-03
 - tags: [contrastive-learning, vision-language, zero-shot, CLIP, representation-learning]
 - read_date: 2026-05-12
 
@@ -70,6 +70,7 @@
 - FairFace で `child` カテゴリを加えると 0-20 歳の crime/non-human 誤分類が大幅減（Table 8）— class design がバイアスに直接効く実証。
 - CCTV 画像で coarse zero-shot 91.8%、`close' distractor を入れた stress test では 51.1% に低下（§Surveillance）。
 - 8 モデル: RN50, RN101, RN50x4, RN50x16, RN50x64, ViT-B/32, ViT-B/16, ViT-L/14（+ @336px）。
+- (verified 2026-05-20) メタ情報の "arXiv 2021-02" を "arXiv 2021-03" に修正（arXiv ID 2103.00020 が 2021-03 を示す）。venue を ICML 2021 と明示する根拠は TeX 中に直接無いため、その旨を併記（clip_paper.tex L19 `\usepackage[accepted]{icml2020}`）。Summary/Takeaway/Critical Thoughts の数値・固有名詞は clip_paper.tex (abstract, §Approach, §Experiments, §Robustness, §Limitations, §Broader Impacts, Table 1/8, Figure 2/6) で逐一裏取り済み。
 
 ## Related Papers
 

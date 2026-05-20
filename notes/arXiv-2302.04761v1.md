@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/2302.04761
 - source: ../papers/arXiv-2302.04761v1/
 - authors: Timo Schick, Jane Dwivedi-Yu, Roberto Dessì, Roberta Raileanu, Maria Lomeli, Luke Zettlemoyer, Nicola Cancedda, Thomas Scialom (Meta AI Research; † UPF)
-- venue / year: arXiv preprint, 2023（後に NeurIPS 2023 採択）
+- venue / year: arXiv preprint, 2023（TeX 中に venue 明示なし。同梱 .sty は emnlp2021 テンプレ）
 - tags: [tool-use, LLM, self-supervised, finetuning, API-calls]
 - read_date: 2026-05-13
 
@@ -77,7 +77,9 @@
   - prompt sensitivity: 「sensitive to the exact wording of their input when deciding whether or not to call an API」
   - sample inefficiency: 「processing more than a million documents results in only a few thousand examples of useful calls to the calculator API」
   - cost-blind: 「does not take into account the tool-dependent, computational cost incurred from making an API call」
-- 興味深い decoding 観察 (Table 6, $k=1$): T-REx で API call した部分集合 (AC) 53.0 > しなかった部分集合 (NC) 44.3 > 全部禁止 34.9。モデルは「呼べば伸びる例」と「呼ばなくても解ける例」をある程度区別している。
+- 興味深い decoding 観察 (Table~\ref{tab:top-k}, $k=1$): T-REx で API call した部分集合 (AC) 53.0 > しなかった部分集合 (NC) 44.3 > 全部禁止 34.9。モデルは「呼べば伸びる例」と「呼ばなくても解ける例」をある程度区別している。
+
+- (verified 2026-05-20) venue 行から「NeurIPS 2023 採択」を削除（main.tex に venue 言及なし、テンプレ .sty は emnlp2021 残骸）。他の数値・固有名詞・実験結果は main.tex の Table 1〜6・Limitations 節・Appendix で全て裏取り済み。
 
 ## Related Papers
 

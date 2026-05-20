@@ -25,14 +25,14 @@
   - 文脈管理の普遍的恩恵: 5 構成中 4 構成で Observation Masking / LLM-Summary が >50% のコスト削減を達成（残り 1 つは Qwen3-32B thinking で軌跡が短すぎるため）。"任意の管理戦略 > 無管理"。
   - Observation Masking が 5 構成中 4 構成でコスト最安、かつ Qwen3-Coder 480B では solve rate も 53.4 → 54.8% と微増（+2.6%）、コストは $1.29 → $0.61（-52.7% †）。LLM-Summary は 53.8% / $0.64。$0.03/instance の差は 500 件で $15。
   - Gemini 2.5 Flash (no-think): Raw 32.8/$0.41 → ObsMask 35.6/$0.18 (-56.1% †) → LLM 36.0/$0.24 (-41.5% †)。ObsMask の方が安く solve rate もほぼ同等。
-  - Gemini 2.5 Flash (thinking): Raw 40.4 → ObsMask 36.4 (-9.9pp †) → LLM 31.4 (-22.3pp †)。両戦略とも solve rate 有意低下（thinking 中に context を切るのが特に痛い）。
-  - Qwen3-32B (non-thinking): Raw 17.0 → ObsMask 15.0 (-2.0pp, ns) → LLM 16.0 (-1.0pp, ns)。コストは両者 -50%/-55% †。
+  - Gemini 2.5 Flash (thinking): Raw 40.4 → ObsMask 36.4 (-4.0pp / -9.9% †) → LLM 31.4 (-9.0pp / -22.3% †)。両戦略とも solve rate 有意低下（thinking 中に context を切るのが特に痛い）。
+  - Qwen3-32B (non-thinking): Raw 17.0 → ObsMask 15.0 (-2.0pp / -11.8%, ns) → LLM 16.0 (-1.0pp / -5.9%, ns)。コストは両者 -50.9%/-55.4% †。
   - LLM-Summary は Observation Masking を consistent or significant には上回らない。
   - **Trajectory elongation effect** (Fig. trajectory_lengths_boxplots): LLM-Summary は軌跡を伸ばす。Gemini 2.5 Flash で平均 52 ターン（ObsMask 44 比 +15%, Raw 50 比 +4%）、Qwen3-Coder 480B で対 Raw +15% / 対 ObsMask +13%。要約による「整理済み感」がエージェントに継続を促す reinforcing signal になっていると推測。
   - **Summary 生成コスト** (Table summary_instance_costs): summary 呼び出し自体が instance 総額の 0.65–7.20% を占める。要約は毎回ユニークな turn 列を入力するため KV cache hit が効かず、Gemini 等の cache-hit が cache-miss の最大 1/10 価格になる API では特に不利。この生成コストを引くと ObsMask と LLM-Summary の差は大半消える。
   - **Hybrid 戦略** (§5.3, SWE-bench Verified-50, Qwen3-Coder 480B): N=43, M=W=10。ObsMask を warm-up 中に走らせ、N=43 で初めて LLM-Summary を発火（context が Raw の N=21 相当 ~30K tok に達する点で揃える）。コストは ObsMask 比 -7%, LLM-Summary 比 -11%、solve rate は Raw 比 +2.6pp。naïve に N=21,M=W=10 にすると KV cache 効率悪化と要約コスト二重計上で逆に悪化。
   - **OpenHands 汎化** (§5.1): SWE-agent で最適だった M=10 をそのまま使うと OpenHands では大幅劣化。M=58 にチューニングし直すと再現。SWE-agent は syntax retry を履歴から消すが OpenHands は残す等の scaffold 差が原因と推測。
-  - **Critic-enhanced LLM-Summary** (§B.3): 要約に critic 的振り返りを同時生成させても solve rate は改善せず、軌跡延伸を悪化させる。
+  - **Critic-enhanced LLM-Summary** (§D.3, SWE-bench Verified 150 件 / SWE-agent): 要約に critic 的振り返りを同時生成させても solve rate は改善せず、軌跡延伸を悪化させる。
 - **貢献**:
   1. SWE-agent 上で Observation Masking と LLM-Summary を 5 モデル構成 × 500 件で揃えて初の体系比較。
   2. LLM-Summary の trajectory elongation 効果と summary 生成コストの 2 要因に分解し、複雑な要約が必ずしも報われないことを定量的に示した。
@@ -64,7 +64,7 @@
   - "trajectory elongation 自体が原因か、それとも要約品質が悪くて agent が同じ道をやり直すのか" が分離されていない。reasoning trace を要約で潰すと debug ループに陥りやすい可能性。
   - OpenHands 汎化が 50 サンプル × Gemini 2.5 Flash (no-think) のみ。論文中で「scaffold 依存で M を再チューニング必要」と認めている時点で "汎化した" と言い切るのは弱い。
   - Qwen3-32B (non-thinking) では ObsMask の solve rate が 17→15 (-11.8%) と落ちており、cost 削減と引き換えに性能が削れる場合がある。著者は ns と言うが pp で見ると無視できない。どのモデル・どの軌跡長で安全に使えるかの decision rule が欲しい。
-  - Gemini thinking で 22.3pp も solve rate が落ちる現象に対する分析が薄い。"context を切ると thinking が破綻する" 仮説の検証実験 (thinking trace を保護した変種など) は欲しいところ。
+  - Gemini thinking で LLM-Summary が Raw 比 -9.0pp (-22.3%) も solve rate を落とす現象に対する分析が薄い。"context を切ると thinking が破綻する" 仮説の検証実験 (thinking trace を保護した変種など) は欲しいところ。
   - cost は API 価格に強く依存。Alibaba pricing は cache hit/miss を区別しないので Qwen の cost は inflated、Vertex は区別するので Gemini は ObsMask が特に有利になる。"どの戦略が安いか" は pricing scheme に部分依存する。
 - **次に試したいこと**:
   - Adaptive Observation Masking: ファイル編集 action があったらその直前の同ファイル read 観測を優先的に保護、recursive ls などは早めに潰す、というアクションタイプ条件付き window。
@@ -84,7 +84,9 @@
 - Hybrid hyper-param 選び: "we set N=43, because at this number of turns the context accumulated under the Observation Masking regime approximately matches the context accumulated under the Raw Agent at N=21 turns (≈30K tokens)" (§5.3)
 - OpenHands 汎化注意: "If we simply re-use the optimal value from SWE-agent, Observation Masking performance degrades drastically. However, after tuning, we can reproduce our results on this agent scaffold." (§5.1)
 - 著者自身の Limitations: (1) SE 単一ドメイン、(2) 非適応的なヒューリスティック trigger（rolling window は relevance/staleness 無視、LLM-Summary は意味的境界無視）、(3) scaffold 汎化は initial evidence のみ。(§6)
-- Critic-enhanced summary: "no improvement in solve rate over standard LLM-Summary ... critic-enhanced runs producing even longer trajectories than standard summarization" (§B.3)
+- Critic-enhanced summary: "no improvement in solve rate over standard LLM-Summary ... critic-enhanced runs producing even longer trajectories than standard summarization" (§D.3 / Appendix `appendix:ablation:critic`)
+- (verified 2026-05-20) Gemini 2.5 Flash (thinking) と Qwen3-32B (non-thinking) の solve rate 変化を「pp」と「% (相対)」に分解して両方記載 (Table 1 と Table `tab:appendix_pvals_bootstrap` の整合) — 元の "-9.9pp / -22.3pp" は Table 1 の relative % を pp として誤記していた。
+- (verified 2026-05-20) Critic-enhanced LLM-Summary の節番号を §B.3 → §D.3 に訂正（\appendix 後の section ordering: A=Experimental Config, B=Short Trajectories, C=Detailed Main Results, D=Additional Studies。Critic-Enhanced は D.3）。150 サンプルでの実験条件も明記 (neurips_2025.tex `appendix:ablation:critic`)。
 
 ## Related Papers
 

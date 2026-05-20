@@ -17,7 +17,7 @@
   - Selective Copying: S4 単体 18.3% → S6 97.0%、H3 アーキ + S6 99.7%、Mamba+S6 **99.8%**（Table 1）。
   - Induction Heads: 長さ 256 で学習し、$2^{20}=1{,}048{,}576$（4000×）まで完全に外挿。他の方法はいずれも 2× 止まり。
   - Pile での scaling laws (125M〜1.3B): **attention-free モデルとして史上初めて Transformer++（LLaMA レシピ）に匹敵**。文脈長を 2k→8k に伸ばすほど差が広がる。
-  - Zero-shot 8 タスク平均: Mamba-1.4B **59.7** vs Pythia-1.4B 55.2 / RWKV-1.5B 54.3。Mamba-2.8B **63.3** vs Pythia-2.8B 59.1 / RWKV-3B 59.6（≈ Pythia-6.9B 61.7、GPT-J-6B 63.0 とほぼ同水準で、約 2× サイズの Transformer に並ぶ）。Pile ppl も Mamba-2.8B 6.22 < Pythia-2.8B 6.73。
+  - Zero-shot 6 タスク（LAMBADA/HellaSwag/PIQA/Arc-E/Arc-C/WinoGrande）平均: Mamba-1.4B **59.7** vs Pythia-1.4B 55.2 / RWKV-1.5B 54.3。Mamba-2.8B **63.3** vs Pythia-2.8B 59.1 / RWKV-3B 59.6（≈ Pythia-6.9B 61.7、GPT-J-6B 63.0 とほぼ同水準で、約 2× サイズの Transformer に並ぶ）。Pile ppl も Mamba-2.8B 6.22 < Pythia-2.8B 6.73（Table 2）。
   - DNA (HG38): 同精度を Transformer++ / HyenaDNA より **3–4× 少ないパラメータ**で達成。系列長を $2^{10}$→$2^{20}$ まで伸ばすと perplexity が単調改善（HyenaDNA は逆に悪化）。
   - Audio (SC09 speech): Mamba 6.1M で **FID 0.94**（SaShiMi 5.8M の 1.99 から半減以上）、24.3M で FID 0.67、IS 7.33 と SOTA。
   - 効率: SSM scan は 2K 超で FlashAttention-2 より速く、PyTorch 標準 scan より 20–40× 高速。推論スループットは同サイズ Transformer 比 **4–5×**（KV cache が無く batch を大きく取れるため。Mamba-6.9B が Transformer-1.3B より高スループット）。
@@ -28,7 +28,7 @@
 - **「LTI vs データ依存」の本質**: アーキ gating（multiplicative interaction）はチャンネル軸の作用に過ぎず、系列軸の spacing を変えられないので Selective Copying を解けない。系列軸方向の動力学そのものを入力依存にする必要がある——これは LSTM/GRU の gate が本質、という古い直観を SSM の言葉で再定式化したもの。
 - **Δ（discretization step）が gate の正体**: Theorem 3.1 で $g_t = \sigma(\mathrm{Linear}(x_t))$ が出てくる。Ablation でも selective Δ だけで 10.93→9.81 ppl 改善し、$\B,\C$ も足すと 8.71。**Δ こそ最重要パラメータで、$\A$ を selective にする必要は無い**（$\dA=\exp(\Delta \A)$ で Δ 経由になるため）。
 - **状態次元 $N$ を上げるのは selective B,C が前提**: $N=1\to16$ で 9.88→9.81（非選択）vs 9.73→8.71（選択）。+1% のパラメータで 1.0+ ppl 改善。LTI SSM が $N$ を上げても効かないのは「全部覚える」だけで「選んで覚える」になっていないから。
-- **Real-valued がデフォで良い**: 言語/DNA など離散モダリティでは S4D-Real が S4D-Lin（複素）より良い（8.85 vs 9.16）。複素は audio waveform のような連続モダリティで効く（discussion で著者自身が "no free lunch" と認める）。
+- **Real-valued がデフォで良い**: 言語 LM の 350M ablation（Table 7）で S4D-Real ($A_n=-(n+1)$, 8.71) が S4D-Lin ($A_n=-1/2+ni$, 9.16) を上回る。$A_n=-1/2$（Real）は 8.85、ランダム初期化（$A_n\sim\exp\mathcal{N}(0,1)$）も 8.71。複素は audio waveform のような連続モダリティで効く（discussion で著者自身が "No Free Lunch" と認める）。
 - **inference 5× は KV cache フリーの帰結**: 同パラ Transformer よりむしろ少し大きい Mamba（6.9B vs 1.3B）でスループットが上回るというのが効いてくる場面 = 長文・大バッチ・edge inference。
 - **「context が長いほど精度が単調改善する」のは selective モデルに限る**: LTI 系の global convolution は不要な情報を捨てる手段が無いので長文で崩れる、という説明と DNA 実験 ($2^{10}$→$2^{20}$) の単調改善は説得力あり。Filtering Context property を実証している点が重要。
 - **アーキはむしろ簡素化方向**: H3 vs Mamba の差は小さく（8.95 vs 8.69 ppl）、勝因は S6 layer。アーキ凝るより selection を入れる方が効く、という結論は実装労力配分の指針になる。
@@ -41,13 +41,13 @@
   - 言語・DNA・音声の 3 モダリティで一貫して効く汎用 backbone であることを示しており、しかも DNA は great apes 分類で 99% 同一の DNA を分けるという挑戦的タスクを用意している。
   - Theorem 3.1 で gate 機構と SSM 離散化を理論的に接続している点は綺麗。「heuristic gating の原理的基礎が SSM 離散化」という主張は強い。
 - **弱み / 疑問**:
-  - 著者自身が "Scaling" 節で認める通り、評価は最大 1.3B（zero-shot は 2.8B）止まり。Llama-7B/13B/70B、RWKV-7B、RetNet-7B クラスで同等性が保たれるかは未検証。実際 2024 年以降の追試で 3B〜7B では Transformer に対して in-context learning / multi-task で差が出るとの報告もあり、本論文の範囲では断定不能。
+  - 著者自身が "Scaling" 節で認める通り、scaling laws の評価は最大 ≈1.3B、zero-shot は 2.8B 止まり。著者は Llama / RWKV / RetNet が 7B 規模で評価されているのに対し本論文は届いていないと明記しており、7B 以上で同等性が保たれるかは本論文では未検証。
   - "Downstream Affordances" を著者自身が open question として残している: fine-tuning, LoRA, in-context learning, RLHF, quantization 等が Transformer と同じ品質で乗るかは未知。Mamba ベースのチャットモデルが実用足り得るかは別研究待ち。
   - "No Free Lunch" の節で、selection を入れると LTI が得意な連続信号モダリティでむしろ劣化し得ると認めている。実際 audio waveform 実験では「ここだけ complex parameterization に切り替えた」と注記しており、デフォルトレシピが普遍ではない。
   - 推論 5× / 学習 scan 20–40× は印象的だが、ベースラインの中身（attention は FlashAttention-2 と比較、scan は PyTorch 標準と比較）に非対称があり、attention vs Mamba の総合 wall-clock 比較（同パープレに到達するまでの GPU 時間）は本文では示されていない。
   - 長文外挿（Induction Heads が 4000× 通る）は印象的だが、これは語彙 16 のおもちゃタスク。Pile の自然文で 1M token に外挿しても精度が保たれるかの直接実験は無い。
   - Selective Copying の比較表で「H3 + Hyena: 30.1」のような低スコアの存在から、SSM アーキを混ぜれば自動で良くなるわけではなく、結局 inner layer に S6 が乗るかどうかが全てになっている。アーキ研究側からはやや拍子抜けな結論。
-  - Hybrid（attention + Mamba）の比較は付録に追いやられている。実応用では純 Mamba より hybrid の方が良いケースが現実に多いと示唆されており、その分純粋 Mamba 推しの結論は割引が必要。
+  - Hybrid（Mamba block と MLP / MHA の interleave）の ablation は本文では言及されるのみで、結果は付録（sec:exp-details:lm:scaling-ablations）に追いやられている。Hybrid と純 Mamba の優劣の定量比較が本文で見えにくい点は割引材料（純 Mamba 推しか否かは本文だけでは断定できない／評者補足）。
 - **次に試したいこと**:
   - 「Δ が gate である」という Theorem 3.1 を使って、学習済み Mamba 内部で「token ごとの Δ 値」を可視化し、attention map の代替として解釈性研究の材料にできるか試す。
   - Selective B/C/Δ の中で「Δ だけ」「B,C だけ」を切ったときの perplexity gap（10.93→9.81 と 10.93→9.98）を、文脈長を変えて再計測。短文では Δ、長文では B,C が効くという仮説を検証したい。
@@ -69,6 +69,10 @@
 - Ablation: selective Δ単独 9.81、全部 selective 8.71、非選択 10.93。state dim $N=16$ で +1% パラに対し >1.0 ppl 改善（B,C selective のとき）。
 - 著者の認める limitation: scaling は ≤1.3B で未検証、downstream affordances（fine-tune/RLHF 等）は open、continuous モダリティでは LTI の方が良い場合あり（"no free lunch"）。
 - Audio waveform 実験は本論文中で唯一 complex parameterization に切り替えた例（method.tex の Real vs Complex 節と合わせて読む）。
+- (verified 2026-05-20) Zero-shot 平均タスク数を 8→6 に修正（Table 2 で平均対象は LAMBADA acc・HellaSwag・PIQA・Arc-E・Arc-C・WinoGrande の 6 列のみ。Pile/LAMBADA ppl は除外）/ experiments.tex Table 2。
+- (verified 2026-05-20) S4D-Real の値を 8.85→8.71 に修正（method.tex の定義 $A_n=-(n+1)$ + ablations.tex Table 7 の該当行）。8.85 は $A_n=-1/2$（別の実数初期化）。「言語/DNA」→「言語 LM の 350M ablation」に範囲を絞り、DNA で同検証は無いことを反映。
+- (verified 2026-05-20) Hybrid の比較は本文で「付録に存在」と書かれているのみで「純 Mamba より優位」とは論文中で明記されていないため、評者補足の体裁に修正（experiments.tex / ablations.tex §4.6 末尾の言及参照）。
+- (verified 2026-05-20) 「2024 年以降の追試で 7B では差が出るとの報告」という外部主張を削除し、論文の Scaling 節 (discussion.tex) 記述に沿う形に書き直した。
 
 ## Related Papers
 

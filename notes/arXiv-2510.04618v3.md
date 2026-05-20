@@ -26,7 +26,7 @@
   - **金融 (FiNER + Formula, Table 2)**: base 69.1。offline で ACE 81.9 (+12.8、ICL 69.6 / MIPROv2 70.9 / GEPA 72.5 を凌駕)。Formula は 67.5 → **85.5** (+18.0)。online でも ACE +7.5。一方、GT label もなく実行フィードバックも弱い設定では DC も ACE も劣化することがある (FiNER online no-label で ACE -3.4)。
   - **アブレーション (Table 3)**: Reflector 無 / multi-epoch 無 → 55.1、Reflector あり multi-epoch 無 → 56.8、フル ACE → 59.4。online も offline warmup ありで 56.1 → 59.5。
   - **コスト**: AppWorld offline で GEPA に対し adaptation latency **-82.3%** (53,898→9,517 s)、rollout 数 **-75.1%** (1,434→357)。FiNER online で DC に対し latency **-91.5%** (65,104→5,503 s)、token \$ コスト **-83.6%** ($17.7→$2.9)。長い context でも GPT-5.1 では **91.8% が KV cache 再利用**され、billed input token cost は raw 比 -82.6%。
-  - **汎化**: GPT-OSS-120B / GPT-5.1 / Llama-3.3-70B でも一貫してゲイン（5–12 pt）。Llama-70B は相対的に gain が小さく、Reflector 質に依存することを再確認。
+  - **汎化** (appendix §A.1): GPT-OSS-120B では AppWorld 平均 +5.9（offline GT）/+7.6（online no-label）、Finance 平均 +12.1/+8.7。GPT-5.1 では AppWorld +6.0/+11.6、Finance +9.5/+3.8。Llama-3.3-70B-Instruct は FiNER のみ報告で offline +2.4 / online +1.1 と他モデルより小幅（同表）。
 - **貢献**: (1) brevity bias / context collapse を「現象として定式化」し AppWorld の具体的な数値で示した、(2) Generator/Reflector/Curator + delta bullet + grow-and-refine という再利用可能なフレームワーク、(3) agent benchmark で open-source モデル + ACE が GPT-4.1 ベース production agent と並ぶ実証、(4) 実行フィードバックのみでラベルなし自己改善できることを示した、(5) cost / latency が下がる「長い context = 高コスト」ではないという主張（KV cache 観点込み）。
 
 ## Takeaway（自分にとっての要点）
@@ -74,10 +74,12 @@
 - "A limitation of ACE is its reliance on a reasonably strong Reflector: if the Reflector fails to extract meaningful insights from generated traces or outcomes, the constructed context may become noisy or even harmful." (discussion §5)
 - "ACE is most beneficial in settings that demand detailed domain knowledge, complex tool use, or environment-specific strategies that go beyond what is already embedded in model weights or simple system instructions." (discussion §5、ACE 不要なケースの裏返し)
 - 主要ハイパーパラ: Reflector refinement の最大 round = 5、offline epoch 最大 = 5、batch size = 1 (1 sample で 1 delta) (results §4.2)。
+- (verified 2026-05-20) Related Papers の "Suzgun & Krause" は誤り。Dynamic Cheatsheet (arXiv:2504.07952) の著者は Suzgun, Yuksekgonul, Bianchi, Jurafsky, Zou (iclr2026_conference.bib `suzgun2025dynamic` で確認)。本文の `krause2019dynamic` は別論文 (Krause+ "Dynamic Evaluation of Transformer Language Models", 2019) を指す TeX 側の citation バグ。
+- (verified 2026-05-20) Summary の「汎化: 5–12 pt」は Llama-3.3-70B (FiNER +2.4/+1.1) を含めると過大評価。GPT-OSS-120B / GPT-5.1 / Llama-70B それぞれの実測値（extended_results_CR.tex Table 4–7）に置き換えた。Reflector 質依存に関する主張は §5 で一般論として述べられているのみで Llama-70B 個別の解釈は TeX 上に明示なし、削除。
 
 ## Related Papers
 
-- Suzgun & Krause, *Dynamic Cheatsheet* (2025) — ACE が直接の比較対象かつ着想源。rewrite 起因の context collapse を見せるための代表例。
+- Suzgun, Yuksekgonul, Bianchi, Jurafsky & Zou, *Dynamic Cheatsheet* (arXiv:2504.07952, 2025) — ACE が直接の比較対象かつ着想源。rewrite 起因の context collapse を見せるための代表例。
 - Agrawal+ *GEPA* (2025) — reflective prompt evolution + genetic Pareto。brevity bias の代表例として批判される一方、offline の主 baseline。
 - Opsahl-Ong+ *MIPROv2* (2024, DSPy) — 共通 baseline (ベイズ最適化系)。
 - Shinn+ *Reflexion* (2023) / Yuksekgonul+ *TextGrad* (2024) — natural language feedback 系の系譜。
@@ -85,6 +87,6 @@
 - Trivedi+ *AppWorld* (2024) — メイン agent benchmark。
 - Loukas+ *FiNER* (2022) / Wang+ *FinLoRA / Formula* (2025) — 金融 domain benchmark。
 - Wu+ *StreamBench* (2024) / Fansi+ *DDXPlus* (2022) / Li+ *BIRD-SQL* (2023) — 追加ドメイン (医療 / text-to-SQL)。
-- Xu+ *A-MEM* (2025) / Suzgun+ *Dynamic Cheatsheet* — bullet 構造の memory framework として比較。
+- Xu+ *A-Mem* (2025) / Suzgun+ *Dynamic Cheatsheet* — bullet 構造の memory framework として比較。
 - Gim+ 2024 / Yao+ *CacheBlend* 2025 / Liu+ *KIVI* 2024 — KV cache 再利用・圧縮の根拠付け文献。
 - Marreed+ *IBM CUGA* (2025) — leaderboard 比較用の production agent。

@@ -30,7 +30,7 @@
 - **強み**:
   - 黒箱 API のみ・prompt 3 本だけで再現可能。誰でも明日からそのまま使える簡潔さは強い。
   - 7 タスク × 3 モデルの広い grid を一貫した設定（最大 4 iter, T=0.7）で回し、20/21 セルで改善を出した網羅性。
-  - feedback quality と iteration の効果を分離したアブレーション（Table 3, Fig. 4）と、定性分析（失敗 70 事例中 33% が feedback の位置誤り、61% が修正案の誤り、refiner 自体の失敗はわずか 6%）まで踏み込んでいて「どこがボトルネックか」を診断している。
+  - feedback quality と iteration の効果を分離したアブレーション（Table 3, Fig. 4）と、定性分析（Code Opt と GSM8K で合計 70 事例＝成功 35＋失敗 35 を手動確認。失敗 35 例のうち 33% が feedback の位置誤り、61% が修正案の誤り、refiner 自体の失敗はわずか 6%）まで踏み込んでいて「どこがボトルネックか」を診断している。
   - Table 2 の整理が良い: 関連手法（PEER, Self-critique, CodeRL, Self-correction, Reflexion, Augmenter, Re³）と (supervision-free refiner / supervision-free feedback / multi-aspect / iterative) の 4 軸でマトリクス比較し、本研究のニッチを明確化している。
 - **弱み / 疑問**:
   - **計算コストが iter 数で線形に増える**が、Table 1 は base 1 回 vs Self-Refine $\leq$4 回の比較で、同じ token 予算を majority-vote / self-consistency / best-of-k に投じた場合との fair comparison が無い（§Analysis に 1 vs $k=4$ の sampling 比較はあるが、「単一の prompt をそのまま $k$ 回引いた best」を選ぶ簡易設定で、self-consistency 等の正式比較ではない）。
@@ -48,14 +48,17 @@
 
 ## Notes / Quotes
 
-- "the same LLM as the generator, refiner and the feedback provider" (abstract) — 本手法の核となる主張。
+- "a single \llm as the generator, refiner and the feedback provider" (abstract) — 本手法の核となる主張（同一モデルで生成・批評・修正を全て行う）。
 - Algorithm 1: refinement 時に **過去の全 $(y_i, fb_i)$ 履歴**を prompt に concat する設計（Eq. 4）。「同じミスを繰り返さない」ためと著者は説明。長い iter で context が膨らむ点は議論されていない。
 - "we use greedy decoding with a temperature of 0.7" (§Instantiating) — 形式上は矛盾した記述だが原文ママ。実質はサンプリング温度 0.7。
 - ChatGPT の GSM8K feedback の 94% が "everything looks good"（§Results）→ self-feedback の決定的失敗モード。
-- 失敗の内訳（70 事例, §Qualitative Analysis）: feedback の位置誤り 33% / 修正案誤り 61% / refiner の実装ミス 6%。**問題のほぼ 94% が feedback 側**にある。
+- Qualitative Analysis（Code Opt と GSM の計 70 事例＝成功 35＋失敗 35 を手動確認）。失敗 35 例の内訳: feedback の位置誤り 33% / 修正案誤り 61% / refiner の実装ミス 6%。**失敗のほぼ 94% が feedback 側**にある。
 - 成功事例の 33% は「partially incorrect feedback」でも refiner が補正している → refiner には一定の robustness。
 - Table 2: Reflexion は (supervision-free feedback ✓/✗, multi-aspect ✗, iterative ✗) として整理されており、Self-Refine の差別化点は **multi-aspect feedback** と **iterative** の同時達成にあると著者は主張。
 - Vicuna-13B は few-shot prompt のフォーマット追従に失敗し、oracle feedback を与えても refine が機能しない（§Analysis "Does Self-Refine work with weaker models?"）。
+- (verified 2026-05-20) 定性分析の標本数を「失敗 70 事例」→「全 70 事例 = 成功 35＋失敗 35」に訂正。33%/61%/6% は失敗 35 例の内訳である（sections/600_analysis.tex: "We manually analyze 70 samples in total (35 success cases and 35 failure cases)" / "33% of unsuccessful cases ... 61% ... 6%"）。
+- (verified 2026-05-20) abstract 引用を TeX 原文に合わせて "the same LLM" → "a single \llm as the generator, refiner and the feedback provider" に訂正（sections/100_abstract.tex）。
+- (verified 2026-05-20) Table 1 全数値（GPT-4 列および Code Opt/GSM 等）と Table 3 ablation 数値（27.5/26.0/24.8、43.2/31.2/0、56.4/54.0/48.0）は tables/main_results.tex と sections/600_analysis.tex で一致確認。Fig. 4 の +11.3/+6.4/+3.0 も sections/600_analysis.tex で一致。
 
 ## Related Papers
 

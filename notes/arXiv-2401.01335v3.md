@@ -22,7 +22,7 @@
   - HuggingFace Open LLM Leaderboard 平均: 58.14 → 60.80（iter 0, +2.66）→ 62.12（iter 1, +1.32）→ 62.97（iter 2, +0.85）→ 63.16（iter 3, +0.19）。tab:main。
   - 個別: Arc 60.41→65.87、TruthfulQA 43.73→54.90、Winogrande 74.19→73.72、GSM8k 26.76→38.97、HellaSwag 82.85→85.54、MMLU 60.92→59.99。TruthfulQA と GSM8k で +10pt 超。
   - 比較: 62k preference データ（UltraFeedback Binarized, GPT-4 評価）で DPO した zephyr-7b-dpo-full の平均 61.31 を、SPIN は iter 1 時点（62.12）で既に上回る。SPIN iter 3 のあと追加で DPO を回すと 64.05（+0.89）。
-  - MT-Bench: 5.94 → 6.46 → 6.65 → 6.78（iter 2 で vicuna-13b-v1.5 の 6.57 を超える）。Big-Bench Hard 3 タスクと OpenBookQA でも単調改善（致命的劣化なし）。tab:ablation_bbh。
+  - MT-Bench: 5.94 → 6.46 → 6.65 → 6.78（iter 1 時点で既に vicuna-13b-v1.5 の 6.57 を上回る）。Big-Bench Hard 3 タスク (Causal Judgment, Formal Fallacies, Sports Understanding) と OpenBookQA でもベース比で改善し著しい劣化なし（ただし BB-Sports は 96.0→95.2→95.2→94.4、BB-Formal は 49.6→51.6→51.2→51.2 と単調ではない）。tab:ablation_bbh。
   - Ablation: SPIN iter 0 の学習サイズを 14k/26k/50k と振ると単調改善、一方で Ultrachat200k で SFT を 2,3 epoch 続けても +1% も上がらない（fig:training_size）。iter 0 を epoch 数だけ伸ばしても iter 1 の精度には届かない → iterative であることが本質（fig:ablation_epoch）。
 - **貢献**: (1) preference データも reward model も追加人手データも不要で SFT モデルをさらに伸ばせる self-play fine-tuning 法、(2) Theorem 1/2 による収束点の特徴づけ、(3) 50k subset だけで 62k preference 付き DPO に勝てることの実証、(4) SPIN+DPO がスタックできることの実証。
 
@@ -65,6 +65,8 @@
 - Generation/Training time per iter（8×A100 80G, tab:times）: 1.45h 生成 / 4.32h (iter 0) or 8.64h (iter 1–3) 訓練。
 - Limitations (Conclusion): "fixed target data distribution ... inherently imposes a ceiling on the performance"、"considering the resource demands of synthetic data generation, another promising avenue ... is to reduce the volume of required synthetic data"。
 - "while DPO leverages more data from new sources, $\method$ based on the existing SFT data can already achieve comparable average performance to DPO training at iteration 0. From iteration 1, $\method$ even surpasses the performance of DPO" (experiments)。
+- (verified 2026-05-20) MT-Bench で vicuna-13b-v1.5 (6.57) を超えるタイミングを「iter 2」→「iter 1 時点で既に上回る」に修正 (main.tex tab:ablation_bbh で iter 0=6.46, iter 1=6.65, iter 2=6.78)。
+- (verified 2026-05-20) Big-Bench Hard 3 タスクと OpenBookQA を「単調改善」と書いていたが、tab:ablation_bbh の実値で BB-Sports (96.0→95.2→95.2→94.4) と BB-Formal (49.6→51.6→51.2→51.2) は単調でないため、TeX 本文「steady improvement ... with no significant degradation」に沿った表現へ修正。
 
 ## Related Papers
 

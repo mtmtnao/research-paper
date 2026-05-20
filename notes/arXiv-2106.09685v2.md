@@ -2,7 +2,7 @@
 
 - arXiv: https://arxiv.org/abs/2106.09685
 - source: ../papers/arXiv-2106.09685v2/
-- authors: Edward J. Hu*, Yelong Shen*, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen (Microsoft)
+- authors: Edward Hu*, Yelong Shen*, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen (Microsoft Corporation)
 - venue / year: ICLR 2022 (v2)
 - tags: [PEFT, LoRA, low-rank, fine-tuning, LLM, adapter]
 - read_date: 2026-05-12
@@ -17,7 +17,7 @@
 - **結果**:
   - **GPT-3 175B**: trainable params を full FT の 10,000× 削減（350GB→35MB, $r=4$, $W_q/W_v$ のみ）、訓練 VRAM 1.2TB→350GB、訓練スループット 32.5→43.1 tokens/s/V100（25% 高速化）。WikiSQL 73.4 / MNLI-m 91.7 / SAMSum 53.8/29.8/45.9（LoRA 4.7M）で full FT（175,255.8M, 73.8 / 89.5 / 52.0/28.0/44.5）に **同等以上**、PreEmbed・PreLayer・BitFit・Adapter$^H$ をすべて上回る（Table 4）。
   - **RoBERTa**: GLUE 平均で base LoRA 0.3M=87.2（FT 125M=86.4）、large LoRA 0.8M=89.0（FT 355M=88.9）。**DeBERTa XXL** LoRA 4.7M=91.3（FT 1.5B=91.1）（Table 2）。
-  - **GPT-2 M/L (E2E NLG)**: LoRA 0.35M で BLEU 70.4 / NIST 8.85 / METEOR 46.8 / ROUGE-L 71.8 / CIDEr 2.53、FT 354.92M（68.2 / 8.62 / 46.2 / 71.0 / 2.47）と PreLayer 0.35M（69.7 / 8.81 / …）を上回る（Table 3）。
+  - **GPT-2 M (E2E NLG)**: LoRA 0.35M で BLEU 70.4 / NIST 8.85 / METEOR 46.8 / ROUGE-L 71.8 / CIDEr 2.53、FT 354.92M（68.2 / 8.62 / 46.2 / 71.0 / 2.47）と PreLayer 0.35M（69.7 / 8.81 / 46.1 / 71.4 / 2.49）を上回る。GPT-2 L (LoRA 0.77M) も同様に PreLayer 0.77M を 4/5 指標で上回る（Table 3）。
   - **レイテンシ**: GPT-2 medium, batch 1 / seq 128 で Adapter$^H$ は +30.3%, Adapter$^L$ +20.7% の遅延、LoRA は 0%（Table 1）。
   - **rank の効果**: WikiSQL/MultiNLI で $W_q+W_v$ なら **$r=1$ でほぼ最大性能**（WikiSQL 73.4, MNLI 91.3）。$W_q$ 単独だと $r=4$〜8 を要する（Table 6）。
   - **適用先**: 同じ 18M 予算なら $\{W_q,W_v\}$（$r=4$）または $\{W_q,W_k,W_v,W_o\}$（$r=2$）が $W_q$ 単独 $r=8$ より良い → **少ない rank で多くの行列に当てる方が有利**（Table 5）。
@@ -58,7 +58,7 @@
 ## Notes / Quotes
 
 - "we hypothesize that the change in weights during model adaptation also has a low 'intrinsic rank'" (introduction)
-- "introducing \emph{no inference latency} compared to a fully fine-tuned model, by construction" (Sec. 4.1)
+- "introducing \emph{no inference latency} compared to a fully fine-tuned model, by construction" (introduction の advantages 箇条書き)
 - Forward 式: $h = W_0 x + \Delta W x = W_0 x + BAx$（Eq. 3）。$A$: Gaussian, $B$: zero, scale $\alpha/r$。
 - 適用方針: 「自己注意の重みだけに当てて MLP は凍結。simplicity と param-efficiency が理由」(Sec. 4.2)
 - Adapter latency: batch=1, seq=128 で Adapter$^H$ +30.3%, Adapter$^L$ +20.7%（Table 1）
@@ -67,6 +67,9 @@
 - "$\Delta W$ only \emph{amplifies directions that are not emphasized in $W$}" / amplification factor $\approx 21.5$ for $r=4$ (Sec. 7.3)
 - 既知の限界: 同一 forward 内で異なるタスクの $A,B$ を同時に使うのが難しい、適用先の選択がヒューリスティック、MLP/LN/bias は未検証（Sec. 4.2, Sec. 8）
 - 公開実装: https://github.com/microsoft/LoRA
+- (verified 2026-05-20) 著者名 "Edward J. Hu" → "Edward Hu" に修正（iclr2022_conference.tex \author{} に J. なし）
+- (verified 2026-05-20) 引用の出典 "Sec. 4.1" → "introduction" に修正（同一文言は line 123 の Introduction advantages リストにあり、Sec. 4.1 は別文言 "Critically, this guarantees..."）
+- (verified 2026-05-20) "GPT-2 M/L" → "GPT-2 M" に絞り、PreLayer 0.35M の数値（46.1 / 71.4 / 2.49）を Table 3 (expt.tex tab:gpt2_ft_results) から補完。GPT-2 L 側は別行として注記
 
 ## Related Papers
 

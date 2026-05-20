@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/2505.05522
 - source: ../papers/arXiv-2505.05522v4/
 - authors: Luke Darlow, Ciaran Regan, Sebastian Risi, Jeffrey Seely, Llion Jones (Sakana AI; 共著者所属に University of Tsukuba と IT University of Copenhagen)
-- venue / year: NeurIPS 2025 投稿版（`\usepackage[final]{neurips_2025}`、preprint）
+- venue / year: NeurIPS 2025 camera-ready スタイル（main.tex で `\usepackage[final]{neurips_2025}` を選択；TeX コメントによれば [final] は camera-ready 用）
 - tags: [neural-dynamics, recurrence, biologically-inspired, adaptive-compute, interpretability]
 - read_date: 2026-05-12
 
@@ -20,7 +20,7 @@
 - **結果**:
   - **2D maze ($39\times 39$、最大 100 ステップ、位置埋め込みなし)**: CTM ($D{=}2048$, $T{=}75$, $M{=}25$, 32M params) が LSTM (1/2/3 層、$T{=}50$ または $75$、42M〜109M params) と FF baseline (54.8M params) を上回り、訓練ホライズン超え (100 step 以上)・$99\times 99$ への汎化（学習方策の逐次再適用）も成功。
   - **ImageNet-1K**: ResNet-152 backbone + $D{=}4096$, $T{=}50$, $M{=}25$ の CTM で uncropped **top-1 72.47% / top-5 89.89%**（SOTA ねらいではない）。0.8 確信度しきい値で大半のサンプルは 50 tick 中 10 tick 未満で停止可能。calibration plot は強くキャリブレートされる。
-  - **64 長累積 parity**: CTM 75/100 ticks の一部 seed で perfect、LSTM (parameter matched) は不安定。tick 数を増やすと正解できる位置が左→右に伸びる学習動態。例えば 100 tick 版は前から後ろへ attention を走らせる「scan」戦略、75 tick 版は逆向きの「reverse search ≒ planning」戦略を学ぶ（seed 依存）。
+  - **64 長累積 parity**: CTM 75/100 ticks の一部 seed で perfect、LSTM (parameter matched) は不安定。Appendix では 75-tick CTM の 3 seed が大きく異なる解法を学習することが示され、Run 1 は逆順 attention、Run 3 は先頭→末尾の scan、Run 2 は suboptimal 収束（Fig. \ref{fig:appendix/parity/training}, \ref{fig:appendix/parity/attention}）。Appendix の emergent property 節では「perfect に解ける CTM は consistently 先頭→末尾 か逆順 のどちらかの戦略を学ぶ」とまとめられる。本文 Fig. \ref{fig:parity-behaviour} の例 (att_100_200k) は scan 戦略を示す。
   - **CIFAR-10 vs Human (CIFAR-10D/CIFAR-10H)**: CTM は FF/LSTM より calibration が良く、人間より calibrate されている。LSTM は人間と同じ under-confidence。難易度に対する応答が人間に近い。
   - **CIFAR-100 ablation**: 幅 $D$ を増やすほど neuron 同士の cosine 類似度がゼロ寄りになり「多様な dynamics」が出る。tick 数を増やすと「初期と後期」の 2 山の certainty 分布が出現。
   - **Maze ablation ($15\times 15$, 約 9M params, 100k iters)**: 標準 CTM が **solve rate 65.9% / accuracy 94.6%**、NLM なし 35.0%/82.9%、synchronization なし 37.5%/85.1%、LSTM+synchronization 33.8%/82.4%。NLM と synchronization の組合せが鍵。
@@ -46,9 +46,9 @@
   - 「neural dynamics をなぜ・どう使うのか」という問いを、再帰 + neuron 私的 MLP + 同期行列という具体的かつ訓練可能な形に落としきっている。微分可能で gradient-based 学習に乗るので、SNN や Liquid Time-Constant Network に比べて実装・スケールしやすい。
   - 1 つのアーキテクチャでハイパラだけ変えて maze / ImageNet / parity / CIFAR / Q&A / sort / RL を一通り回している breadth は誠実。各タスクで「LSTM/FF baseline と parameter / tick を揃える」配慮もしている。
   - Maze ablation (Tab. \ref{tab:maze_ablation}) が「NLM だけ抜く」「synchronization だけ抜く」「LSTM に synchronization を載せる」の 3 通りを試していて、新規 2 要素が独立に効くというより**組み合わせで効く**ことを示している。これは強い証拠。
-  - Parity で「100 tick は scan / 75 tick は reverse search」のような seed 依存戦略が emerge する観察は interpretability の素材として価値が高い。
+  - Parity で perfect 解に到達した CTM が seed 依存に「先頭→末尾 scan」または「逆順 attention」のいずれかの戦略を学ぶことが示されており（Appendix \ref{app:emergent}）、interpretability の素材として価値が高い。
 - **弱み / 疑問**:
-  - 著者自身が limitations で認めている通り、**ImageNet 72.47% top-1 は ResNet-152 単体 (≈78%) より低い**。「SOTA ねらいではない」と明言しているが、「neural dynamics を入れるとなぜか劣る」のか「ハイパラ未探索」なのかが分離できておらず、計算オーバーヘッド ($T=50$ tick 分) に見合うかの判断材料が足りない。
+  - 著者自身が limitations で「実験は preliminary で SOTA を狙う設計ではない」「breadth 優先のため SOTA 比較の depth が浅い」と認めている。本文では ResNet-152 backbone CTM の uncropped top-1 72.47% / top-5 89.89% のみが報告され、同 backbone を素で使った場合の精度や、ハイパラ未探索による損失と「neural dynamics を入れた効果」を切り分ける比較は提供されていない（評者補足: TeX には ResNet-152 単体の参照精度は記載なし）。
   - **Parity の seed 分散が大きい**: 75 tick / memory 25 の 3 seed のうち 1 つは suboptimal に収束（Fig. \ref{fig:appendix/parity/training}）。「algorithm を学ぶ」と言うわりに学習の安定性が seed gacha なのは弱い。
   - **比較対象が LSTM / FF にほぼ限定**。Universal Transformer / PonderNet / ACT / Looped Transformer / Sparse Universal Transformer / Quiet-STaR との同条件比較は Related Work で参照されるだけで実験はない。adaptive compute と sequential reasoning という同じ土俵の手法と並べないと「CTM の優位」を切り分けにくい。
   - **同期行列 $D\times D$ のサンプリング戦略がタスクごとに違う**（Dense / Semi-dense / Random）が、なぜそうなのかの原理的説明はない。tuning artifact である可能性。
@@ -75,6 +75,10 @@
 - limitations（著者明記）: 内部 sequence による訓練時間増、NLM によるパラメータ増、breadth 優先で SOTA 比較の depth が浅い
 - parity: seed 分散が大きく、3 seed 中 1 seed は suboptimal 収束
 - ImageNet `over-thinking` 例 (Fig. \ref{fig:imagenet-21202}): 正解を通過してから不正解へ漂流
+- (verified 2026-05-20) `venue / year` を「preprint」から「camera-ready スタイル」に修正（main.tex L18 のコメントに [final]=camera-ready とある）
+- (verified 2026-05-20) parity の戦略記述を修正: 「100 tick=scan / 75 tick=reverse」は TeX と不一致。75-tick CTM の 3 seed (Run 1 逆順 / Run 2 suboptimal / Run 3 forward) と emergent property 節「solve した CTM は forward か reverse のいずれかを学ぶ」に基づく記述に置換 (main.tex L1024-1064, L1724-1725)
+- (verified 2026-05-20) Critical Thoughts の「ResNet-152 単体 ≈78%」を削除（TeX に該当数値なし。本文は 72.47/89.89% のみ報告し SOTA を狙わないと明記、main.tex L366, L514）
+- (verified 2026-05-20) Critical Thoughts の「reverse search ≒ planning」表現を削除（TeX で parity の reverse attention を planning と呼ぶ箇所なし）
 
 ## Related Papers
 

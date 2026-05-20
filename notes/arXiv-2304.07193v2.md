@@ -18,11 +18,11 @@
   - **学習効率**: 独自 FlashAttention（head dim 64 倍数を意識し ViT-g は 1536 dim × 24 head, 1.1B params に変更）、sequence packing（large/small crop を連結＋block-diagonal mask）、efficient stochastic depth（drop 率 40% で drop した residual の計算自体を skip）、FSDP で 16GB の 4 replica（student/teacher/AdamW の m, v）を GPU 間 shard、weight は float32 保持・broadcast/grad-reduce は float16。これらで iBOT 実装に対し約 2× 高速・メモリ 1/3。
   - **モデル系列**: ViT-g/14 (1.1B) を本体として学習し、ViT-S/14・B/14・L/14 へ knowledge distillation（同じ loop, frozen ViT-g teacher, mask と stochastic depth を切る、iBOT loss を 2 つの global crop に適用、最終 model は student の EMA）。
 - **結果**（frozen features + linear / kNN / 簡易 decoder）:
-  - **ImageNet-1k linear**: ViT-g/14 で 86.5%（kNN 83.5%）、ReaL 89.6, V2 78.4。OpenCLIP ViT-G/14 86.2 / EVA-CLIP 86.4 を上回り、V2 では EVA-CLIP +1.0%。iBOT ViT-L/16 (82.3%) に対し +4.2%。fine-tune すると 88.5 (224) / 88.9 (448) で、SoTA 91.1 に -2.2%。
+  - **ImageNet-1k linear**: ViT-g/14 で 86.5%（kNN 83.5%）、ReaL 89.6, V2 78.4。OpenCLIP ViT-G/14 86.2 / EVA-CLIP 86.4 を上回り、V2 では EVA-CLIP に対し +1.1%（paper 本文の主張、Table 1 値は 78.4 vs 77.4）。iBOT ViT-L/16 (82.3%) に対し +4.2%。fine-tune すると 88.5 (224) / 88.9 (448) で、SoTA 91.1 に -2.2%。
   - **Robustness**: Im-A 75.9, Im-R 78.8, Im-C 28.2 (↓), Sketch 62.5。iBOT 比で A +29.6%, R +22.1%, Sketch +23.0%（Table 2）。
   - **fine-grained / video**: iNat2018 81.6 (OpenCLIP-G 比 +8.6), iNat2021 85.7 (+9.7), Places205 67.5 (-2.3)。K400 78.4 (+0.1), UCF-101 91.2 (+0.5), SSv2 38.3 (+2.5)。12 タスク SimCLR-bench 平均 92.1（OpenCLIP-G 91.9）。
   - **Instance recognition** (Oxford-Hard mAP): ViT-L/14 で 54.0、SSL より +41, OpenCLIP-G より +34。
-  - **Semantic seg (mIoU)**: ADE20k linear 49.0 / +ms 53.1（SoTA InternImage 62.9）、frozen backbone + ViT-Adapter + Mask2former で ADE20k 60.2 mIoU、Pascal VOC +ms 86.2（SoTA 89.0）。
+  - **Semantic seg (mIoU)**: ADE20k は ViT-g/14 で linear 49.0 / +ms 53.0（ViT-L/14 +ms 53.1 が最高、SoTA InternImage 62.9）、frozen backbone + ViT-Adapter + Mask2former で ADE20k 60.2 mIoU、Pascal VOC ViT-g/14 +ms 86.2（SoTA 89.0）。
   - **Depth (RMSE)**: NYUd DPT 0.279, KITTI DPT 2.11, NYUd→SUN-RGBD zero-shot 0.338。iBOT-L/16 や OpenCLIP-G を大きく上回り、SoTA BinsFormer (0.330) と同等以上。
   - **ablation**: iBOT→DINOv2 で kNN 72.9→82.0, linear 82.3→84.5（Table 1）。KoLeo は Oxford-M で +8（55.6→63.9）、MIM は ADE20k で +2.9 (44.2→47.1)。LVD-142M は INet-22k に対し iNat/Places で勝つが INet-1k は同等。distill した ViT-L は scratch 比 12/12 benchmark で勝つ。
 - **貢献**: (1) SSL のみで fine-tune 不要な汎用 frozen feature を、image 級・pixel 級ともに weakly-supervised SoTA (OpenCLIP/EVA-CLIP) と同等または超える水準まで引き上げた最初の系統。 (2) 自動・メタデータ非依存の image-similarity 駆動 curation pipeline (LVD-142M) を提示。 (3) 1B+ ViT を SSL で安定に学習するための実装スタック（独自 FlashAttention, sequence packing, efficient stochastic depth, FSDP mixed precision）を公開。 (4) ViT-g→ViT-S/B/L の distillation、Sinkhorn-Knopp 中心化、head untie、KoLeo、短期高解像 phase の効果を ablation で示す。 (5) Apache 2.0 でモデルとコードを公開、Dollar Street / Casual Conversations での fairness 分析と carbon コストを開示。
@@ -32,7 +32,7 @@
 - "self-supervised で curated data に scale" すれば、CLIP/EVA-CLIP のようなテキスト監督を使わなくても汎用視覚 backbone が作れる、を初めて系統的に示した。captioning に閉じ込められない pixel-level 情報（深度・instance retrieval）で text-guided model に明確に勝つというのは、SSL の存在意義を再確認させる定量結果。
 - 強い視覚 backbone を作るレシピは「個別の新規 loss」ではなく **データ curation + 既存 SSL 法 (DINO+iBOT+SwAV+KoLeo) の組合せ + 学習スタックの徹底的なエンジニアリング + 大→小への distillation** であって、要素ごとに見ると派手さは無いが組み合わさると iBOT から kNN +9.1 / linear +2.2 という効きをする (Table 1)。
 - LVD-142M は uncurated より良いだけでなく ImageNet-22k より広い domain（iNat, Places）で良い。「curated データを retrieval で疑似的に拡大する」アイデアはテキストの CCNet 系を画像に持ち込んだ形で、再現可能性が高い。
-- 大モデルを scratch から作って小モデルは distill、というレシピは ViT-L で scratch 86.5→distill 86.3（ViT-g 86.5 とほぼ同等）と、計算予算配分の指針として効く。
+- 大モデルを scratch から作って小モデルは distill、というレシピは ViT-L で scratch 84.5 → distill 86.3（ViT-g scratch 86.5 とほぼ同等、Fig 5b）と、計算予算配分の指針として効く。
 - KoLeo は instance retrieval (Oxford-M +8.3) のような近傍検索系で効くが、分類精度は基本据置き。**「特徴を広げる」型の正則化は分類より検索系で意味が出る**という具体例。
 - patch-level 特徴の PCA で、第1成分が前景/背景を分け、以降の成分が「翼」「脚」のような object parts に対応する emerging property。ラベルなしで part-level の対応が出ているのは linear probe 越しの semantic segmentation の強さと整合的。
 - carbon: ViT-g 1 回 = 22k GPU-h = 3.7 tCO₂eq、プロジェクト全体 0.5–1k tCO₂eq ≒ 200k GPU-day。同条件で OpenCLIP-G を再現すると 118.9 MWh（DINOv2-g は 9.7 MWh）と 10× 差。SSL は text encoder を捨てる前提で carbon 上も合理的、という主張。
@@ -72,6 +72,9 @@
 - "an emerging property -- our model was not trained to parse parts of objects." — PCA 第2以降の成分が object parts に対応 (experiments.tex §Qualitative)。
 - "the \OURS{} code runs around 2× faster using only 1/3 of the memory" vs iBOT (approach.tex §Efficient impl)。
 - 高解像 phase は学習末期に短期間 518×518。"training at 416 is approximately 3× more compute-intensive than training at 224" (ablation.tex §Impact of Resolution)。
+- (verified 2026-05-20) V2 vs EVA-CLIP の差を +1.0% → +1.1% に修正（paper 本文の主張、experiments.tex §"How far are we from weakly-supervised models?"）。Table 1 の値 78.4 vs 77.4 = 1.0 と paper claim の 1.1 がズレている旨も明記。
+- (verified 2026-05-20) ADE20k linear 49.0 / +ms 53.1 が ViT-g (49.0) と ViT-L (53.1) を混ぜていたため、ViT-g/14 で linear 49.0 / +ms 53.0、ViT-L/14 +ms 53.1 が最高、と分離（experiments.tex Table tab:semseg）。
+- (verified 2026-05-20) Distill ablation の数値 "ViT-L で scratch 86.5→distill 86.3" を "ViT-L scratch 84.5 → distill 86.3, ViT-g scratch 86.5" に修正（ablation.tex Fig 5b distillation table）。
 
 ## Related Papers
 

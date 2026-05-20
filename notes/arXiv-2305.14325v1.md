@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/2305.14325
 - source: ../papers/arXiv-2305.14325v1/
 - authors: Yilun Du, Shuang Li, Antonio Torralba, Joshua B. Tenenbaum, Igor Mordatch
-- venue / year: NeurIPS 2023 (preprint)
+- venue / year: arXiv 2023-05（TeX は neurips_2023.sty 同梱／実掲載先は TeX 中には明示なし）
 - tags: [multi-agent, LLM, reasoning, factuality]
 - read_date: 2026-05-12
 - rating:
@@ -14,7 +14,7 @@
 
 - **問題**: LLM は単体で推論・事実応答をすると自信ありげに hallucination を起こす。CoT・self-consistency・reflection 等の既存手法はいずれも「単一モデル内部」の改善に閉じている。
 - **手法**: 複数の LLM インスタンスを agent として並行に走らせ、各 agent が他 agent の回答を context に受け取って自分の回答を更新する「debate」を複数 round 繰り返す（"society of minds" 風）。黒箱 API のみで動作し、prompt は全タスク共通。CoT 等とも直交して併用可能。consensus prompt の「頑固さ」で収束速度を制御できる。
-- **結果**: 3 agent × 2 round 設定で、Arithmetic 67.0→81.8、GSM8K 77.0→85.0、Chess Δpawn 91.4→122.9（reasoning, Table 1）、Biographies 66.0→73.8、MMLU 63.9→71.1、Chess move validity 29.3→45.2（factuality, Table 2）。Single agent / reflection / majority voting をすべて上回る。agent 数・round 数を増やすと単調に改善（Arithmetic では round 4 で頭打ち）。chatGPT × Bard の異種混合 debate でも両者単独より良い（GSM8K 20問で 11/14→17）。
+- **結果**: 3 agent × 2 round 設定で、Arithmetic 67.0→81.8、GSM8K 77.0→85.0、Chess Δpawn 91.4→122.9（reasoning, Table 1）、Biographies 66.0→73.8、MMLU 63.9→71.1、Chess move validity 29.3→45.2（factuality, Table 2）。reasoning では Single agent / reflection / majority voting を上回り、factuality では Single agent / reflection を上回る（factuality では「個別応答が比較不能」として majority voting は baseline から除外）。agent 数・round 数を増やすと単調に改善（Arithmetic では round 4 で頭打ち）。chatGPT × Bard の異種混合 debate でも両者単独より良い（GSM8K 20問で 11/14→17）。
 - **貢献**: (1) 黒箱 LLM だけで使える multi-agent debate 法、(2) 524 人の計算機科学者経歴を使った新規 factuality ベンチマーク、(3) agent 数・round 数・prompt の "stubbornness"・summarization・persona 初期化・異種モデル混合の網羅的アブレーション。
 
 ## Takeaway（自分にとっての要点）

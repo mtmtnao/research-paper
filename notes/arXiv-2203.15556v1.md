@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/2203.15556
 - source: ../papers/arXiv-2203.15556v1/
 - authors: Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, Tom Hennigan, Eric Noland, Katie Millican, George van den Driessche, Bogdan Damoc, Aurelia Guy, Simon Osindero, Karen Simonyan, Erich Elsen, Jack W. Rae, Oriol Vinyals, Laurent Sifre (DeepMind)
-- venue / year: arXiv preprint 2022 (後に NeurIPS 2022)
+- venue / year: arXiv preprint 2022（TeX は deepmind.cls 同梱で投稿先の明示なし）
 - tags: [scaling-laws, LLM, compute-optimal, pretraining, Chinchilla]
 - read_date: 2026-05-12
 - rating:
@@ -42,7 +42,7 @@
 - **3 手法独立で同じ指数に収束**という構成が決定打。1 手法だと「フィットの恣意性」を疑われるが、Approach 1 (envelope) / 2 (IsoFLOP) / 3 (parametric) は使うデータも仮定もずれていて、それでも $a \approx 0.5$ に揃ったのは強い。
 - **Kaplan+ 2020 の指数のずれは LR スケジュール起因**という診断が重要。「短い実験で長い訓練を予測するなら、LR を実際の訓練 horizon に合わせて減衰させる」というメタ教訓は scaling 研究全般に効く。Fig fig:cosine の 25% 超過で性能崩れる、というのは実験設計の標準にすべき。
 - パラメトリックフィットの $\alpha=0.34, \beta=0.28$ はどちらも理論下限の 0.5 を下回る → 「現在の Transformer + AdamW はパラメータ効率・データ効率ともに最適でない」という診断にもなっており、アーキ・最適化器側の改善余地を示唆。
-- **「データを増やせ」の系として、データ品質と train-test contamination がボトルネックになる**ことを著者自身が明記。1T tokens 級ではプライバシー・有害性も増す。Chinchilla の MMLU 圧勝の一部はデータ被りかもしれない、と自分でも認めている（"some caution is needed ... train/test set leakage may artificially enhance the results"）。
+- **「データを増やせ」の系として、データ品質と train-test contamination がボトルネックになる**ことを著者自身が明記。1T tokens 級ではプライバシー・有害性も増す。ただし leakage 警告は Pile/WikiText 等の **言語モデリングベンチマーク** に対するもので、著者は MMLU/BIG-bench/closed-book QA/common sense は「leakage が less of a concern」として強調軸に置いている（line 506-507）。
 - **Chinchilla アーキ細部**: AdamW で +α、SentencePiece の NFKC 無効化で数学・化学の表現が改善（94.15% は Gopher トークナイザと共通）、bfloat16 fwd/bwd + float32 optimizer state。実用上の細かい教訓が transferable。
 - 外挿表は実務的に有用: 「自社で $X$ FLOPs ある → どのサイズで何トークン回すべきか」が一発で引ける（ただし extrapolation の不確実性は著者自身が認めている）。
 
@@ -82,6 +82,7 @@
 - Chinchilla 70B vs Gopher 280B: 80 layers, 64 heads (vs Gopher 128 heads), d_model 8,192 (vs 16,384), max LR $1\times10^{-4}$ (vs $4\times10^{-5}$), batch size 1.5M→3M tokens。
 - 外挿の極端例: 1T パラメータの compute-optimal training には 21.2T tokens / $1.27\times10^{26}$ FLOPs（Gopher の 221.3 倍）必要。
 - Chinchilla の MMLU で 90% 超のタスク: high_school_gov_and_politics, international_law, sociology, us_foreign_policy。
+- (verified 2026-05-20) 著者の leakage 警告は LM ベンチ向け (line 506-507)、と Critical Thoughts を訂正。venue 行を "NeurIPS 2022" 断定から TeX 不明記に変更。Related Papers の BIG-bench citation を bbl の "BIG-bench collaboration 2021" に合わせて訂正。根拠: main.tex L506-507, main.bbl L27-30, main.tex \title{...} と clsfile。
 
 ## Related Papers
 
@@ -90,7 +91,7 @@
 - Brown+ 2020, GPT-3 — 175B、300B tokens の代表例。
 - Lieber+ 2021, Jurassic-1; Smith+ 2022, MT-NLG 530B; Thoppilan+ 2022, LaMDA — under-trained の例として参照。
 - Clark+ 2022, "Unified Scaling Laws for Routed LMs" — MoE の scaling、本論文の方法論的隣接。
-- Hendrycks+ 2020, MMLU; Srivastava+ 2022, BIG-bench — 主要評価ベンチマーク。
+- Hendrycks+ 2020, MMLU; BIG-bench collaboration 2021 — 主要評価ベンチマーク。
 - Borgeaud+ 2021, RETRO — retrieval で実効データを増やすという orthogonal アプローチ。
 - Loshchilov & Hutter 2018, AdamW — Chinchilla で採用。
 - Huber 1964; Nocedal 1980 — Approach 3 のフィット（Huber loss + L-BFGS）。

@@ -20,18 +20,18 @@
   - データ依存性（§4.2）: ImageNet 1k だけで pre-train すると ViT-L < ViT-B、ImageNet-21k で同等、JFT-300M で大きく逆転。JFT のランダム部分集合 9M/30M/90M/300M で linear few-shot を比較すると小データでは ViT が ResNet に負け、大データで上回る。ViT-B/32 は 9M で ResNet50 より大きく劣るが 90M+ で逆転、ResNet152x2 vs ViT-L/16 でも同様。
   - Scaling study（§4.3, Fig 5, Table 6）: ViT は ResNet と同精度を **約 2〜4 倍少ない compute** で出す。hybrid は小モデルでは ViT より少し良いが大モデルでは差が消える。ViT は試した範囲（最大 ViT-H/14 4262 exaFLOPs）で飽和していない。
   - 内部可視化（§4.4, Fig 7）: patch embedding の主成分は patch 内構造の基底関数様。学習された位置埋め込みは行列状に近い patch ほど cos 類似度が高く、大 grid では正弦波様パターン。attention distance は浅層から大きく取れるヘッドと局所的なヘッドが共存し、深層では全ヘッドが広く attend。hybrid（ResNet 前置）では浅層の局所 attention が弱まる。
-  - Self-supervision（§4.5, Appx D.3）: BERT 的 masked patch prediction（patch embedding の 50% を [mask]/random/keep の 80/10/10 で破壊、3-bit mean color を予測）で ViT-B/16 を JFT 14 epoch ≒ 1M step で事前学習 → ImageNet 79.9%、from scratch +2% 改善、ただし supervised pre-train より 4% 低い。
-  - ObjectNet（Appx D.7）: ViT-H/14 で top-5 82.1%、top-1 61.7%。
-  - 位置埋め込み（Appx D.4）: 位置情報なし 0.61382、1D 0.64206、2D 0.64001、Rel 0.64032 と「ある/なし」は大差だが種類は誤差程度。
+  - Self-supervision（§4.5, Appx B.1.2）: BERT 的 masked patch prediction（patch embedding の 50% を [mask]/random/keep の 80/10/10 で破壊、3-bit mean color を予測）で ViT-B/16 を JFT 14 epoch ≒ 1M step で事前学習 → ImageNet 79.9%、from scratch +2% 改善、ただし supervised pre-train より 4% 低い。
+  - ObjectNet（Appx D.9）: ViT-H/14 で top-5 82.1%、top-1 61.7%。
+  - 位置埋め込み（Appx D.4, Table 8）: 位置情報なし 0.61382、1D 0.64206、2D 0.64001、Rel 0.64032 と「ある/なし」は大差だが種類は誤差程度。
 - **貢献**: (1) 純 Transformer を画像 patch 列に直接当てる極めてシンプルな ViT を提案し、画像特化の inductive bias をほぼ排しても large-scale pre-train で SOTA CNN（BiT-L, Noisy Student）に並ぶか凌駕することを示した。(2) 必要データ規模を ImageNet / ImageNet-21k / JFT-300M の系列で実証し、「inductive bias の欠如は大規模事前学習で補える」ことを定量化。(3) 同 compute 予算下で ViT は ResNet/hybrid に対して優位（2〜4× 効率）。(4) attention distance や position embedding の解析、masked patch prediction の予備実験を含む網羅的アブレーション。
 
 ## Takeaway（自分にとっての要点）
 
 - 「データを増やせば inductive bias は要らない」というメッセージが定量的に効いているのは **JFT-300M のような 300M 級** から。ImageNet-1k 単独では Large が Base に負ける（Table 5: ImageNet pretrain で ViT-L/16 76.53 < ViT-B/16 77.91）ので、データ規模を見ずに「ViT は ResNet より強い」と一般化してはダメ。
-- 計算コスト面の強みは精度より大きい（同精度を 2〜4× 少ない FLOPs で）。Fig 8（Appx）が示すように ViT は ResNet より per-core batch size が大きく取れる＝メモリ効率も良い。実装の単純さと相まって、production 投入のハードルが低い。
-- 位置情報の入れ方は本質ではなく「ある/なし」が支配的（Table 7）。patch 単位だと空間解像度が 14×14 程度なので、どう符号化しても学習可能、という説明は他の patch 系手法を設計する際の指針になる。
+- 計算コスト面の強みは精度より大きい（同精度を 2〜4× 少ない FLOPs で）。Appx D.5（fig:real_time, right）が示すように ViT は ResNet より per-core batch size が大きく取れる＝メモリ効率も良い。実装の単純さと相まって、production 投入のハードルが低い。
+- 位置情報の入れ方は本質ではなく「ある/なし」が支配的（Table 8, Appx D.4）。patch 単位だと空間解像度が 14×14 程度なので、どう符号化しても学習可能、という説明は他の patch 系手法を設計する際の指針になる。
 - hybrid（ResNet stem + ViT）が小モデルで勝つが大モデルで差が消える、という観察は「畳み込みは optimization の初期化を助けるが ceiling を上げない」と読める。小データ向けには hybrid、大データ向けには pure ViT、という使い分けの根拠。
-- `[class]` token vs GAP head は学習率を別にすれば同等（Appx D.2）。実装上は GAP の方が NLP 由来要素を減らせて素直、という選択肢が残る。
+- `[class]` token vs GAP head は学習率を別にすれば同等（Appx D.3）。実装上は GAP の方が NLP 由来要素を減らせて素直、という選択肢が残る。
 - masked patch prediction の 79.9% は contrastive 系（後の MoCo-v3 / DINO / MAE 等）と比べる出発点。論文自身が contrastive を future work と明言している。
 
 ## Critical Thoughts（評価・疑問）
@@ -47,7 +47,6 @@
   - 小データ regime での弱さは「強い正則化＋小モデル」で部分的に救えるとされるが（§4.2）、Table 5 を見ると ImageNet pretrain 時の ViT は依然 BiT に劣る。実務で 1k〜100k クラスの専用データだけしかない場合、ViT を選ぶ動機が弱い。
   - VTAB の Specialized で BiT と同等止まりなのは「medical/satellite ではまだ畳み込みが拮抗」と読める。ドメインによって inductive bias 不要論の強度が違う。
   - self-supervision は masked patch prediction のみで、しかも JFT で 1M step も回して +2% から -4% gap という結果。contrastive を試していない（自ら future work と明言）。
-  - Hyperparameter sweep の規模が不明瞭。fine-tune 時 ImageNet で {0.003, 0.01, 0.03, 0.06} の grid を切るが、ViT 側に有利に効いた可能性は否定しきれない。
   - 「inductive bias の欠如を大データで補う」は環境負荷・コストの問題と表裏。研究コミュニティ全体としては良いが、現場では replicable でない。
 - **次に試したいこと**:
   - ImageNet-21k pre-train + 小データ fine-tune の curve を、同 compute 予算の BiT / hybrid と並べた pareto curve として描き直す（公開可能データ範囲での真の優位を確認）。
@@ -68,9 +67,13 @@
 - "When pre-trained on the smallest dataset, ImageNet, ViT-Large models underperform compared to ViT-Base models, despite (moderate) regularization." (§4.2) — スケール則の警鐘。
 - "ViT uses approximately 2-4× less compute to attain the same performance (average over 5 datasets)." (§4.3)
 - Self-sup: "our smaller ViT-B/16 model achieves 79.9% accuracy on ImageNet, a significant improvement of 2% to training from scratch, but still 4% behind supervised pre-training." (§4.5)
-- Position embedding ablation: 位置情報なし 0.61382 → 1D 0.64206 / 2D 0.64001 / Rel 0.64032 で「ある/なし」だけが大きい（Table 7, Appx D.4）。
-- "ViT models have a clear advantage in terms of memory-efficiency over ResNet models." (Appx D.6)
-- ObjectNet (Appx D.7): ViT-H/14 top-5 82.1%, top-1 61.7%。
+- Position embedding ablation: 位置情報なし 0.61382 → 1D 0.64206 / 2D 0.64001 / Rel 0.64032 で「ある/なし」だけが大きい（Table 8, Appx D.4）。
+- "large ViT models have a clear advantage in terms of memory-efficiency over ResNet models." (Appx D.5)
+- ObjectNet (Appx D.9): ViT-H/14 top-5 82.1%, top-1 61.7%。
+- (verified 2026-05-20) Appendix 参照番号を TeX 実構造に合わせて修正: Self-supervision を Appx D.3 → B.1.2、Head Type vs GAP を Appx D.2 → D.3、ObjectNet を Appx D.7 → D.9、memory-efficiency を Appx D.6 → D.5 に訂正（06_appendix.tex のセクション順）。
+- (verified 2026-05-20) Position embedding ablation の表番号を Table 7 → Table 8 に修正 (06_appendix.tex の tbl:pos_emb_abblation は本文 2 表＋付録 5 表後の 8 番目)。
+- (verified 2026-05-20) Takeaway の「Fig 8（Appx）」は fig:real_time（Appx D.5 内）の指し違いだったため「Appx D.5 (fig:real_time, right)」に置き換え。memory-efficiency 引用も TeX 原文に合わせ "large" を補った (06_appendix.tex L309)。
+- (verified 2026-05-20) Critical Thoughts から「fine-tune の LR sweep が ViT 側に有利」の批判を削除。06_appendix.tex L78 に「ResNets/hybrid には ImageNet のみ 0.06 を追加」とあり、むしろ ResNet 側に sweep の自由度が多く、ノートの解釈と逆方向だった。
 
 ## Related Papers
 
