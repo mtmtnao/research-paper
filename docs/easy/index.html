@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>中学生向け 論文解説</title>
+<style>
+  :root {
+    --fg: #1f2328; --muted: #59636e; --bg: #ffffff;
+    --border: #d1d9e0; --code-bg: #f6f8fa; --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1 { border-bottom: 1px solid var(--border); padding-bottom: .3em; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  ul { list-style: none; padding: 0; }
+  li { padding: .8em 0; border-bottom: 1px solid var(--border); }
+  .id {
+    color: var(--muted);
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12.5px; margin-right: .8em;
+  }
+  .summary { color: var(--muted); font-size: 14px; margin-top: .3em; }
+  .meta { color: var(--muted); font-size: 13px; margin-top: -.3em; }
+  .lead {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1em 1.2em; margin: 1.5em 0;
+    font-size: 14.5px; line-height: 1.75;
+  }
+  .lead p { margin: .4em 0; }
+</style>
+</head>
+<body>
+<h1>中学生向け 論文解説</h1>
+<div class="lead">
+<p>機械学習の論文を「中学校 2 年生でも読める日本語」で解説したページ集です。</p>
+<p>専門用語は出るたびに補足し、数式は「式が言ってること / 記号の意味 / 身近な例え」の 3 点でほどいています。</p>
+<p>研究者向けの正規ノートは <a href="../">こちら</a> から見られます。</p>
+</div>
+<p class="meta">56 本 · 更新 2026-05-21 02:39</p>
+<ul>
+<li><div><span class="id">arXiv-2501.12948v2</span><a href="arXiv-2501.12948v2.html">DeepSeek-R1: 強化学習でご褒美をあげるだけで「考える AI」を育てる（日本語パラフレーズ）</a></div><div class="summary">人が書いた「考え方のお手本」を一切見せず、正解したらご褒美をあげるだけで、AI が自分で考え方を編み出して数学オリンピック級の問題を解けるようになった、という研究。</div></li>
+<li><div><span class="id">arXiv-2501.06252v3</span><a href="arXiv-2501.06252v3.html">Transformer-Squared: Self-adaptive LLMs（日本語パラフレーズ：「自分で自分の重さを調整できる、しゃべる AI」）</a></div><div class="summary">LLM（おしゃべり AI）が問題を見てから、自分の中の「専門家ベクトル」を選んで合体させ、答える前に頭の中身を切り替える仕組みを作った話。</div></li>
+<li><div><span class="id">arXiv-2412.19437v2</span><a href="arXiv-2412.19437v2.html">DeepSeek-V3 Technical Report（DeepSeek-V3 技術レポート：超巨大 AI を安く・賢く・安定して育てる）</a></div><div class="summary">巨大な AI（大規模言語モデル）を、専門家チーム方式と新しい工夫で「賢いまま安く」育てる方法をまとめた報告書。</div></li>
+<li><div><span class="id">arXiv-2410.14735v4</span><a href="arXiv-2410.14735v4.html">Agent Skill Acquisition for Large Language Models via CycleQD（CycleQD で大規模言語モデルにエージェント技能を覚えさせる）</a></div><div class="summary">3 つの「得意分野が違う AI」を、世代交代でじわじわ混ぜていって、1 体で全部こなせる強い AI を作る方法。</div></li>
+<li><div><span class="id">arXiv-2408.06292v3</span><a href="arXiv-2408.06292v3.html">The AI Scientist: 完全自動の「研究をする AI」を目指して（日本語パラフレーズ）</a></div><div class="summary">AI が自分でアイデアを出し、コードを書いて実験し、論文まで書いて、その論文をまた別の AI が査読する、という研究まるごと自動化システムを作った話。</div></li>
+<li><div><span class="id">arXiv-2406.08414v3</span><a href="arXiv-2406.08414v3.html">Discovering Preference Optimization Algorithms with and for Large Language Models（大規模言語モデルを使って、大規模言語モデルのための「好み学習」アルゴリズムを自動発見する）</a></div><div class="summary">GPT-4 に「もっと良い学習ルール作って」と頼み続けて、人間が思いつかなかった ChatGPT のしつけ方を見つけた話。</div></li>
+<li><div><span class="id">arXiv-2406.05954v3</span><a href="arXiv-2406.05954v3.html">Aligning Large Language Models with Representation Editing: A Control Perspective（表現の書き換えで AI チャットボットを「やさしく・正直に」する方法 — 制御工学の視点から）</a></div><div class="summary">AI（大規模言語モデル ＝ ChatGPT のようなもの）の頭の中を、しゃべりながら**少しずつ押して**「やさしい・無害な答え」へ誘導する仕組みを作ったよ、というお話。</div></li>
+<li><div><span class="id">arXiv-2405.21060v1</span><a href="arXiv-2405.21060v1.html">Transformers are SSMs: Generalized Models and Efficient Algorithms Through Structured State Space Duality（中学生向け日本語パラフレーズ）</a></div><div class="summary">「文を読む AI」の人気 2 大流派（Transformer と Mamba）が、実はそっくりな仲間だと示し、両方のいいとこ取りで 2〜8 倍速くした新型「Mamba-2」を作った話。</div></li>
+<li><div><span class="id">arXiv-2404.19756v5</span><a href="arXiv-2404.19756v5.html">KAN: Kolmogorov–Arnold Networks（コルモゴロフ・アーノルド ネットワーク）</a></div><div class="summary">「足し算する場所」と「曲線を学ぶ場所」を入れ替えた新しい AI の部品 KAN を作ったら、少ない部品で正確になり、しかも中身が「読める」ようになった、という話。</div></li>
+<li><div><span class="id">arXiv-2403.19887v2</span><a href="arXiv-2403.19887v2.html">Jamba: A Hybrid Transformer-Mamba Language Model（Transformer と Mamba を混ぜた言葉のAI「Jamba」）</a></div><div class="summary">Transformer と Mamba という 2 種類の「文章を読むしくみ」を混ぜて作った大きな AI で、長い文章を速く・少ないメモリで読める新しい言語モデル。</div></li>
+<li><div><span class="id">arXiv-2403.13187v2</span><a href="arXiv-2403.13187v2.html">Evolutionary Optimization of Model Merging Recipes（モデルの「混ぜ合わせレシピ」を進化計算で自動的に見つける）</a></div><div class="summary">すでに公開されている AI モデルを「どう混ぜれば賢くなるか」を、人間の勘ではなく進化のしくみで自動的に探し当てる方法を作ったよ、という話。</div></li>
+<li><div><span class="id">arXiv-2402.17764v1</span><a href="arXiv-2402.17764v1.html">The Era of 1-bit LLMs: All Large Language Models are in 1.58 Bits（1.58 ビット時代の大規模言語モデル）</a></div><div class="summary">巨大な AI のおもみを「-1・0・+1 の 3 種類だけ」にしても、ふつうの AI と同じ賢さで動かせる、という発見。</div></li>
+<li><div><span class="id">arXiv-2402.14905v2</span><a href="arXiv-2402.14905v2.html">MobileLLM: スマホで動く「小さくて賢い」言語AIの作り方（日本語パラフレーズ）</a></div><div class="summary">スマホでも動くサイズ（10億パラメータ未満）の言語AIは、データ量より「形（設計）」をうまく工夫するだけで、ぐっと賢くなるよ、という論文。</div></li>
+<li><div><span class="id">arXiv-2401.01335v3</span><a href="arXiv-2401.01335v3.html">Self-Play Fine-Tuning Converts Weak Language Models to Strong Language Models（自分との対戦で、弱いことばのAIを強いことばのAIに育てる）</a></div><div class="summary">新しいデータを集めなくても、AI が「自分が前に書いた答え」と「お手本の答え」を見分ける練習を繰り返すと、どんどん賢くなるよ、という話。</div></li>
+<li><div><span class="id">arXiv-2312.00752v2</span><a href="arXiv-2312.00752v2.html">Mamba: Linear-Time Sequence Modeling with Selective State Spaces（選んで覚える「マンバ」: 文の長さに比例した時間で動く新しい言語モデル）</a></div><div class="summary">「いま入ってきた言葉に合わせて、覚えるか忘れるかを切り替えられる」新しいタイプのニューラルネットワークで、Transformer 並みの賢さを文の長さに比例した速さで実現した話。</div></li>
+<li><div><span class="id">arXiv-2311.03099v3</span><a href="arXiv-2311.03099v3.html">Language Models are Super Mario: 仲間の能力を「タダで」吸収する言語モデル（日本語パラフレーズ）</a></div><div class="summary">学習済みの言語モデル（文章を作る AI）の「ちょっと変えた差分」のうち 90〜99%を捨てても性能が落ちないし、捨ててから複数モデルを足し合わせると 1 つのモデルが複数の特技を同時に持てる、という発見の話。</div></li>
+<li><div><span class="id">arXiv-2306.03795v1</span><a href="arXiv-2306.03795v1.html">AI-Supported Assessment of Load Safety（AI でトラックの荷物の積み方が安全かをチェックする話）</a></div><div class="summary">トラックの荷台を撮った写真から「ちゃんと積めてるか／危ない積み方か／そもそも写真がダメか」を AI に見分けさせる試み。</div></li>
+<li><div><span class="id">arXiv-2306.01708v2</span><a href="arXiv-2306.01708v2.html">TIES-Merging: モデルをまぜるときの「ケンカ」を仲裁する方法（中学生向け解説）</a></div><div class="summary">別々の仕事を覚えた AI たちを 1 体に合体させるとき、「意見が食い違う部分」を多数決で仲裁してから平均すると、ちゃんと強い 1 体になるよ、という話。</div></li>
+<li><div><span class="id">arXiv-2305.19118v4</span><a href="arXiv-2305.19118v4.html">Encouraging Divergent Thinking in Large Language Models through Multi-Agent Debate（大規模言語モデルに、ディベートでいろんな考え方をさせよう）</a></div><div class="summary">ChatGPT に「自分で間違いを直して」と頼むだけだと頑固で直らないので、AI を 2 人用意して言い合いをさせ、審判 AI に判定させると正解にたどり着きやすい、という発見。</div></li>
+<li><div><span class="id">arXiv-2305.18290v3</span><a href="arXiv-2305.18290v3.html">Direct Preference Optimization: Your Language Model is Secretly a Reward Model（中学生向け解説）</a></div><div class="summary">「人の好み」をAIに教えるのに、これまで必要だった面倒な強化学習をやめて、〇×クイズみたいな簡単な勉強だけで同じ結果が出せる、という発明だよ。</div></li>
+<li><div><span class="id">arXiv-2305.16291v2</span><a href="arXiv-2305.16291v2.html">Voyager: An Open-Ended Embodied Agent with Large Language Models（大規模言語モデルで動く、終わりのない世界の探検エージェント「ボイジャー」）</a></div><div class="summary">ChatGPT の親戚（GPT-4 ← OpenAI が作った、すごく賢い文章生成 AI）にマインクラフトを「自分で目標を立てて遊ばせ」、覚えたワザを溜めて使い回せるようにした、初の生涯学習エージェント。</div></li>
+<li><div><span class="id">arXiv-2305.14325v1</span><a href="arXiv-2305.14325v1.html">Improving Factuality and Reasoning in Language Models through Multiagent Debate（複数の AI に「会議」させて、答えの正しさと事実の正確さを上げる方法）</a></div><div class="summary">同じ AI を 3 人くらい用意して、お互いの答えを見せ合いながら何回か「会議」させると、1 人で答えるより正解率が上がるよ、という話。</div></li>
+<li><div><span class="id">arXiv-2305.10601v2</span><a href="arXiv-2305.10601v2.html">Tree of Thoughts: Deliberate Problem Solving with Large Language Models（思考の木：AI に「じっくり考える」をさせる方法）</a></div><div class="summary">ChatGPT のような AI に、答えを一気に書かせるのではなく「枝分かれする思考の木」をつくらせて、有望そうな枝だけ伸ばしていく仕組み。</div></li>
+<li><div><span class="id">arXiv-2304.07193v2</span><a href="arXiv-2304.07193v2.html">DINOv2: Learning Robust Visual Features without Supervision（教師なしで頑丈な画像の特徴を学ぶ大規模モデル「DINOv2」）</a></div><div class="summary">文字の説明文を一切使わず、画像だけを大量に見せて学ばせるだけで、「画像のことなら何でも分かる万能な目」を作った研究だよ。</div></li>
+<li><div><span class="id">arXiv-2304.02643v1</span><a href="arXiv-2304.02643v1.html">Segment Anything（なんでも切り抜きモデル：中学生向け解説）</a></div><div class="summary">写真の中の「これ」を指さすだけで、その物の輪郭をピタッと塗ってくれる超万能な切り抜きAIと、史上最大の塗り絵データセットを作った話。</div></li>
+<li><div><span class="id">arXiv-2303.17651v2</span><a href="arXiv-2303.17651v2.html">Self-Refine: Iterative Refinement with Self-Feedback（自分の答えを自分でダメ出しして、自分で直していく方法）</a></div><div class="summary">同じ AI に「書く → ダメ出し → 直す」を何回もやらせるだけで、追加の勉強なしに答えがどんどん良くなる、という研究。</div></li>
+<li><div><span class="id">arXiv-2303.11366v4</span><a href="arXiv-2303.11366v4.html">Reflexion: Language Agents with Verbal Reinforcement Learning（言葉でふり返って賢くなるAIエージェント）</a></div><div class="summary">AI に「自分の失敗を日本語みたいな言葉で反省させてメモに残す」だけで、勉強し直さなくても次のチャレンジが上手くなる、という仕組みを作った話。</div></li>
+<li><div><span class="id">arXiv-2302.10662v2</span><a href="arXiv-2302.10662v2.html">Snakes and Ladders: a Treewidth Story（ヘビとはしご：木幅をめぐる物語）</a></div><div class="summary">グラフの中にある「はしご」状の部品は、長さを 4 にまで短くしてしまっても、グラフの“ややこしさの度合い”は変わらないと数学的に証明した論文。</div></li>
+<li><div><span class="id">arXiv-2302.04761v1</span><a href="arXiv-2302.04761v1.html">Toolformer: Language Models Can Teach Themselves to Use Tools（言語モデルは自分で道具の使い方を学べる）</a></div><div class="summary">AI が「電卓・検索・翻訳などの道具」を自分で「いつ・どう使うか」を、人間に教わらず自分で練習して覚える方法。</div></li>
+<li><div><span class="id">arXiv-2212.04089v3</span><a href="arXiv-2212.04089v3.html">Editing Models with Task Arithmetic（タスク算術でモデルを編集する）</a></div><div class="summary">学習し終わったAIの「重み（中身の数字）」を、足したり引いたりするだけで、新しい技を覚えさせたり悪い癖を消したりできる、という発見の論文だよ。</div></li>
+<li><div><span class="id">arXiv-2210.03629v3</span><a href="arXiv-2210.03629v3.html">ReAct: Reasoning（考えること）と Acting（行動すること）を AI に同時にやらせる方法</a></div><div class="summary">AI（言葉を扱うコンピュータ）に「**考えていることを言葉で書きながら、同時に道具を使って調べたり動いたりさせる**」だけで、推論も行動もうまくなる、という発見。</div></li>
+<li><div><span class="id">arXiv-2205.14135v2</span><a href="arXiv-2205.14135v2.html">FlashAttention: IO を意識して書き直した、速くて省メモリな「正確な」アテンション（日本語パラフレーズ）</a></div><div class="summary">長い文章を読む AI（Transformer）の中で一番重い計算「アテンション」を、答えを変えずに GPU のメモリの使い方を工夫するだけで何倍も速くした研究だよ。</div></li>
+<li><div><span class="id">arXiv-2203.15556v1</span><a href="arXiv-2203.15556v1.html">Training Compute-Optimal Large Language Models（計算量に対してちょうど良い大きさの大規模言語モデルを訓練する）</a></div><div class="summary">同じ電気代でAIを賢くするなら、モデルを「大きくする」より「同じ分だけデータも増やす」方がずっと得だよ、と証拠つきで示した論文。</div></li>
+<li><div><span class="id">arXiv-2203.11171v4</span><a href="arXiv-2203.11171v4.html">Self-Consistency Improves Chain of Thought Reasoning in Language Models（自己一致でAIの推論を強くする）</a></div><div class="summary">AI に答えを 1 回だけ出させるのではなく、いろんな考え方で何回も答えさせて「いちばん多かった答え」を選ぶと正答率がぐっと上がる、という発見。</div></li>
+<li><div><span class="id">arXiv-2203.05482v3</span><a href="arXiv-2203.05482v3.html">Model soups: averaging weights of multiple fine-tuned models improves accuracy without increasing inference time（モデル・スープ：たくさんの微調整モデルの「中身の数字」を平均するだけで賢くなる）</a></div><div class="summary">捨てていた「ハズレ調整モデル」たちの中身の数字を平均するだけで、画像分類のチャンピオン（90.94%）になれた、という話。</div></li>
+<li><div><span class="id">arXiv-2203.02155v1</span><a href="arXiv-2203.02155v1.html">Training language models to follow instructions with human feedback（人間からのフィードバックで「指示に従う」言葉のAIを育てる）</a></div><div class="summary">人間が「こっちの返事の方が好き」と教えてあげることで、巨大な文章AIを「ちゃんと指示に従って、嘘や悪口を減らして」答えるように育て直した話。</div></li>
+<li><div><span class="id">arXiv-2201.11903v6</span><a href="arXiv-2201.11903v6.html">Chain-of-Thought Prompting Elicits Reasoning in Large Language Models（大きな言語モデルに「途中の考え」を書かせると、難しい問題も解けるようになるよ）</a></div><div class="summary">「お手本を見せるときに、答えだけじゃなく **途中の考え方** も一緒に書いてあげる」だけで、大きな AI が算数や常識問題を一気に解けるようになるよ、という話。</div></li>
+<li><div><span class="id">arXiv-2112.10752v2</span><a href="arXiv-2112.10752v2.html">High-Resolution Image Synthesis with Latent Diffusion Models（潜在拡散モデルでキレイな高解像度画像をつくる）</a></div><div class="summary">画像を一度「ぎゅっと縮めた小さな世界」に変換してから、その中でノイズを少しずつ消す練習をさせることで、SD（Stable Diffusion）の元になった、軽くてキレイな画像生成 AI をつくった研究です。</div></li>
+<li><div><span class="id">arXiv-2106.09685v2</span><a href="arXiv-2106.09685v2.html">LoRA: 巨大な言語モデルを「ちょい足し」で覚え直させる方法（日本語パラフレーズ）</a></div><div class="summary">巨大な AI 本体は凍らせたまま、小さな「差分メモ」だけを学習することで、ほぼ同じ性能を 1 万分の 1 のサイズで実現する技。</div></li>
+<li><div><span class="id">arXiv-2103.00020v1</span><a href="arXiv-2103.00020v1.html">Learning Transferable Visual Models From Natural Language Supervision（自然な言葉を「先生」にして、いろんな画像分類ができる AI を作った話 ＝ CLIP）</a></div><div class="summary">ネットから集めた 4 億枚の「画像＋説明文」ペアで AI を学習させ、追加学習なしで新しい画像分類タスクを解けるようにした研究。</div></li>
+<li><div><span class="id">arXiv-2010.11929v2</span><a href="arXiv-2010.11929v2.html">An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale（画像は 16×16 個の「単語」だ：大規模学習で画像認識する Transformer）</a></div><div class="summary">画像を 16×16 の小さなタイルに切って、文章を読む AI（Transformer）にそのまま食わせたら、大量のデータで学習させた場合、これまで最強だった CNN を超えた、という話。</div></li>
+<li><div><span class="id">arXiv-2006.11239v2</span><a href="arXiv-2006.11239v2.html">Denoising Diffusion Probabilistic Models（ノイズを少しずつ消して絵を作る方法）</a></div><div class="summary">きれいな写真にちょっとずつノイズ（ザラザラ）を足す逆再生を AI に覚えさせ、純粋なザラザラから新しい写真を作る方法。</div></li>
+<li><div><span class="id">arXiv-2005.14165v4</span><a href="arXiv-2005.14165v4.html">Language Models are Few-Shot Learners（言語モデルは「ちょっとお手本を見せるだけで」学べる）</a></div><div class="summary">すごく大きな「文章の続きを当てるAI」（パラメータ1750億個＝GPT-3）に、お手本を数個見せるだけで、追加の練習なしで色んな国語タスクをかなりこなせる、という発見。</div></li>
+<li><div><span class="id">arXiv-2005.04860v1</span><a href="arXiv-2005.04860v1.html">Skyrmion confinement and dynamics in tracks patterned with magnetic anisotropy: theory and simulations（磁気のかたさを場所ごとに変えた「線路」のなかでスカーミオンがどう閉じ込められ、どう動くか：理論とシミュレーション）</a></div><div class="summary">うすい磁石の板に「磁気のかたさ」のちがいで作った見えない線路を走るスカーミオン（小さなうずまき）が、線路のかべからどれくらい強くはじき返されるかを、計算式で求めて、コンピュータの実験でも確かめた研究だよ。</div></li>
+<li><div><span class="id">arXiv-2001.08361v1</span><a href="arXiv-2001.08361v1.html">Scaling Laws for Neural Language Models（ニューラル言語モデルのスケーリング則）</a></div><div class="summary">「文章を予測する AI（言語モデル）」は、モデルの大きさ・データ量・計算量を増やすほど、**きれいな決まった曲線**にそってどんどん賢くなる、という法則を見つけた論文。</div></li>
+<li><div><span class="id">arXiv-1906.04358v2</span><a href="arXiv-1906.04358v2.html">Weight Agnostic Neural Networks（重みを学習しなくても動くネットワーク）</a></div><div class="summary">「重みの数字をいっさい学習しなくても、形（つなぎ方）だけで仕事をこなせるニューラルネットワーク」を見つけ出す方法を作った論文だよ。</div></li>
+<li><div><span class="id">arXiv-1901.01753v3</span><a href="arXiv-1901.01753v3.html">Paired Open-Ended Trailblazer (POET): 終わりなく難しさと多様さを増やしながら、課題と解き方を同時に作りつづけるアルゴリズム</a></div><div class="summary">ロボットに歩かせる「コース」と「歩き方」を、人間が決めずに同じ計算機の中で同時に作りつづける仕組み。</div></li>
+<li><div><span class="id">arXiv-1810.04805v2</span><a href="arXiv-1810.04805v2.html">BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding（深く・両方向から文を読む大きな AI の作り方）</a></div><div class="summary">文の **左側と右側を同時に見て** 言葉を予測する練習を大量にやらせると、いろんな国語の問題が一気に得意になる AI ができるよ、という論文。</div></li>
+<li><div><span class="id">arXiv-1803.10122v4</span><a href="arXiv-1803.10122v4.html">World Models（世界モデル）</a></div><div class="summary">ゲームの「頭の中での予想」を AI に作らせて、その夢の中だけで運転や避けゲームの練習をさせ、現実のゲームでもクリアできるようにした研究。</div></li>
+<li><div><span class="id">arXiv-1706.03762v7</span><a href="arXiv-1706.03762v7.html">Attention Is All You Need（注意（attention）だけで十分だよ）</a></div><div class="summary">文を読みながら順番に処理するのをやめて、「どの単語に注目するか」を計算するだけで翻訳できる新しい仕組み（Transformer）を作ったら、英→独翻訳でこれまでの記録を一気に超えた、という話。</div></li>
+<li><div><span class="id">arXiv-1703.03864v2</span><a href="arXiv-1703.03864v2.html">Evolution Strategies as a Scalable Alternative to Reinforcement Learning（進化戦略 ── 強化学習の代わりに使える、たくさんのコンピュータで分担しやすい方法）</a></div><div class="summary">ゲームを上手にプレイする AI を作るのに、「ちょっとずつ設定をズラして試す」だけのシンプルな方法で、たくさんのコンピュータを使えば従来の最先端 AI と張り合えると示した論文。</div></li>
+<li><div><span class="id">arXiv-1512.03385v1</span><a href="arXiv-1512.03385v1.html">Deep Residual Learning for Image Recognition（画像認識のための「残差学習」）</a></div><div class="summary">「すごく深い AI（神経回路の層を 100 段以上重ねたもの）」を、ショートカットを 1 本足すだけで、ちゃんと学習できるようにした論文だよ。</div></li>
+<li><div><span class="id">arXiv-1504.04909v1</span><a href="arXiv-1504.04909v1.html">Illuminating search spaces by mapping elites（探索空間を「エリート地図」で照らし出す）</a></div><div class="summary">「一番いい答え 1 個」を探すんじゃなくて、「いろんなタイプ別に、それぞれのタイプの中で一番いい答え」を一気に集めて、地図みたいに並べちゃおうという新しい探し方を提案した論文。</div></li>
+<li><div><span class="id">arXiv-1412.6980v9</span><a href="arXiv-1412.6980v9.html">Adam: A Method for Stochastic Optimization（アダム: でこぼこな坂道をかしこく下る学習法）</a></div><div class="summary">AI を学習させるときの「歩き方」を、過去の歩幅をうまく覚えて自動で調整する、便利な歩き方の作り方を考えた論文だよ。</div></li>
+<li><div><span class="id">arXiv-1406.2661v1</span><a href="arXiv-1406.2661v1.html">Generative Adversarial Nets（敵対する 2 つの AI を競わせて画像を作る仕組み）</a></div><div class="summary">「偽物を作る AI」と「偽物を見抜く AI」を本気でケンカさせて、最終的に本物そっくりの画像が作れるようにする方法を考えたよ。</div></li>
+<li><div><span class="id">arXiv-1312.6114v11</span><a href="arXiv-1312.6114v11.html">Auto-Encoding Variational Bayes（オートエンコーダ風の変分ベイズ法）</a></div><div class="summary">絵を「作る AI」と「読み取る AI」を 2 つペアで同時に学習させて、ランダムな数から新しい絵を作れるようにした仕組み。</div></li>
+</ul>
+</body>
+</html>

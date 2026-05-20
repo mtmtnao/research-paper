@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Segment Anything（なんでも切り抜きモデル：中学生向け解説）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2304.02643v1.md</code>
+  &nbsp;|&nbsp; macros: <code>26</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Segment Anything（なんでも切り抜きモデル：中学生向け解説）\n\n- arXiv: https://arxiv.org/abs/2304.02643\n- 一次ソース: ../papers/arXiv-2304.02643v1/\n- 正規ノート: ../notes/arXiv-2304.02643v1.md\n\n---\n\n## 一言で言うと\n\n写真の中の「これ」を指さすだけで、その物の輪郭をピタッと塗ってくれる超万能な切り抜きAIと、史上最大の塗り絵データセットを作った話。\n\n## どんな問題を解こうとしてるの？\n\n- **現実の困りごと**: 写真に写っている「犬だけ」「人だけ」「ボールだけ」を、ピクセル（画像のマス目）単位できれいに塗り分けたい場面はたくさんある（自動運転、医療画像、写真編集、ロボットの目、など）。これを **segmentation（セグメンテーション = 領域分け／切り抜き）** と呼ぶ。\n- これまでのAIは「犬の写真ばかり練習したAIは犬だけ切り抜ける」「水中写真で練習してないAIは水中の魚を切り抜けない」というふうに、**練習で見たものしか切り抜けない** という弱点があった。\n- 文章を扱うAI（ChatGPTの仲間）には「色んな問題を一つのAIで解ける万能型」がすでにあるのに、画像を切り抜く側にはそれが無かった。著者たちはこの「画像切り抜きの万能型AI」を作りたかった。\n- 万能型を作るには「とんでもなく大量の練習データ」が必要なのに、世界中どこを探しても \"ここからここまでが犬\" みたいに丁寧に塗り絵されたデータは少なかった。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n三つを同時に作る、というのが核心。\n1. **タスクを変える**: 「犬を切り抜け」「人を切り抜け」と命令する代わりに、写真の上を「ここ」と一点指さすだけ（または四角で囲むだけ）で、そこに写っているものを切り抜いてくれる AI を作る。この「指さしを **prompt（プロンプト＝AIへの指示）** と呼ぶ。\n2. **モデル（AI本体）を作る**: その指さしから一瞬で輪郭を塗れるAI、名前は **SAM（サム）**（Segment Anything Model = 何でも切り抜きモデル）。\n3. **データを自分で作る**: SAM 自身を使って人間のアノテーター（塗り絵職人）の作業を加速させ、最終的にはほぼ自動で 11億枚もの塗り絵データを作る「データ製造工場」を回す。\n\n例えるなら **「料理人 と レシピ集 を同時に育てる」** ような話。最初は人間が手で料理（塗り絵）を作って料理人（SAM）に教え、料理人がうまくなったら今度は料理人が大量にレシピを書き、最後は料理人だけで自動的にレシピ集を完成させる。\n\n### 仕組み\n\n- **step1（タスク決め）**: 入力は「写真 + プロンプト（指さしの点・四角・もう一枚のマスク・文章のどれか）」、出力は「その指示に合った切り抜きマスク」。指示が曖昧（例：シャツを指さしても \"シャツ\" か \"そのシャツを着てる人\" か区別がつかない）でも、「少なくとも妥当な答えのうち1枚」を返せばOKとする。\n- **step2（モデルの形）**: SAM は 3 つの部品で出来ている。\n  - **image encoder（画像エンコーダー＝写真を数字の地図に変換する装置）**: 重たい部品。写真を一回だけ食わせて 64×64 マスの「特徴の地図」に変換する。ここがコストの大半。\n  - **prompt encoder（プロンプトエンコーダー＝指さしを数字に変換する装置）**: 「点」「四角」「マスク」「文章」を AI が理解できる形（数字の並び）に直す軽い部品。\n  - **mask decoder（マスクデコーダー＝塗り絵を描く装置）**: 上の2つを混ぜて、最終的な切り抜き画像を出す。これも軽くて、ブラウザ上の普通の CPU で約 50 ミリ秒（=0.05 秒）で動く。\n- **step3（曖昧さ対応）**: 同じ点を指さしても「シャツ」「シャツを着た人」「シャツの一部の柄」など答えが複数あり得る。だから SAM は **常に 3 枚の答え（whole=全体／part=部分／subpart=さらに細かい部分）を同時に出す**。学習時は「3枚のうち、正解に一番近かった1枚」だけを採点する（残り2枚は罰しない）。これで「曖昧な指示でも怒られない」AI になる。\n- **step4（信頼度の予測）**: 3 枚それぞれに「どれくらい自信があるか」のスコア（IoU 予測値）も同時に出す。使うときは一番自信のあるものを選べばよい。\n- **step5（データ工場・3段階）**:\n  - **第1段：人間がメインで塗る**（SAMが補助）。120,000枚の写真から 430万枚の塗り絵。1枚平均 14 秒。\n  - **第2段：半自動**。SAMが先にできるところを塗っておいて、人間は残りを塗る。180,000枚から 590万枚追加（合計 1020万枚）。\n  - **第3段：完全自動**。写真の上に **32×32 の格子点（縦32×横32=1024個の指さし）** を全部置いて、SAMが各点に対し 3 枚マスクを生成。自信スコア 88 以上 ＆ 安定度 95 以上のマスクだけ残し、重なってるものは NMS（後述）で除去。これを 1100万枚の写真全部に対して行い、**SA-1B = 写真 1100万枚 ＋ マスク 11億枚** が出来上がる。99.1% は完全自動生成。\n- **step6（学習方法）**: 「人間と対話しながらだんだん点を増やしていく」シーンを模した訓練を行う。1枚のマスクにつき計 11 回の指さしステップを練習する。\n\n### 主要な数式\n\n#### 式①：IoU（マスクのピッタリ度を測る式）\n\n$$ \\mathrm{IoU}(A, B) = \\frac{|A \\cap B|}{|A \\cup B|} $$\n\n**この式が言ってること**: 「AI が塗ったマス目の領域 $A$」と「正解のマス目の領域 $B$」が、どれくらい重なってるかを 0〜1 の数字で表すよ。1 に近いほどピッタリ、0 だと全く重なってない。\n\n**記号の意味**:\n- $A$ … AI が塗ったマス目の集まり（「集合」＝物の集まりのこと）\n- $B$ … 人間が用意した正解のマス目の集まり\n- $A \\cap B$ … 「A にも B にも入ってるマス目」、つまり重なっている部分\n- $A \\cup B$ … 「A か B のどちらかには入ってるマス目」、つまり合計の領域\n- $|\\cdot|$ … その中に入ってるマス目の枚数を数えたもの（面積に相当）\n\n**身近な例え**: 学校で配られた**塗り絵プリント**の答え合わせを想像してね。先生が塗った正解の犬と、君が塗った犬を重ねて、「ぴったり同じ色になっている部分のマス目」を「どちらか片方でも塗られているマス目」で割る。全く同じなら 1（=100%）、全然違うところを塗ったら 0（=0%）。SAM は論文の表で「マスクペアの 94% が IoU 90% 超え」と言っていて、これは「ほとんどの塗り絵が、正解と 9 割以上ぴったり一致してる」という意味。\n\n#### 式②：曖昧さに対応するための「3枚出して一番良いやつだけ採点」\n\n$$ L_{\\text{mask}} = \\min\\!\\left( L_1,\\ L_2,\\ L_3 \\right) $$\n\n**この式が言ってること**: SAM は同じ指示に対して 3 枚の塗り絵を一気に出すんだけど、訓練（練習）のときは 3 枚それぞれの「罰点（loss = ロス = 間違い度合いを表す数字）」を計算して、**そのうち一番小さい罰点だけ** を採用して AI に「ここを直しなさい」と教える。残り 2 枚は罰しない。\n\n**記号の意味**:\n- $L_1, L_2, L_3$ … 1枚目／2枚目／3枚目の塗り絵が正解とどれくらいズレてたかを表す数字（大きいほど間違い）\n- $\\min(\\cdots)$ … 一番小さいやつを選ぶ操作（中学校で習う「最小値」）\n- $L_{\\text{mask}}$ … 最終的に AI を直すために使う罰点\n\n**身近な例え**: 美術の宿題で「家を描いて」と言われて、君が**3枚下書き**を出したとする。先生が「一番うまい1枚だけ採点するよ。残り2枚は赤入れしない」と言ってくれたら、君は自由にいろんなパターン（自分の家・友達の家・夢の家）を描ける。SAM はこれと同じで、「シャツ・人・柄」のどれを答えてもいいから 3 枚出してね、と訓練されている。\n\n#### 式③：塗り絵の罰点の作り方（Focal + Dice の合成）\n\n$$ L = 20 \\cdot L_{\\text{focal}} + 1 \\cdot L_{\\text{dice}} $$\n\n**この式が言ってること**: 「塗り絵がどれだけ間違ってるか」を測る罰点は、2 種類の罰点を 20 対 1 の重み付けで足し算して作るよ。focal loss が 20 倍、dice loss が 1 倍。\n\n**記号の意味**:\n- $L_{\\text{focal}}$ … focal loss（フォーカル・ロス）：マス目1つ1つについて「ここは犬／犬じゃない」を当てる罰点。間違えやすい難しい所を重く罰する作り\n- $L_{\\text{dice}}$ … dice loss（ダイス・ロス）：塗り絵全体の重なり具合（IoU の親戚）に基づく罰点\n- $20$ と $1$ … 重み（どっちを重視するかの比率）\n- $L$ … 合計の罰点\n\n**身近な例え**: テストの**国語と数学**を合わせて成績を付けるとき、「国語×20点 ＋ 数学×1点」みたいな配点で合計するイメージ。SAM は「マス目ごとの正解／不正解」（国語的なミクロな話）を重視しつつ、「全体の塗り絵としてのまとまり」（数学的なマクロな話）もちょっと混ぜている。\n\n## 何がすごいの？\n\n- **SA-1B データセット**: 写真 **1100万枚**、マスク **11億枚**。これまで最大だった Open Images データセットと比べて画像が 11 倍、マスクが **400 倍**。99.1% は SAM が完全自動で塗った。自動マスクの質も、人間が手直しした版と比べて 94% のペアで IoU > 90%（人間同士のばらつき = 85〜91% より高い）。\n- **1点で塗れるか？**: 23 個の様々なデータセット（細胞画像・水中・宇宙・キッチン・X線、など多種多様）で「1 点だけ指さして塗る」テスト。\n  - 自動評価（mIoU）で、23 個中 **16 個でこれまで最強だった RITM を上回り、差は最大 47 IoU**。\n  - 3 枚答えのうち最良を選んでよい \"oracle\" 設定なら **23 個全てで RITM 超え**。\n  - 人間に 1〜10 の評価をつけてもらう調査でも SAM の評価値はだいたい 7〜9 で、RITM や「3枚出し無しバージョン」より明確に高い。\n- **エッジ検出（輪郭線描き）**: 学習で見たこともない BSDS500 でテスト。ODS 0.768／OIS 0.786／AP 0.794／R50 0.928。SOTA の EDETR（ODS 0.840／AP 0.896）には届かないが、R50 で HED の 0.923 を上回る。「BSDS500 用に偏った学習をしていないので、注釈されてない輪郭まで余計に描いてしまう＝precision が下がる」と著者は説明。\n- **物体候補生成（LVIS v1, AR@1000）**: SAM 59.3、ViTDet-H 63.0。中・大サイズと珍しいクラスでは SAM が ViTDet を上回る。\n- **インスタンス分割（COCO の物体ごとの切り抜き）**: ViTDet が四角で物を見つけ、SAM がその四角をもとに塗る。AP で COCO は SAM 46.5 vs ViTDet 51.0、LVIS は 44.7 vs 46.6。AP では負けるが、**人間に塗り絵を見せて評価してもらうと SAM の方が高評価**。著者は「ViTDet は COCO の \"汚い塗り絵クセ\" を学んじゃってるからで、本当の塗り絵の上手さでは SAM の方が上」と分析。\n- **文章→マスク**: 「a wheel（車輪）」「beaver tooth grille（ビーバーの歯型のグリル）」のような自由な文章で塗り絵させる挑戦も成功（ただし著者本人も \"exploratory\" と認める proof-of-concept）。\n- **計算コストを工夫**: 重たい image encoder は写真1枚につき1回だけ動かす。あとは点を打つたびに軽い prompt encoder + mask decoder だけ動かせばよく、ブラウザ上で 50 ミリ秒。だから Web デモがサクサク動く。\n- **データ・モデル公開**: SAM 本体は Apache 2.0（自由に使える）、データセット SA-1B は研究目的で公開。\n- **著者の挙げる貢献**: (1) 「促せば何でも切り抜く」という新しいタスクの定式化、(2) ブラウザでリアルタイム動作する SAM、(3) 既存最大の 400 倍のマスク数を持つ SA-1B、(4) モデル＆データの公開、(5) 23 データセットでの zero-shot 評価プロトコルと公平性分析。\n\n## キーワード辞典\n\n出てきた順に並べた、中学生向けの一行定義集。\n\n- **segmentation（セグメンテーション）** … 写真を「この物」「あの物」とピクセル（マス目）単位で塗り分けること。\n- **mask（マスク）** … 塗り分けた領域そのもの。「ここからここまでが犬」というぬり絵の答え。\n- **prompt（プロンプト）** … AI への指示。文章だけでなく、写真の上の点や四角でもよい。\n- **promptable segmentation** … 「プロンプトを受けてマスクを返す」タスクのこと。SAM はこの方式。\n- **foundation model（基盤モデル）** … 1つだけ作っておけば色んな問題に応用できる、ベース役の巨大な AI。\n- **zero-shot（ゼロショット）** … 練習で見たことがないデータでも、追加の練習なしでいきなり解くこと。\n- **encoder（エンコーダー）** … 入力（画像や文章）を AI が扱いやすい数字の並びに変換する装置。\n- **decoder（デコーダー）** … 数字の並びから最終的な出力（ここでは塗り絵）を作る装置。\n- **embedding（埋め込み）** … 何か（画像・点・単語）を表す数字の並び。AI 内部での「データの住所」みたいなもの。\n- **Transformer（トランスフォーマー）** … 文章 AI・画像 AI で広く使われている、注目（attention）の仕組みを核にした基本部品。\n- **attention（アテンション）** … 入力のうち「どこに注目すべきか」を AI が自動で重み付けする仕組み。\n- **ViT（Vision Transformer）** … 画像用にした Transformer。SAM では一番大きい \"ViT-H/16\" を使う（ViT-H は最大級、/16 は写真を 16×16 マス目に切って扱うという意味）。\n- **MAE（Masked Autoencoder）** … 画像の一部を隠して「隠れた部分を当てる」練習をさせる事前学習方法。SAM の画像エンコーダーはこれで下準備されている。\n- **CLIP** … OpenAI が作った画像と文章を結びつける AI。SAM は文章を扱うときに CLIP の文章エンコーダーを借りる。\n- **IoU（Intersection over Union）** … 塗り絵のピッタリ度。重なり面積 ÷ 合計面積。\n- **mIoU** … テストデータ全部で IoU を平均した値。\n- **AP（Average Precision）** … 物体検出系のテストでよく使う点数の付け方。SAM は AP では ViTDet に負ける。\n- **AR@1000** … 「上位 1000 個の候補で正解をどれだけ拾えたか」の指標。\n- **focal loss / dice loss** … 塗り絵の間違いを測る 2 種類の罰点。SAM では 20:1 で混ぜる。\n- **NMS（Non-Maximum Suppression）** … たくさん候補が出てきたとき、重なりすぎてるやつを削って 1 つに絞る後処理。\n- **ablation（アブレーション）** … 「この部品を抜いたらどれくらい性能落ちる？」を調べる実験。\n- **SA-1B** … 著者たちが作ったデータセットの名前。SA = Segment Anything、1B = 1 Billion = 10 億（実際は 11 億マスク）。\n- **RITM** … SAM 登場以前の「点を打って塗る」ことに特化した強い AI。SAM の比較対象。\n- **ViTDet** … 物体検出用の強い AI。SAM のインスタンス分割実験で四角を出す係。\n- **AdamW** … AI を訓練するときの「賢い坂下り方法」（最適化手法）の名前。SAM もこれで訓練。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **画像エンコーダーの細部**: ViT-H/16、入力は 1024×1024 ピクセル、出力は 64×64×256 の特徴地図。14×14 のウィンドウ・アテンション ＋ 4 個の global attention ブロック（写真全体を見る層を 4 か所等間隔に置く）で計算量を抑える。1 枚の写真につき 1 回だけ動かして、結果を使い回す。\n- **マスクデコーダーの細部**: 2 層構成。各層は「トークン同士のself-attention → トークンから画像へのcross-attention → MLP → 画像からトークンへのcross-attention」の 4 ステップ。注目層には毎回 positional encoding（位置情報）と元の prompt token を足し直す。\n- **3 枚マスク と 4 つ目のトークン**: 1 つの prompt のときは whole/part/subpart の 3 枚を出す。**複数 prompt** が与えられたときは曖昧さがほぼ消えるので、別に用意した 4 つ目の output token から 1 枚だけ返すように切り替わる。これにより「最初は曖昧でいいけど追加情報があったらビシッと 1 枚」が両立する。\n- **完全自動ステージの細部**: 大きい写真には 32×32 グリッドを置くだけでなく、2×2 と 4×4 に分割した重なり付きの拡大切り出し（合計 20 個）にもそれぞれ 16×16 と 8×8 のグリッドを置く。これで小さな物まで拾える。フィルタ条件は IoU≥88、安定度≥95、画像の 95% 以上を覆うマスクは捨てる、NMS 閾値 0.7。後処理として 100ピクセル未満の小さな破片や穴を消す。\n- **訓練レシピ**: AdamW（β₁=0.9, β₂=0.999）、学習率 8×10⁻⁴、ウォームアップ 250 イテレーション、step decay。90,000 イテレーション（SA-1B 約 2 周分）、バッチサイズ 256、weight decay 0.1、drop path 0.4、layer-wise lr decay 0.8。256 枚の GPU で並列。データ拡張は無し（データが多すぎるので不要）。\n- **対話学習**: 11 回の反復で訓練。最初の prompt → 8 回追加点 → 2 回マスクのみ refinement。8 回以降は性能が頭打ちなので 8 回で打ち切り、最後の 2 回は「自分の前回の答えを見て自己修正する練習」。\n- **データ量と性能**: 11M画像 → 1M（全体の10%） に減らしても性能はほぼ変わらず、ViT-L → ViT-H にしても改善は小さい。つまり SAM はもう「データを増やしてもモデルを大きくしてもこれ以上は伸びにくい」状態。著者自身が \"Further image encoder scaling does not appear fruitful at this time\" と認める。\n- **公平性（RAI）の結果**: 人物の塗り分け性能は、認知される性別・肌の色のグループ間で 95% 信頼区間が重なる＝有意差なし。年齢では「older vs middle」のみ信頼区間が重ならない（older の方が高い）。ただし衣服の塗り分けでは「masculine の方が IoU が高い」というバイアスが残っている、と付録で開示している。\n- **限界（著者自身が認める）**: (a) 細い構造を取りこぼす、(b) 小さなゴミマスクを幻覚する、(c) 境界が高精度ズーム型 AI ほどシャープでない、(d) 多数の点が与えられるシーンでは専用 AI に負ける、(e) 画像エンコーダーが重く、システム全体ではリアルタイムでない、(f) 文章→マスクはまだ未熟、(g) セマンティック／パノプティック・セグメンテーションをプロンプトで簡潔に表す方法は未解決、(h) 医療画像など特化分野では各専用ツールに負ける。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2304.02643v1/`\n- 正規ノート: `notes/arXiv-2304.02643v1.md`\n";
+const MACROS = {"\\shline": "\\noalign{\\global\\savewidth\\arrayrulewidth\n \\global\\arrayrulewidth 1pt}\\hline\\noalign{\\global\\arrayrulewidth\\savewidth}", "\\tablestyle": "\\setlength{\\tabcolsep}{#1}\\renewcommand{\\arraystretch}{#2}\\centering\\footnotesize", "\\arraystretch": "#2", "\\paragraph": "\\vspace{1.25mm}\\noindent\\textbf{#1}", "\\app": "\\raise.17ex\\hbox{$\\scriptstyle\\sim$}", "\\x": "{\\times}", "\\fixme": "{\\color{red}{#1}}", "\\sad": "\\mbox{SA-1B}\\xspace", "\\sam": "SAM\\xspace", "\\fig": "Fig.~\\ref{#1}", "\\supp": "appendix\\xspace", "\\cmark": "\\textcolor{acceptcolor}{\\ding{51}}", "\\xmark": "\\textcolor{rejectcolor}{\\ding{55}}", "\\redacted": "\\textbf{\\texttt{TBA}}\\xspace", "\\qtxt": "{\\color{qcolor}{\\textit{#1}}}", "\\demph": "\\textcolor{demphcolor}{#1}", "\\mypm": "{\\scriptsize{{\\demph{{\\kern.4ex$\\pm$\\kern.1ex#1}}}}}", "\\lr": "\\emph{lr}\\xspace", "\\ld": "\\emph{ld}\\xspace", "\\wtd": "\\emph{wd}\\xspace", "\\drp": "\\emph{dp}\\xspace", "\\expnum": "{#1}\\mathrm{e}^{#2}", "\\incvisualsrow": "\\begin{subfigure}{\\linewidth}\\begin{adjustbox}{width=\\textwidth}{\n\\def\\arraystretch{0.2}\\setlength\\tabcolsep{#1pt}\\begin{tabular}{ccccc}\n\\raisebox{1.2\\normalbaselineskip}[0pt][0pt]{\\rotatebox{90}{\\tiny #2}} &\n\\includegraphics[height=2cm]{figs/sa1b_examples/#3.jpg} &\n\\includegraphics[height=2cm]{figs/sa1b_examples/#4.jpg} &\n\\includegraphics[height=2cm]{figs/sa1b_examples/#5.jpg} &\n\\includegraphics[height=2cm]{figs/sa1b_examples/#6.jpg} \\\\\n\\end{tabular}}\\end{adjustbox}\\end{subfigure}", "\\incannpanel": "\\begin{subfigure}[t]{.24\\textwidth}\n \\includegraphics[width=\\linewidth,height=26mm]{figs/annotator_guidelines/#1.jpg}\n \\vspace{-6mm}\\caption*{\\tiny #2}\\end{subfigure}\\vspace{1mm}\\hspace{1.5mm}", "\\incannpaneldouble": "\\begin{subfigure}[t]{.24\\textwidth}\n \\begin{minipage}[b]{\\linewidth}\n \\includegraphics[width=\\linewidth,height=13mm]{figs/annotator_guidelines/#1.jpg}\n \\includegraphics[width=\\linewidth,height=13mm]{figs/annotator_guidelines/#2.jpg}\\end{minipage}\n \\vspace{-6mm}\\caption*{\\tiny #3}\\end{subfigure}\\vspace{1mm}\\hspace{1.5mm}", "\\incanntext": "\\begin{subfigure}[t]{.24\\textwidth}\n \\begin{minipage}[b]{\\linewidth}{\\fontsize{3}{3.6}\\selectfont#2}\\vspace{2mm}\\end{minipage}\n \\vspace{-6mm}\\caption*{\\tiny #1}\\end{subfigure}\\vspace{1mm}\\hspace{1.5mm}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

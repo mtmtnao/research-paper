@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>KAN: Kolmogorov–Arnold Networks（コルモゴロフ・アーノルド ネットワーク）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2404.19756v5.md</code>
+  &nbsp;|&nbsp; macros: <code>7</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# KAN: Kolmogorov–Arnold Networks（コルモゴロフ・アーノルド ネットワーク）\n\n- arXiv: https://arxiv.org/abs/2404.19756\n- 一次ソース: ../papers/arXiv-2404.19756v5/\n- 正規ノート: ../notes/arXiv-2404.19756v5.md\n\n---\n\n## 一言で言うと\n\n「足し算する場所」と「曲線を学ぶ場所」を入れ替えた新しい AI の部品 KAN を作ったら、少ない部品で正確になり、しかも中身が「読める」ようになった、という話。\n\n## どんな問題を解こうとしてるの？\n\n- AI（人工知能）の世界では、たくさんの数字をかけ算して足し合わせるのを繰り返す「MLP（エムエルピー、Multi-Layer Perceptron、多層パーセプトロン）」という部品がほぼすべての土台になっている。← これは「数字を入れると別の数字が出てくる、すごく複雑な計算機」のこと。\n- でも MLP には 2 つの困りごとがある:\n  - **中身がブラックボックス**：たとえばテストの点数を予測する AI を作っても、「なぜその点数になったのか」を人間が読み取れない。料理に例えると、おいしいけどレシピが分からないラーメンみたいなもの。\n  - **「次元の呪い」に弱い**：入力する数字の種類が増えると、必要な計算量が爆発的に増えてしまう。スプライン（spline、なめらかな曲線を数式でつなぐ方法）という古典的な道具は、入力が少ないときは強いけど、入力が多くなると同じく弱い。\n- この論文は「MLP の良いところ（たくさんの入力を扱える）」と「スプラインの良いところ（中身がわかる・なめらか）」を両取りしたい、という問題に取り組んだ。\n\n## どうやって解いたの？\n\n### コアアイデア\n\nMLP は「線で結ばれた点（ノード）」でできていて、線には**ただの数（重み）**、点には**決まった形のひねり関数（活性化関数）**が付いている。\nKAN はこれを逆にする：**線に「学習で形が変わる曲線」**を置き、**点ではただ足し算するだけ**にする。\n\n例え話で言うと、MLP は「決まった味の調味料（固定の関数）」を「分量（重み）」で混ぜる料理。KAN は逆に「分量は決めず、調味料そのものの味（曲線の形）」を毎回作り直して合わせる料理。後者の方が、できあがった料理を見て「あ、この味は砂糖が sin の形に効いてるな」と分かりやすい。\n\n### 仕組み\n\n- step1: 入力された数字を、線ごとに「学習で形が変わる 1 本の曲線（B スプライン、いくつかの山なり関数を足し合わせて作るなめらかな曲線）」に通す。\n- step2: 同じ点（ノード）に集まってきた曲線の出力を、**ただ足す**だけ。かけ算も決まった非線形変換もしない。\n- step3: これを何段も重ねる。深くすると、より複雑な関数を表せる。\n- step4: 学習中に曲線の解像度（grid、グリッド、曲線を区切る点の数）を細かくしていく。粗いグリッドで学んだ曲線を、最小二乗法（誤差を一番小さくするように合わせる方法）で細かいグリッドに写し直すだけで、ネットワーク全体を作り直さずに精度を上げられる（**grid extension**）。\n- step5: 中身を読みやすくするため、「使われていない曲線」を罰金（正則化）で 0 に押し込めてから、まるごと枝刈り（pruning、不要な部分を切り落とすこと）。\n- step6: 残った曲線が sin や exp などの**わかる形**に近ければ、人間が「これは sin だ」と指定してその記号に置き換える（**symbolification**、記号化）。\n\n### 主要な数式\n\n#### (1) コルモゴロフ・アーノルド表現定理（KAN のもとになった数学の定理）\n\n$$ f(x_1,\\cdots,x_n)=\\sum_{q=1}^{2n+1} \\Phi_q\\!\\left(\\sum_{p=1}^{n}\\phi_{q,p}(x_p)\\right) $$\n\n**この式が言ってること**: どんなに複雑な「たくさんの入力を受け取る関数」も、実は「1 個の入力だけを扱う関数」と「足し算」だけを組み合わせれば作れる、という驚きの定理。だから AI も「1 個の入力だけ扱う部品」と「足し算」だけで作っていい、という発想の出発点になる。\n\n**記号の意味**:\n- $f$ … 入力 $x_1,\\dots,x_n$ から 1 つの数字を出す関数（料理のレシピ全体だと思って OK）\n- $x_p$ … $p$ 番目の入力の数字\n- $n$ … 入力の数字の個数\n- $\\phi_{q,p}$ … 入力 1 個だけを受け取って数字を返す内側の曲線（小さなレシピのパーツ）\n- $\\Phi_q$ … 「内側の曲線の合計」を受け取って 1 つの数字を返す外側の曲線\n- $\\sum_{p=1}^{n}$ … $p=1$ から $n$ まで全部足す、という記号\n- $2n+1$ … 内側の和を「何セット作るか」の個数。$n$ が増えると線形にしか増えない\n\n**身近な例え**: 料理のレシピが「肉・野菜・調味料…」何種類もの食材を組み合わせる複雑なものに見えても、実は「1 種類の食材を 1 個ずつ別々に下ごしらえして、最後にボウルに足し合わせる」だけで全部表せる、と言っている定理。\n\n#### (2) KAN の 1 層の式（中身は曲線の表）\n\n$$ \\mathbf{x}_{l+1,j} \\;=\\; \\sum_{i=1}^{n_l}\\phi_{l,j,i}(x_{l,i}) $$\n\n**この式が言ってること**: 「次の層の $j$ 番目の値」は、「今の層の各値 $x_{l,i}$ を学習可能な曲線 $\\phi_{l,j,i}$ に通して、全部足したもの」だよ、ということ。曲線をくぐらせて足すだけ、というのが KAN の正体。\n\n**記号の意味**:\n- $l$ … 何層目かを表す番号（0 から始まる）\n- $i$ … 今の層の何番目のノードか\n- $j$ … 次の層の何番目のノードか\n- $n_l$ … 今の層のノードの個数\n- $x_{l,i}$ … 今の層の $i$ 番目のノードに入っている数字\n- $\\phi_{l,j,i}$ … $(l,i)$ から $(l+1,j)$ をつなぐ線に置かれた「学習可能な曲線」。1 個の数字を入れて 1 個の数字を返す\n- $\\sum_{i=1}^{n_l}$ … $i=1$ から $n_l$ まで全部足す、という記号\n\n**身近な例え**: クラスの成績を出すとき、「数学」「国語」「英語」など科目ごとに**それぞれ違う配点ルール（曲線）**を通してから、合計点を出す感じ。MLP だと「全科目共通の配点ルール」を使うけれど、KAN だと「科目ごとに違うひねり方をする曲線」が学習で勝手にできる。\n\n#### (3) 1 本の曲線（活性化関数）の中身\n\n$$ \\phi(x) \\;=\\; w_b\\,\\mathrm{silu}(x) + w_s\\sum_i c_i B_i(x) $$\n\n**この式が言ってること**: KAN の 1 本の線は、「とりあえずの土台」となる固定のひねり関数 $\\mathrm{silu}(x)$ と、「自由に形を変えられる」B スプライン曲線（小さな山型関数 $B_i$ をいくつも重ねたもの）の足し合わせでできているよ、ということ。\n\n**記号の意味**:\n- $x$ … この線に入ってくる数字\n- $\\mathrm{silu}(x) = x/(1+e^{-x})$ … 既製品の「ひねり関数」。$x$ が大きいと $x$ に近く、$x$ が小さいとほぼ 0 になる S 字型の関数。土台として置く。← $e$ はネイピア数（約 2.71…）で「自然な増え方を表す数」だが、ここでは「とにかく S 字を作るための道具」と思っておけば OK\n- $B_i(x)$ … $i$ 番目の「小さな山型関数（B スプライン基底）」。$x$ がその山の真下にあるときだけ値を持ち、離れると 0 になる\n- $c_i$ … 山の高さ。これが学習で動く本当のパラメータ\n- $w_b, w_s$ … 全体の音量つまみ（土台と山型の効き具合を調整）。これも学習で動く\n\n**身近な例え**: 山型関数 $B_i$ は、ピアノの鍵盤の 1 つ 1 つ。$c_i$ はその鍵盤の音量。鍵盤を $x$ の位置に応じて鳴らし、足し合わせるとメロディ（曲線）になる。$\\mathrm{silu}$ は「常に薄く鳴っている BGM」みたいなもの。\n\n#### (4) スケーリング則（部品を増やせば誤差はどれくらい減るか）\n\n$$ \\ell \\;\\propto\\; G^{-(k+1)} $$\n\n**この式が言ってること**: 曲線の解像度（グリッドの細かさ $G$）を 2 倍にすると、誤差 $\\ell$ は $2^{k+1}$ 倍小さくなる。$k=3$（3 次スプライン）なら $2^4=16$ 倍。これが入力の数 $n$ に依らないのがすごいところ（**次元の呪いを破る**）。\n\n**記号の意味**:\n- $\\ell$ … 学習後の test RMSE（テストデータでの誤差。Root Mean Square Error、誤差を 2 乗して平均してルートを取ったもの）\n- $G$ … 1 本の曲線を区切る点の数（細かさ）\n- $k$ … スプラインの次数（曲線のなめらかさ。$k=3$ で 3 次曲線）\n- $k+1$ … 「scaling exponent（スケーリング指数）」と呼ばれる。大きいほど効率よく誤差が減る\n- $\\propto$ … 「比例する」記号。$\\ell$ が $G^{-(k+1)}$ に比例して動く\n\n**身近な例え**: 写真を細かいタイルで描き直すとき、タイルを半分の大きさにすると、画像の粗さ（誤差）が $2^4=16$ 倍細かく見えるようになる、という話。タイルの形（曲線の次数）が良いほど、細かくしたときの改善も大きい。\n\n#### (5) 正則化付きの学習目標（中身を「読みやすく」するための罰金）\n\n$$ \\ell_{\\rm total} \\;=\\; \\ell_{\\rm pred} + \\lambda\\!\\left(\\mu_1 \\sum_l |\\mathbf{\\Phi}_l|_1 + \\mu_2 \\sum_l S(\\mathbf{\\Phi}_l)\\right) $$\n\n**この式が言ってること**: 学習中に「予測の誤差」だけでなく、「使っている曲線の多さ」「曲線の散らばり度合い」にも罰金を加える。こうすると、使ってない曲線が自然に 0 になり、残った曲線だけ見ればモデルの中身がわかる。\n\n**記号の意味**:\n- $\\ell_{\\rm total}$ … トータルの罰点（これを小さくするように学習する）\n- $\\ell_{\\rm pred}$ … 予測そのものの誤差\n- $|\\mathbf{\\Phi}_l|_1$ … $l$ 層目に置かれている全部の曲線の「平均の大きさ」の合計。多いほど罰金\n- $S(\\mathbf{\\Phi}_l)$ … エントロピー（散らばり具合の数値。曲線の力が均等にバラけていると大きく、1 本に集中していると小さい）。← 「エントロピー」は「どれくらいバラバラか」を測る道具で、低いほど特定の曲線だけが活躍している状態\n- $\\lambda$ … 罰金の強さの全体つまみ\n- $\\mu_1, \\mu_2$ … 「曲線の大きさ罰金」と「散らばり罰金」のバランスつまみ（論文では $\\mu_1=\\mu_2=1$）\n\n**身近な例え**: テスト勉強で「ノート全部を持ち込み可」にすると、何を覚えたかわからない。でも「ノートのページ数が増えるごとに減点」「同じ情報があちこちにバラついても減点」というルールを足すと、生徒は要点だけが書かれた 1 ページのまとめノートを作るようになる。これが KAN の罰金の役目。\n\n## 何がすごいの？\n\n論文中で著者が挙げている主な実証結果は次のとおり（全部 TeX に書かれている数値）。\n\n- **おもちゃの関数 5 つ**（ベッセル関数 $J_0(20x)$、$\\exp(\\sin(\\pi x)+y^2)$、$xy$、100 次元の $\\exp(\\frac{1}{100}\\sum \\sin^2)$、4 次元の入れ子関数）で、KAN は理論線 $\\alpha=4$ にほぼ到達。MLP は早々に頭打ち。\n- **特殊関数 15 個**（数学・物理でよく出る特殊な関数。`ellipj`, `jv`, `yv`, `kv`, `iv`, `lpmv`, `sph_harm` など）で、KAN の Pareto frontier（「パラメータ数と精度の両方で他より優れている点の集まり」）が MLP より常に良かった。\n  - 例: $\\mathrm{lpmv}(0,x,y)$ で KAN の最良の test RMSE = $5.25\\times 10^{-5}$ vs MLP の $1.74\\times 10^{-2}$（Table tab:special_kan_shape）。およそ **330 倍精度が良い**。\n- **Feynman dataset**（物理学者ファインマンの教科書から取った 27 の方程式のデータセット）では、KAN と MLP は平均ほぼ互角だった、と著者は正直に書いている。ただし KAN は人間が手で作るより小さい構造を自動で見つけることが多い（例: 相対論的速度合成 $\\frac{u+v}{1+uv}$ を、手作業 5 層 [2,2,2,2,2,1] → 自動 2 層 [2,2,1] に圧縮）。\n- **PDE（偏微分方程式、Partial Differential Equation。空間や時間の変化を記述する方程式）の Poisson 方程式**: 2 層・幅 10 の小さな KAN（約 100 個のパラメータ）が、4 層・幅 100 の大きな MLP（約 10000 個のパラメータ）より **MSE で 100 倍精度が良い**（$10^{-7}$ vs $10^{-5}$）。しかもパラメータ数も 100 倍少ない。\n- **継続学習（continual learning、新しい問題を次々学んでも前のを忘れない学習）**: 5 個の山型関数を順に学ばせると、MLP は前のを忘れてしまう（「catastrophic forgetting、破滅的忘却」）。KAN はスプラインが**局所的**（鍵盤を 1 つ押しても近くの音にしか影響しない性質）なため、忘れずに済む。\n- **結び目理論（knot theory、ひもの絡まり方を研究する数学の分野）の DeepMind ベンチマーク**: 18 個の数学的不変量から「signature（シグネチャ、結び目を区別する整数）」を予測するタスクで、たった約 200 パラメータの $[17,1,14]$ KAN が **81.6% 精度**。DeepMind が使った 4 層・幅 300 の MLP（約 30 万パラメータ）の 78.0% を上回った。\n- **アンダーソン局在（Anderson localization、不規則な環境で電子の波が広がらず 1 か所に閉じこもる物理現象）**: KAN が「mobility edge（モビリティ端、波が広がる/閉じこもる境目）」の式を**記号として**取り出した。GAAM モデルでは真の式 $\\alpha E + 2\\lambda - 2 = 0$（精度 99.2%）に近い式を自動で発見（精度 99.0%）。\n\n著者が「contribution（貢献）」として挙げているのは:\n1. 元の 2 層に限られていたコルモゴロフ・アーノルド表現を、任意の幅・深さに一般化したアーキテクチャ KAN を作った。\n2. スケーリング指数 $\\alpha=k+1$（次元に依らない）を保証する近似定理（KAT）を示し、実験でも確かめた。\n3. スパース化 → 枝刈り → 記号化、という「中身を読みやすくする」流れ作業を作った。\n4. PDE・継続学習・結び目理論・アンダーソン局在で実際に効くことを示した。\n5. コードを `pip install pykan` で配布した。\n\n## キーワード辞典\n\n- **MLP**（Multi-Layer Perceptron、多層パーセプトロン） … 今の AI のほぼすべての基本部品。「数字をかけ算して足して、固定のひねり関数を通す」を繰り返す機械。\n- **KAN**（Kolmogorov–Arnold Network） … この論文が提案した新しい部品。線の上に「学習可能な曲線」を置き、点では足し算だけする。\n- **コルモゴロフ・アーノルド表現定理** … どんな多変数関数も、1 変数関数と足し算だけで作れる、という数学の定理。\n- **活性化関数**（activation function） … 数字をひねって別の数字に変える関数。MLP では sigmoid や ReLU など固定。KAN ではこれが学習で動く曲線になる。\n- **スプライン**（spline） … なめらかな曲線を、いくつかの小さな山型関数を足し合わせて作る方法。\n- **B スプライン**（B-spline） … スプラインの一種で、各「山型」の支え（影響範囲）が狭く局所的。KAN の中身に使われる。\n- **次元の呪い**（COD, Curse Of Dimensionality） … 入力の数字の種類が増えると、必要なデータや計算が爆発的に増えてしまう現象。\n- **grid extension**（グリッド拡張） … 粗い曲線を細かい曲線に書き写すこと。学習し直さずに精度が上げられる。\n- **正則化**（regularization） … 学習中に「複雑すぎる答え」に罰金を加えて、シンプルな答えを促す仕掛け。\n- **L1 正則化** … パラメータの絶対値の合計を罰金にする方法。多くを 0 に押し込む効果がある。\n- **エントロピー**（entropy） … バラつき度合いを測る数。低いほど 1 か所に集中している。\n- **枝刈り**（pruning） … 重要でないノードや線を切り落として、ネットを小さくすること。\n- **記号化**（symbolification, `fix_symbolic`） … 学習した曲線を「これは sin だ」「これは exp だ」と人間が指定して、記号の関数に置き換えること。\n- **Pareto frontier**（パレートフロンティア） … 「パラメータが少なくて精度も良い」という両立点の集まり。\n- **scaling law / scaling exponent**（スケーリング則・指数） … 「部品を 2 倍にすると誤差がどれくらい減るか」を表す関係。指数が大きいほどコスパが良い。\n- **RMSE**（Root Mean Square Error、平均二乗誤差の平方根） … 予測と正解のずれを「2 乗 → 平均 → ルート」したもの。小さいほど良い。\n- **MSE**（Mean Square Error、平均二乗誤差） … ずれを 2 乗して平均したもの。RMSE のルートを取る前のもの。\n- **PDE**（Partial Differential Equation、偏微分方程式） … 物理現象（波・熱・電場など）を記述する数式。\n- **Poisson 方程式** … 重力場や電場を記述する基本的な PDE の 1 つ。\n- **continual learning**（継続学習） … 新しいタスクを順に学んでも、前のタスクを忘れない学習。\n- **catastrophic forgetting**（破滅的忘却） … MLP がしばしばやらかす「新しい問題を学ぶと前のを忘れる」現象。\n- **knot theory**（結び目理論） … ひもの絡まり方の分類を研究する数学。\n- **signature**（結び目のシグネチャ） … 結び目を区別するための整数の不変量の 1 つ。\n- **Anderson localization**（アンダーソン局在） … 物質の中の電子の波が、不純物のせいで広がらず局所に閉じ込められる物理現象。\n- **mobility edge**（モビリティ端） … 波が広がる/局在する境界となるエネルギー。\n- **LBFGS** … 学習のための数値最適化の方法の 1 つ。普通の Adam や SGD（確率的勾配降下法）よりも、なめらかな小規模問題に向く。← SGD は「ちょっとずつパラメータを動かして正解に近づく」基本的な学習法。\n- **SiLU**（$x/(1+e^{-x})$） … S 字型のひねり関数の 1 つ。「Sigmoid Linear Unit」の略。\n- **UAT**（Universal Approximation Theorem、普遍近似定理） … MLP が「十分大きければどんな関数でも近似できる」ことを保証する古典的な定理。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **「重み = 学習可能な 1D 関数」という見方**は、ただ表現を言い換えただけに見えるけれど、(i) 内部自由度（grid）と外部自由度（ネットの形）を切り分けられる、(ii) 個々の活性化関数を**記号に変換できる**、という 2 つの大きな帰結を生む。MLP の「線形 + 固定非線形」を「学習可能な 1D 関数」に統合した、と読むのが正しい。\n- スケーリング指数 $\\alpha=k+1=4$ が入力の数 $d$ に**依らない**、というのが KAT（KAN Approximation Theorem）の核。MLP の場合の Sharma–Kaplan 理論では $\\alpha=(k+1)/d$ と入力数で割り算されていたので、本質的にここを上回る。ただしこの保証は「データに合成的なスパース構造がある」前提なので、その仮定が崩れるタスクでは KAN の優位は消えるかもしれない（著者も認めている）。\n- **正直な弱点**:\n  - 著者は「KAN は MLP の **約 10 倍遅い**」と書いている。線ごとに違う曲線を計算するため、まとめて行列計算できない構造的な問題。\n  - 評価は「小規模な AI + Science」に限定。言語モデル・画像分類のような普通の ML タスクでの証拠は無く、Transformer の MLP を KAN に置き換えた「kansformer」は今後の課題。\n  - 数学的保証 KAT は「滑らかな KA 表現が存在する」前提の上限。実際のデータでそれが存在するか・学習で見つかるかの保証はない。\n  - スケーリング実験で $\\alpha=4$ にきれいに乗るのは RMSE の**中央値**を取ったときで、平均だと $\\alpha\\approx 3$ にしかならない、というのは少し恣意的。\n- 結び目理論で、DeepMind の 30 万パラメータ MLP（78.0%）を 200 パラメータ KAN（81.6%）が上回ったが、論文発表後に Shi Lab が「60 パラメータの MLP でも 80% 出る」と報告した、と著者自身が Table tab:math-compare で書いている。つまり「AI + Science の問題は思ったほど計算を必要としないかもしれない」というのが正直なところ。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2404.19756v5/`\n- 正規ノート: `notes/arXiv-2404.19756v5.md`\n";
+const MACROS = {"\\sectionautorefname": "Section", "\\mat": "\\mathbf{#1}", "\\x": "\\mat{x}", "\\lag": "\\mathcal{L}", "\\zm": "{\\color{black!0!blue} #1}", "\\todo": "{\\color{black!0!blue} #1}", "\\arraystretch": "1.7"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

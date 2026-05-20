@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Evolutionary Optimization of Model Merging Recipes（モデルの「混ぜ合わせレシピ」を進化計算で自動的に見つける）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2403.13187v2.md</code>
+  &nbsp;|&nbsp; macros: <code>5</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Evolutionary Optimization of Model Merging Recipes（モデルの「混ぜ合わせレシピ」を進化計算で自動的に見つける）\n\n- arXiv: https://arxiv.org/abs/2403.13187\n- 一次ソース: ../papers/arXiv-2403.13187v2/\n- 正規ノート: ../notes/arXiv-2403.13187v2.md\n\n---\n\n## 一言で言うと\n\nすでに公開されている AI モデルを「どう混ぜれば賢くなるか」を、人間の勘ではなく進化のしくみで自動的に探し当てる方法を作ったよ、という話。\n\n## どんな問題を解こうとしてるの？\n\n- いまの世の中には「英語で数学が得意な AI」「日本語が得意な AI」「画像を見て答える AI」など、いろんな専門 AI（← 大量のデータで学習させた頭脳のかたまり）が公開されているよ。\n- これらを **混ぜ合わせる（model merging）** と、両方の力を持つ新しい AI を作れることが分かってきた。料理でいうと「カレールーとシチュールーを混ぜると別の味になる」みたいな感じ。\n  - うれしいのは、混ぜるだけなら **追加の勉強（学習）がいらない** こと。電気代も時間もほぼかからない。\n- でも今までは「どのモデルをどの割合で混ぜると美味しいか」は **人間の勘** に頼っていた。論文中では \"black art / alchemy（黒魔術・錬金術）\" と呼ばれているくらい属人的だった。\n- とくに **層スタック（Frankenmerging、← 別のモデルから一部の階層だけ取ってきて積み重ねる方法）** はパターンが多すぎて、ほとんどの人が同じレシピを使い回しているのが現実だった。\n\nつまり「いいレシピを人間が手で探すのは限界。コンピュータに勝手に見つけさせたい」という問題。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n**「進化」で混ぜレシピを探す**。生き物の進化って、たくさんの個体が生まれて → 強いやつだけ生き残って → その子孫がまた少しずつ変わって…を繰り返して環境に合った形になるよね。同じことをコンピュータの中でやる。たくさんの「混ぜ方の候補」を作って → テストして点数が高いものを残す → それを少し変えてまた候補を作る、を 1000 回くらい繰り返すと、人間が思いつかない上手なレシピが見つかる。\n\nここで賢いポイントは「混ぜ合わせは追加学習が要らないので、候補 1 つを採点するのが一瞬で終わる」こと。普通の AI 設計を進化で探そうとすると、候補ごとに何時間も学習しないといけなくて重すぎる。でも「混ぜるだけ」なら採点が早いので、進化計算とすごく相性がいい。\n\n著者は混ぜ方を **2 つの別々の軸** に分けて探す:\n\n1. **PS（Parameter Space / パラメータ空間）**: モデルの「数字の中身（重み、← 賢さを表す膨大な数字の集まり）」をどんな割合で混ぜるか。\n2. **DFS（Data Flow Space / データの通り道空間）**: モデルの中身は触らずに、「入力された文字がモデルの何段目 → 何段目 → … を順番に通るか」を組み替える。\n\nこの 2 つは別物なので、別々に最適化したり、両方組み合わせたりできる。\n\n### 仕組み\n\n- **step1（材料を選ぶ）**: ベースになる公開モデルを 3 つ用意する。\n  - shisa-gamma-7b-v1（日本語が得意）\n  - WizardMath-7B-V1.1（英語の数学が得意）\n  - Abel-7B-002（同じく英語の数学が得意）\n  - どれも Mistral-7B-v0.1 という同じ親モデルから fine-tune（← 追加学習で味付けし直す）された 7B（70 億個の数字を持つ）サイズ。\n\n- **step2（PS で混ぜ方を進化させる）**:\n  - 各層ごとに「DARE-TIES（← 後で説明）」というレシピに必要なパラメータを置く。\n  - **CMA-ES**（← 後で説明する進化計算アルゴリズム）で 1000 回試行して、いちばん日本語で数学を解けた組み合わせを選ぶ。\n  - 評価用には MGSM の日本語テスト 250 問は **絶対に使わない**（カンニング防止）。代わりに GSM8k から MGSM と被らない 1069 問を日本語訳して使う。\n\n- **step3（DFS で通り道を進化させる）**:\n  - 2 つのモデル（合計 64 層）を順番に並べて、それを 3 回繰り返した長さ 192 のレーンを用意する。\n  - 各スロットに「この層を使う / 使わない」のフラグ（indicator array $\\mathcal{I}$）を置いて、進化で並びを探す。\n  - さらに「ある層からある層へ移るときに、入力の数字を何倍に調整するか」を表す行列 $W$ も同時に最適化する。これがすごく重要で、抜くと性能が 20% 以上落ちる。\n  - EvoJAX という GPU で進化計算ができるツールを使って、128 個の候補 × 100 世代まわす。\n\n- **step4（PS + DFS を合わせる）**: step2 で作った PS モデルを「材料プール」に加えて、もう一度 DFS をかける。すると一番強くなる。\n\n- **step5（同じ枠組みで VLM もやる）**: 言語モデルだけでなく、画像を見て答える VLM（Vision-Language Model、← 写真＋質問 → 答えのテキスト、ができる AI）でも同じ手順をやって、日本文化に詳しい「EvoVLM-JP」を作る。\n\n### 主要な数式\n\n混ぜ方の基本になる式を 3 つ見ていくよ。中学生に新しい記号が出てくるたびに毎回その場で説明するので、わからなくなったら戻らなくて大丈夫。\n\n#### ① 一番素朴な混ぜ方（線形補間）\n\n$$ \\theta_\\text{new} = \\lambda\\, \\theta_1 + (1 - \\lambda)\\, \\theta_2 $$\n\n**この式が言ってること**: 2 つのモデルの「中身の数字たち」を、ある割合 $\\lambda$（ラムダ）で混ぜて、新しいモデルの中身を作っているよ。$\\lambda$ が 1 に近いと 1 つめ寄り、0 に近いと 2 つめ寄りになる。\n\n**記号の意味**:\n- $\\theta_1$, $\\theta_2$ … 2 つの元モデルの「賢さを決める数字の集まり」（モデルの中身全部）。$\\theta$ は「シータ」と読むギリシャ文字で、AI ではよく「モデルの中身の数字一式」を表すのに使う。\n- $\\theta_\\text{new}$ … 新しく混ぜてできたモデルの中身。\n- $\\lambda$ … 混ぜる割合。0〜1 の数。0.5 なら半々。\n\n**身近な例え**: オレンジジュースとリンゴジュースを混ぜるとき、$\\lambda$ = 0.7 ならオレンジ 7 : リンゴ 3。コップに入れる比率を変えるだけで、新しい味（=新しいモデル）が完成する。\n\n#### ② Task Arithmetic（タスクの足し算）\n\n$$ \\theta_\\text{new} = \\theta_\\text{base} + \\sum_{k} \\lambda_k\\, \\tau_k,\\quad \\tau_k = \\theta_k - \\theta_\\text{base} $$\n\n**この式が言ってること**: 「元のスッピンのモデル」に、「数学を覚えた分だけの変化量」「日本語を覚えた分だけの変化量」…を、好きな強さで足し算しているよ。料理に塩・砂糖・醤油を「好きな分量だけ追加で振りかける」イメージ。\n\n**記号の意味**:\n- $\\theta_\\text{base}$ … スッピンの元モデル（追加学習前）の中身。\n- $\\theta_k$ … タスク $k$（数学とか日本語とか）を覚えさせた後のモデルの中身。\n- $\\tau_k$ … 「タスクベクトル」。$\\theta_k$ から $\\theta_\\text{base}$ を引いたもの＝そのタスクを学んだことで変化した分。$\\tau$ は「タウ」と読むギリシャ文字。\n- $\\lambda_k$ … タスク $k$ の変化分を **どれくらい強く加えるか** の調節つまみ。\n- $\\sum_k$ … 「$k$ について全部足す」というしるし（中学校の総和記号と同じ）。\n\n**身近な例え**: 白いごはん（$\\theta_\\text{base}$）に、「ふりかけ A の風味」「ふりかけ B の風味」をそれぞれ好きなスプーン量だけ振りかけて新しい味を作る。$\\tau_k$ がふりかけ 1 本分の風味、$\\lambda_k$ がスプーン何杯ぶんかける、にあたる。\n\n#### ③ DARE（ランダムに薄めて、残った分を増幅）\n\n$$ \\hat{\\tau}_k = \\frac{1}{1-p}\\Big((1 - m_k) \\odot \\tau_k\\Big),\\quad m_k \\sim \\text{Bernoulli}(p) $$\n\n**この式が言ってること**: タスクベクトル（②で作った変化分）のうち、ランダムに選んだ一部を「ゼロにして捨てて」、残ったところだけを $1/(1-p)$ 倍に強くするよ。捨てた分の影響を残った数字に肩代わりさせるイメージ。こうするとモデル同士の干渉が減って、混ぜたときに壊れにくい。\n\n**記号の意味**:\n- $\\tau_k$ … ②で作ったタスクベクトル。\n- $m_k$ … 「ここは捨てるか残すか」を 1 か 0 で決めるサイコロの結果。たくさんの数字 1 つ 1 つに、別々のサイコロを振る。\n- $\\text{Bernoulli}(p)$ … 「確率 $p$ で 1（捨てる）、確率 $1-p$ で 0（残す）」というルールでサイコロを振ること。$p = 0.5$ ならコイン投げと同じ。← この「ベルヌーイ分布」は **コインの裏表のような 2 択をランダムに決めるルール** のこと。\n- $\\odot$ … 数字どうしを同じ位置ごとに掛け算する記号。「$m_k$ の 1 のところだけ $\\tau_k$ の数字を消す」働きをする。\n- $1/(1-p)$ … 残った数字の倍率。例えば半分捨てた（$p=0.5$）なら残った数字を 2 倍にする。\n- $\\hat{\\tau}_k$ … 薄めて & 増幅し直したあとのタスクベクトル。「ハット（^）」は「ちょっと加工したバージョン」を意味する印。\n\n**身近な例え**: 100 個ある絵の具のうち、コインを 1 個ずつ投げて表が出たやつだけ捨てる。残った絵の具は「ぼやけないように」濃さを 2 倍にする。これで全体の色味はだいたい保たれるけど、隣の絵の具とぶつかりにくくなる。\n\n> このあと TIES-Merging（重要なところだけ残す + 符号がそろうものだけ採用）と組み合わせて **DARE-TIES** というレシピを使い、その中の「どれくらい捨てるか / どれくらい混ぜるか」のつまみを CMA-ES（進化計算）で自動的に回す、というのが本論文の PS 側の作戦。\n\n#### ④ DFS の層間スケーリング行列 $W$\n\n$$ W_{ij} = \\pi_\\theta(i, j, t) $$\n\n**この式が言ってること**: 「$i$ 番目の層から $j$ 番目の層へ数字を渡すとき、何倍に調整するか」を、$\\pi_\\theta$ という小さなお助けネットワークで決めているよ。層をつなぎ替えると数字の大きさのクセが合わなくて性能が落ちるので、間に「アンプ（音量つまみ）」を入れているイメージ。\n\n**記号の意味**:\n- $W_{ij}$ … 層 $i$ → 層 $j$ への倍率。$W$ は表（行列）のかたちで、$M$ 個の層に対して $M \\times M$ のマス目を持つ。\n- $\\pi_\\theta$ … 倍率を出力する小さなネットワーク（関数）。$\\theta$ はその関数の中身の数字。$\\pi$ は「パイ」と読むギリシャ文字。\n- $i, j$ … 層の番号（何段目か）。\n- $t$ … 今 inference path（通り道）の何ステップ目にいるか。\n- 「層」… ここでは Transformer の 1 段分、または入力 / 出力の埋め込み（← 文字を数字に直す入口・出口）。\n\n**身近な例え**: リレー走で、A チームの選手から B チームの選手にバトンを渡すとき、走るスピードが違うと取り損ねる。そこで「A の i 番手 → B の j 番手はちょっとブレーキ気味に渡す、A の i' 番手 → B の j' 番手は加速して渡す」みたいに、組み合わせごとに **渡し方のつまみ** を 1 個ずつ用意してあげる。$W_{ij}$ がそのつまみ。著者が「これを全部 1 に固定すると性能が 20% 以上落ちた」と言っていて、バトンの渡し方がとても効くことを意味している。\n\n## 何がすごいの？\n\n### 日本語 × 数学のスコア（MGSM-JA, 250 問）\n\n- 元の 3 モデル: shisa-gamma-7b-v1 = 9.6 / WizardMath-7B-V1.1 = 18.4 / Abel-7B-002 = 30.0\n- **提案手法 (PS) 7B = 52.0**\n- 提案手法 (DFS) 10B = 36.4\n- **提案手法 (PS+DFS) 10B = 55.2**\n- 参考: Llama 2 70B = 18.0、Japanese StableLM 70B = 17.2、Swallow 70B = 13.6、GPT-3.5 = 50.4、GPT-4 = 78.8\n\n→ **7B〜10B（70〜100 億パラメータ）のサイズで、70B（700 億）の日本語モデル群を全部抜き、GPT-3.5 も超えた**。サイズが 10 分の 1 なのに勝っている、というのが衝撃。\n\n### 日本語の総合力（JP-LMEH 9 タスク平均）\n\n- Ours (PS) 7B = **70.5**\n- Swallow 70B = 71.5（これがほぼ唯一勝っているモデル）\n- Japanese StableLM 70B = 68.3、Llama 2 70B = 64.5\n\n→ サイズ 10 分の 1 で **70B 級と互角**。\n\n### 画像 × 日本語の VLM (ROUGE-L という文章の重なり度合いの指標)\n\n- LLaVA-1.6-Mistral-7B（元の英語 VLM）: JA-VG-VQA-500 = 14.3 / JA-VLM-Bench-In-the-Wild = 41.1\n- Japanese Stable VLM: 41.1 系（一部のみ）／ 40.5\n- **Ours (PS)**: **19.7 / 51.2**\n- **Ours (PS+DFS)**: **20.4 / 47.6**\n- Frankenmerging（既存の素朴な層スタック）相当 = 7.3 / 26.7 で大失敗\n\n→ 画像でも進化のレシピが勝つ。とくに **日本文化の固有物**（鯉のぼり、奈良の鹿、青信号、渋谷、原爆ドーム、日本の信号機）の説明で、他の VLM が「green」と言ってしまうところを、提案モデルだけが正しく「青」と答えられた。\n\n### 著者が自分で挙げている貢献\n\n1. **Automated Model Composition**: 「Evolutionary Model Merge」という、進化計算でレシピを自動発見する一般的な枠組みを提案。\n2. **Cross-Domain Merging**: 異ジャンル（言語 × 数学、言語 × 画像）のモデルでも混ぜて新しい力を出せると示した。\n3. **State-of-the-Art Performance**: 日本語数学 LLM と日本語 VLM の両方で当時の最高性能を達成。\n4. **High Efficiency and Surprising Generalizability**: 7B が 70B を超える、しかも MGSM のテスト 250 問を最適化に **一切使っていない** のに高得点（≒ カンニングなしで汎化）。\n5. **Culturally-Aware VLM**: 日本文化を写真から正しく説明できる初めての強力な日本 VLM。\n\nおまけ: モデル本体（EvoLLM-JP, EvoVLM-JP）と新しいベンチマーク（JA-VLM-Bench-In-the-Wild、42 画像 50 問）も OSS で公開。\n\n## キーワード辞典\n\n出現順に。中学生に向けて 1 行で。\n\n- **LLM（Large Language Model, 大規模言語モデル）** … 大量の文章で勉強した「文章を続けて書ける巨大な AI」。\n- **model merging（モデルマージ／混ぜ合わせ）** … 学習済みの AI を 2 つ以上、追加学習なしで合成して新しい AI を作る技術。\n- **fine-tuning（ファインチューニング）** … 既にできあがった AI に、追加で少しだけ勉強させて特定の用途向けに味付けすること。\n- **black art / alchemy（黒魔術・錬金術）** … ここでは「ちゃんとした理屈がなく、勘でやるしかない作業」の比喩。\n- **mergekit** … モデルを混ぜるための代表的なオープンソース道具箱。\n- **Task Arithmetic（タスク算術）** … 「学習で変化した分」だけを切り出して足し引きするマージ手法。\n- **task vector（タスクベクトル）** … 「ファインチューン後 − ファインチューン前」の差分。そのタスクを覚えたことで変わった分の数字の塊。\n- **TIES-Merging** … マージ時に「弱い変更は捨てる／符号が食い違うものは多数決で揃える／揃った分だけ平均する」3 ステップを踏む手法。\n- **DARE** … タスクベクトルをランダムに薄めて、残った分を増幅する手法。\n- **DARE-TIES** … DARE と TIES を組み合わせた、本論文 PS 側の基盤レシピ。\n- **Frankenmerging** … いろんなモデルの層だけを取ってきて積み重ねる、ちょっと無茶な混ぜ方。\n- **parameter（パラメータ）／weight（重み）** … AI の中身に詰まっている、賢さを決める巨大な数字の集まり。\n- **transformer block（トランスフォーマー・ブロック）** … いまの LLM の基本部品、文章の意味を捉える 1 段分。\n- **layer（層）** … この論文では「トランスフォーマー・ブロック 1 段、または入出力の埋め込み層」のこと。\n- **embedding（埋め込み）** … 文字や単語を、計算で扱える数字の並びに変換する仕組み。\n- **inference path（推論経路／データの通り道）** … 入力された文字が、モデルの中をどの層 → どの層と順番に通っていくか。\n- **PS / DFS** … Parameter Space（中身の混ぜ方）と Data Flow Space（通り道の組み替え方）。本論文の 2 大軸。\n- **CMA-ES（Covariance Matrix Adaptation Evolution Strategy）** … 連続値の最適化に強い進化計算アルゴリズム。たくさん候補を生んで、強かった子の周辺をまた重点的に探す。\n- **Optuna** … 日本発の最適化ライブラリ。本論文の PS 側で CMA-ES の実装として使われている。\n- **EvoJAX** … 進化計算を GPU 上で高速に回せるライブラリ。DFS 側で使用。\n- **population（個体群）／generation（世代）** … 進化計算でいう「同時に試している候補の数」と「世代交代の回数」。\n- **fitness（適応度）** … その候補が「どれくらい優秀か」の点数。本論文では訓練問題の正解率。\n- **MGSM（Multilingual GSM8k）** … 算数の文章題（小学校レベル）を多言語に翻訳したベンチマーク。MGSM-JA は日本語版 250 問。\n- **GSM8k** … 英語の算数文章題ベンチマーク。MGSM の元。\n- **JP-LMEH（Japanese Language Model Evaluation Harness）** … 日本語の総合力を 9 タスクで測る評価セット。\n- **VLM（Vision-Language Model）** … 画像を見て文章で答えられる AI。\n- **ROUGE-L** … 出力テキストが正解テキストとどれだけ重なっているかを測るスコア。\n- **LoRA（Low-Rank Adaptation）** … 軽い追加学習の方法。本論文では比較対象（baseline）。\n- **NAS（Neural Architecture Search）** … AI の構造そのものを自動で探す研究分野。本論文の「層の通り道を進化で探す」のは NAS の親戚。\n- **NSGA-II** … 多目的最適化の有名な進化計算アルゴリズム。複数の指標を同時に最大化したいときに使う。\n- **indicator array $\\mathcal{I}$** … DFS で「この層を使うか／飛ばすか」を決める長さ 192 の 0/1 並び。\n- **scaling matrix $W$** … 層を渡るときの数字の倍率の表（$M \\times M$）。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **PS の重み合計が ≈ 2 になる現象**: 進化が見つけた最適解では、3 モデルの重み係数の合計が 1 を超えて 2 に近づいた。これは「単なる平均」ではなく「各モデルの寄与をむしろ増幅させる」ほうが効くことを意味する。とくに shisa-gamma は 100B トークン（← 1000 億単語ぶん）の継続事前学習をしているので、DARE のスパース化（捨てる作業）で消されすぎないように、進化が密度（残す割合）を高めに調整したと解釈されている。これは DARE 論文 §4.6 の「強く fine-tune されたモデルでは DARE の sparsification は過剰削減になりやすい」という指摘と整合的。\n\n- **DFS の \"subtract & add\" メカニズム**: 13B モデルの解析で、MetaMath-13B の **layer #30 を抜くだけ** で MGSM-JA が 8.0 → 10% に改善。さらに DFS は (1) 英語数学モデルが日本語で出力しない問題を出力の確率分布を寄せて矯正する、(2) 数学モデルが日本語の理解で失敗する箇所に日本語 LM の層を挿入して補正する、という 2 つのシナリオで効いていると推測されている（理論的な完全説明はまだ）。\n\n- **無関係モデルを混ぜたらどうなる？（distraction 実験）**: 関係ないモデルを 0/1/2/4/8 個まぜると MGSM-JA は 50.0 → 46.8 → 46.8 → 48.4 → 40.8 と緩やかに低下するだけ。手動の source 選定にそこまで神経質にならなくていい、という実用的知見。\n\n- **MGSM-JA test の汚染を避ける工夫**: 評価に使う 250 問は最適化中いっさい使わず、最適化には GSM8k の MGSM 非重複 1069 問の日本語訳を使った（ID 250〜1318）。「ベンチを直接最適化していないのに汎化した」のがこの論文のキーメッセージ。\n\n- **license の注意**: WizardMath が非商用ライセンスなので、それを含む EvoLLM-JP も非商用扱い。商用 OK の Apache 2.0 版として `EvoLLM-JP-A`（shisa-gamma + Arithmo2-Mistral-7B + Abel-7B-002, MGSM-JA 52.4 / JP-LMEH 69.0）を別途公開。\n\n- **著者自身が認める弱点（Limitations）**: 出力に論理的整合性を欠く例があり、instruction tuning や alignment を行っていないので事実誤りが出ることがある。マージは便利だが、安全に使うには追加の調整が要る。\n\n- **計算コストの公平比較が薄い**: CMA-ES 1000 trial や DFS 128 × 100 世代の合計 GPU 時間を、同じ予算で fine-tune に振った場合との pareto 曲線は示されていない（fine-tune ベースラインは 3 epoch × 1069 sample しかやっていない）。\n\n- **MGSM-JA のテスト 250 問は小さい**: 数ポイント差は誤差範囲のはずだが、論文には信頼区間がない。複数 seed の分散も未掲載。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2403.13187v2/`\n- 正規ノート: `notes/arXiv-2403.13187v2.md`\n";
+const MACROS = {"\\ja": "%\n  \\begin{CJK}{UTF8}{ipxm}#1\\end{CJK}%", "\\yujin": "\\textcolor{orange}{\\textbf{Yujin: }#1}", "\\takuya": "\\textcolor{cyan}{\\textbf{Takuya: }#1}", "\\makoto": "\\textcolor{blue}{\\textbf{Makoto: }#1}", "\\david": "\\textcolor{purple}{\\textbf{David: }#1}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

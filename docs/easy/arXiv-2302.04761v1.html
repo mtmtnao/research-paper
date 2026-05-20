@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Toolformer: Language Models Can Teach Themselves to Use Tools（言語モデルは自分で道具の使い方を学べる）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2302.04761v1.md</code>
+  &nbsp;|&nbsp; macros: <code>20</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Toolformer: Language Models Can Teach Themselves to Use Tools（言語モデルは自分で道具の使い方を学べる）\n\n- arXiv: https://arxiv.org/abs/2302.04761\n- 一次ソース: ../papers/arXiv-2302.04761v1/\n- 正規ノート: ../notes/arXiv-2302.04761v1.md\n\n---\n\n## 一言で言うと\n\nAI が「電卓・検索・翻訳などの道具」を自分で「いつ・どう使うか」を、人間に教わらず自分で練習して覚える方法。\n\n## どんな問題を解こうとしてるの？\n\n- **現実の困りごと**: 文章を作る AI（言語モデル、英語で Language Model、略して LM ← 大量の文章を読んで「次にくる単語」を予想する練習をしたコンピュータプログラム）は、文章を書くのは得意なのに、なぜか以下が苦手:\n  - 算数の計算（「123 × 47 はいくつ？」みたいなのを間違える）\n  - 最新の事実（「今年のワールドカップで優勝したのは？」と聞かれても、AI が勉強したのが去年までだと答えられない）\n  - 日本語・ヒンディー語など英語以外の言葉\n  - 「今日が何月何日か」がわからない\n  - そして、わからないと**それっぽい嘘をつく**（「ハルシネーション」と呼ぶ ← 幻覚。AI が事実じゃないことを自信満々に書いてしまう現象）。\n- たとえば、君が友達に「3284 × 197 はいくつ？」と聞かれて、暗算で適当に「だいたい 60 万くらい！」と答えるようなもの。電卓を使えば一発なのに。\n\n- **これまでのやり方の何が足りなかったか**:\n  - **方法 A**: 人間が AI に「ここで電卓を使え、ここで検索を使え」と何万件も手作業で教える（WebGPT や LaMDA など）。お金と時間がものすごくかかる。\n  - **方法 B**: タスクごとに「このタイプの問題なら電卓を使え」と人間が指示文に書いておく（PAL や TALM など）。新しい種類の問題が来るたびに人間が書き直さないといけない。\n  - つまり、**「AI が自分で、いつ・どの道具を使うか判断する」ような汎用的（はんようてき＝なんにでも使える）な方法**がなかった。\n\n## どうやって解いたの？\n\n### コアアイデア\n\nAI に **「自分で問題集の答えを作って、自分で丸付けする」** ような自習をさせる。\nたとえば君が算数の問題を解くとき、「ここで電卓を使ったら正解できた、ここでは使わなくても解けた」と振り返りノートを作るとする。その振り返りノートを次の自分の練習教材にする — Toolformer はこれを AI にやらせる。\n\n具体的には、ふつうの文章（インターネットから拾ってきた文章）の所々に、AI が「ここで電卓を呼んでみよう」「ここで検索しよう」と試しに道具呼び出しを書き込む。そして実際に道具を使った結果を入れてみて、**「その結果のおかげで次の単語が当てやすくなったか？」** で良し悪しを判定する。当てやすくなった呼び出しだけ残して教材にする。\n\n### 仕組み\n\n5 つのステップで進む（論文の Figure 2 の手順）:\n\n- **step 1（候補作り / Sampling）**: ふつうの文章 $x$ をたくさん用意し、AI に「ここに道具呼び出しを入れるとしたら何を入れる？」と試させる。1 つの文章につき、5 個ぐらい候補を作る。\n- **step 2（実行 / Execution）**: 出てきた呼び出しを実際に動かす。電卓なら計算する、検索なら検索する。返ってきた答えを $r$ と呼ぶ。\n- **step 3（ふるい分け / Filtering）**: 「呼び出し＋答え」を文章にはさんだ場合と、「呼び出さなかった場合」とで、**次にくる単語を AI が当てる難しさ**を比べる。当てやすくなったやつだけ残す。\n- **step 4（追加学習 / Finetuning）**: 残った道具呼び出しを文章にはさみ込んだ新しい教材 $\\mathcal{C}^*$ を作る。これを使って AI をもう一度勉強させる（finetuning ← すでに勉強済みの AI に追加で勉強させること）。\n- **step 5（本番 / Inference）**: AI が文章を書いている途中で「→」という記号を出したら、そこで一旦止めて道具を呼び、答えを差し込んで続きを書かせる。\n\n使う道具は 5 種類:\n\n- **質問応答（QA）**: 「○○はどこ？」と聞くと答えてくれる AI（Atlas という別モデル）\n- **電卓 (Calculator)**: たし算・ひき算・かけ算・わり算だけ。小数点 2 桁まで。\n- **Wikipedia 検索 (Wikipedia Search)**: 単語を渡すと Wikipedia から関連する短い文を返す（BM25 という昔ながらの検索手法）\n- **翻訳 (Machine Translation)**: 何語でも英語に直してくれる（NLLB という別 AI）\n- **カレンダー (Calendar)**: 「今日は何月何日か」を返す（入力なし）\n\n土台になる AI は **GPT-J**（パラメータ ← AI の中の調整つまみ。これが多いほど賢くなりやすいけど計算が重くなる。GPT-J は 67 億個のつまみを持つ）。学習に使う文章は **CCNet**（インターネットを集めた大量の文章データ）の一部。\n\n### 主要な数式\n\n**① 「道具を呼び出すかどうか」を決める確率**\n\n$$ p_i = p_M(\\texttt{<API>} \\mid P(\\mathbf{x}), x_{1:i-1}) $$\n\n**この式が言ってること**: 文章の $i$ 番目の位置で、AI が「ここで道具を呼びたいな」と思う気持ちの強さを表す。これが大きい位置だけ「呼び出し候補」として残す。\n\n**記号の意味**:\n- $p_i$ … $i$ 番目で道具を呼びたい気持ちの強さ（0 から 1 の数。1 に近いほど呼びたい）\n- $p_M(\\cdot)$ … 言語モデル $M$ が「次にこの記号が来そう」と思う度合い\n- $\\texttt{<API>}$ … 「ここから道具呼び出しだよ」という特別な印（タグ）\n- $P(\\mathbf{x})$ … 「道具を呼んでいい文章の例だよ」と AI に見せるお手本のプロンプト（指示文）\n- $x_{1:i-1}$ … 文章の最初から $i-1$ 番目までの単語列\n\n**身近な例え**: 算数の文章題を読んでいる君が、各文の途中で「ここ、電卓を取り出したくなる度」を心の中で 0〜100 点で付ける感じ。例えば「リンゴが 27 個ありました」と読んだ瞬間は 5 点だけど、「合計は」と読んだ瞬間は 90 点になる。点数が高いところで実際に電卓を握る。\n\n**② 道具を呼んだ方が得かどうかを測る「点差」**\n\n$$ L_i^- - L_i^+ \\geq \\tau_f $$\n\n**この式が言ってること**: 「道具を使わなかったときの間違いやすさ $L_i^-$」から「道具を使ったときの間違いやすさ $L_i^+$」を引いて、その**減った量**が決められたハードル $\\tau_f$（既定 1.0）より大きければ、その呼び出しは「役に立った」と認めて教材に残す。\n\n**記号の意味**:\n- $L_i^+$ … 道具を呼んで答えも見せた状態で、AI が後ろの単語を当てそこねる度合い（小さいほど当てやすい）\n- $L_i^-$ … 道具を呼ばなかった or 呼んだだけで答えを見せなかったとき、AI が当てそこねる度合い\n- $\\tau_f$ … ハードルの高さ。0.5 とか 1.0 とか論文が決めた数字\n- $L$ … 「間違いやすさ」のスコア。AI が次の単語を確信を持って当てられればこの値は小さい（中学生向け解説: 学校のテストで「自信なく丸を付けた問題が何問あったか」を点数化したと思えば近い）\n\n**身近な例え**: 算数のテストで「電卓を使ったとき」と「使わなかったとき」を比べて、**電卓ありのほうが 1 点以上点数が伸びた問題だけ**、振り返りノートに「ここは電卓使うべき」と書き込む。逆に、電卓を使っても点が変わらなかったり下がった問題は「ここは別に使わなくていい」とノートから消す。\n\n**③ 重み付け（呼び出しの近くだけ重視する）**\n\n$$ \\tilde{w}_t = \\max(0,\\ 1 - 0.2 \\cdot t) $$\n\n**この式が言ってること**: 道具を呼んだ位置から $t$ 単語分先までの「当てやすさ」を計算するけど、**呼んだ場所のすぐ近く（5 単語くらい）だけ強く考えて、それより遠い単語は無視する**。\n\n**記号の意味**:\n- $\\tilde{w}_t$ … 道具呼び出しから $t$ 単語離れたところの重要度\n- $t$ … 道具呼び出しからの距離（単語数）\n- $\\max(0, \\cdot)$ … マイナスになったら 0 にするという意味（「カッコの中身と 0 のうち大きい方をとる」関数）\n- $0.2$ … 1 単語ごとに重要度を 0.2 ずつ減らす速さ\n\n**身近な例え**: 友達に「今のスマホで時刻を見たから」と話すとき、その情報が役に立つのは「だから 3 時に集合ね」のすぐ後ろの話までで、10 分後の話題には関係ない。直近の数単語だけ評価する、というルール。\n\n## 何がすごいの？\n\nすべて **zero-shot**（ゼロショット ← AI に「こうやって解け」というお手本を見せず、ただ「解いて」と言うだけのテスト方式）の結果。論文の Table 1〜4 から数値を直接抜粋:\n\n- **LAMA（事実の穴埋めテスト。SQuAD / Google-RE / T-REx の 3 種類）**:\n  - GPT-J（同じ大きさのベースライン）: 17.8 / 4.9 / 31.9\n  - GPT-3（25 倍も大きいライバル、175B = 1750 億パラメータ）: 26.8 / 7.0 / 39.8\n  - **Toolformer**: **33.8 / 11.5 / 53.5** ← 25 倍小さいのに GPT-3 に勝つ。QA ツールを 98.1% 使用。\n- **算数テスト（ASDiv / SVAMP / MAWPS）**:\n  - GPT-J: 7.5 / 5.2 / 9.9\n  - GPT-3 175B: 14.0 / 10.0 / 19.8\n  - **Toolformer**: **40.4 / 29.4 / 44.0** ← 電卓を 97.9% 使う。点数が 4 倍以上。\n- **質問応答（WebQS / NQ / TriviaQA）**: ここは GPT-3 にまだ届かない。Toolformer 26.3 / 17.7 / 48.8 vs GPT-3 29.0 / 22.6 / 65.9。理由は「検索エンジンが古い BM25 で弱い」「検索結果を見て質問し直すができない」と著者自身が分析。\n- **多言語質問応答（MLQA）**: スペイン語などでは翻訳ツールを 63.8〜94.9% 使うが、ヒンディー語だけ 7.3% しか使わない。素の GPT-J にいつも勝てるわけではない。\n- **日付の問題（TempLAMA / Dateset）**: Toolformer 16.3 / 27.3。新作の Dateset ではカレンダーを 54.8% 使って圧勝。\n- **ふつうの文章生成能力 (Perplexity)**: WikiText 9.9 → 10.3、CCNet 10.6 → 10.5。道具を使う訓練をしても、ふつうの文章を書く能力は壊れない（Table 5）。\n- **大きさによる効き目**: GPT-2 124M / 355M / 775M / 1.6B と GPT-J 6.7B で比較。**だいたい 775M（7.75 億）パラメータ以上にならないと、道具を使えるようにならない**（Figure 4）。小さい AI に道具を持たせても意味がないという観察。\n\n論文が「contribution（貢献）」として挙げているのは:\n1. **人間ラベルなしで道具の使い方を学べる汎用枠組み**\n2. **「次単語予測の難しさが減るか」というシンプルな判定基準**\n3. **5 種類の道具すべてでゼロショット改善を実証**\n4. **6.7B モデルが 175B モデルに多くの課題で勝てる**サンプル効率\n5. **道具を使える能力は ~775M 付近で「ぽっと」現れる**という観察（emergence ← 創発：小さい AI ではできないことが、ある大きさを超えると突然できるようになる現象）\n\n## キーワード辞典\n\n- **言語モデル (Language Model / LM)** … 大量の文章を読んで「次の単語」を予想する練習をした AI。文章を作ったり質問に答えたりできる。\n- **GPT-J** … 67 億パラメータの公開言語モデル。Toolformer の土台。\n- **GPT-3** … 1750 億パラメータの大きい AI（GPT-J の約 25 倍）。比較相手。\n- **パラメータ** … AI の中の調整つまみの数。多いほど賢くなりやすい。\n- **fine-tuning（ファインチューニング）** … すでに勉強済みの AI に追加で勉強させて、ある仕事を得意にすること。\n- **API（エーピーアイ）** … 「他のプログラムに仕事を頼むための窓口」。Toolformer では「電卓 API」「検索 API」など、AI が呼べる道具の入口。\n- **API call（API 呼び出し）** … 道具に仕事を頼むこと。`[Calculator(27+4*2)]` のように書く。\n- **zero-shot（ゼロショット）** … AI に「こう解け」のお手本を見せず、ぶっつけ本番でやらせること。\n- **few-shot（フューショット）** … 数例だけお手本を見せること。\n- **self-supervised（自己教師あり学習）** … 人間がラベル（正解）を付けなくても、データから自動的に「正解っぽいもの」を作って学習すること。Toolformer は「次単語予測の難しさが減るか」を自前の正解にしている。\n- **prompt（プロンプト）** … AI への指示文・お題。\n- **in-context learning（文脈内学習）** … プロンプトの中の例を見て、AI がその場でやり方を覚えること。\n- **hallucination（ハルシネーション）** … AI が事実じゃないことを自信満々に書いてしまう現象。\n- **perplexity（パープレキシティ）** … AI が次の単語をどれくらい「迷わずに」予想できるかの指標。小さいほど良い。Toolformer は道具を持っても perplexity が悪化しないことを確認している。\n- **cross-entropy loss（クロスエントロピー損失）** … 「AI が予想を外した度合い」を測る数値。小さいほど良い。\n- **CCNet** … インターネットから集めた大量の文章データ。学習用。\n- **LAMA / SQuAD / Google-RE / T-REx / WebQS / NQ / TriviaQA / MLQA / TempLAMA / ASDiv / SVAMP / MAWPS** … 性能を測るためのテスト問題集。LAMA・TempLAMA は穴埋め、SVAMP などは算数の文章題、MLQA は多言語質問応答。\n- **Dateset** … 著者がこの論文用に新しく作った日付計算の問題集。9,400 問。\n- **BM25** … 昔からある検索アルゴリズム。新しい AI 検索より単純で、Toolformer が Wikipedia 検索に使っている。\n- **NLLB** … Meta が公開した 200 言語対応の翻訳 AI（6 億パラメータ）。\n- **Atlas** … 質問応答ツールに使われている別の AI。\n- **emergence（創発）** … ある大きさを超えると AI に突然新しい能力が現れること。Toolformer では ~775M で道具使用能力が出る。\n- **decoding（デコーディング）** … AI が文章を 1 単語ずつ生成する手順のこと。\n- **greedy decoding（貪欲デコーディング）** … 「いま一番ありそうな単語」を毎回選ぶ生成方式。\n- **top-$k$** … 「上位 $k$ 個のうちのどれか」。Toolformer は `<API>` が**上位 10 個**に入っていたら呼び出す、という改造を入れた。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **$L_i^-$ をもう少し正確に**: 論文では $L_i^- = \\min(L_i(\\varepsilon), L_i(\\text{e}(c_i, \\varepsilon)))$ という形で、**「呼ばなかった場合」と「呼んだけど答えを見せなかった場合」の小さい方**を比較相手にしている。これは「API 呼び出しの文字列自体に情報が漏れる」のを差し引くため。たとえば `[QA(ナイル川の長さは?)]` と書いた時点で「答えが長さなんだな」とヒントが出てしまう。それを公平に取り除くテクニック。\n- **記号の実装上の置き換え**: 論文では `<API>`, `</API>`, `→` と書いているが、実際は既存の言語モデルの語彙に新しい記号を増やさず、`[`, `]`, `->` を流用している。\n- **5 種類の道具の例とフィルタリング件数**（Table 2、$\\tau_f = 1.0$）: QA 18,526 件、Wikipedia 検索 60,974 件、電卓 994 件、カレンダー 20,587 件、翻訳 1,034 件。**100 万文書を処理しても電卓では 994 件しか残らない**というサンプル効率の悪さを著者は正直に書いている。\n- **decoding の小ワザ**（Table 6）: greedy では `<API>` を選びにくいので「上位 10 個に入っていたら呼ぶ」と改造している。$k=1$（純 greedy）だと T-REx で 47.8、$k=10$ で 53.5。さらに $k=1$ のとき、**「自分が外しそうな例だけ呼ぶ」**ような自己認識（calibration）が見られる: 呼んだ部分の正答率 53.0 > 呼ばなかった部分 44.3 > 全部禁止 34.9。ただし $k$ を上げるとこの自己認識は崩れる。\n- **チェイン不可**: 「カレンダーで日付を取得 → その日付で QA」のような**道具の連鎖**が学習できない。訓練データを作るとき各 API を独立に試しているのが原因。TempLAMA でカレンダーが 0.2% しか使われない理由もここ。\n- **wording sensitivity（言葉づかいへの敏感さ）**: 「ほぼ同じ意味の入力でも API を呼ぶ／呼ばないが変わる」と著者自身が認めている。\n- **コストを考えていない**: 安い電卓と高い翻訳・QA を区別せず、「呼んだ方が perplexity が下がる」だけで採用している。実用ではお金や時間も気にしたい。\n- **多言語で必ず勝つわけではない**: MLQA でドイツ語・中国語・アラビア語では素の GPT-J に負ける。CCNet で追加学習したことによる「データの分布のズレ」が原因と分析されている。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2302.04761v1/`\n- 正規ノート: `notes/arXiv-2302.04761v1.md`\n";
+const MACROS = {"\\floatpagefraction": "1.0", "\\topfraction": ".9", "\\timo": "\\ifshowcomments\\textcolor{purple}{[Timo: #1]}\\fi", "\\nicola": "\\ifshowcomments\\textcolor{blue}{[Nicola: #1]}\\fi", "\\luke": "\\ifshowcomments\\textcolor{cyan}{[Luke: #1]}\\fi", "\\jane": "\\ifshowcomments\\textcolor{orange}{[Jane: #1]}\\fi", "\\rob": "\\ifshowcomments\\textcolor{green}{[Roberto: #1]}\\fi", "\\maria": "\\ifshowcomments\\textcolor{magenta}{[Maria: #1]}\\fi", "\\thom": "\\ifshowcomments\\textcolor{gray}{[Thomas: #1]}\\fi", "\\negphantom": "\\settowidth{\\dimen0}{#1}\\hspace*{-\\dimen0}", "\\todo": "\\textcolor{red}{[TODO: #1]}", "\\ours": "Toolformer", "\\oursFull": "\\textcolor{red}{\\textsc{Our Method}}", "\\mc": "\\textcolor{red}{(CITE #1)}", "\\mn": "\\textcolor{red}{??.?}", "\\cmark": "\\ding{51}", "\\xmark": "\\ding{55}", "\\tabularxcolumn": "m{#1}", "\\argmax": "\\operatorname{arg\\,max}", "\\argmin": "\\operatorname{arg\\,min}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

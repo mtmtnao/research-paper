@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Tree of Thoughts: Deliberate Problem Solving with Large Language Models（思考の木：AI に「じっくり考える」をさせる方法）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2305.10601v2.md</code>
+  &nbsp;|&nbsp; macros: <code>18</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Tree of Thoughts: Deliberate Problem Solving with Large Language Models（思考の木：AI に「じっくり考える」をさせる方法）\n\n- arXiv: https://arxiv.org/abs/2305.10601\n- 一次ソース: ../papers/arXiv-2305.10601v2/\n- 正規ノート: ../notes/arXiv-2305.10601v2.md\n\n---\n\n## 一言で言うと\n\nChatGPT のような AI に、答えを一気に書かせるのではなく「枝分かれする思考の木」をつくらせて、有望そうな枝だけ伸ばしていく仕組み。\n\n## どんな問題を解こうとしてるの？\n\n- ChatGPT みたいな AI（これを「大規模言語モデル」、略して **LLM** と呼ぶよ。大量の文章で学習した、文章を続きから書くのが得意な AI のこと）は、文章を **左から右に 1 文字（正確には「トークン」という単位）ずつ** 書いていく。一度書いた文字は戻って書き直さない。\n- これは、テストを **1 行目から消しゴム禁止で書いていく** ようなもの。最初の数文字をうっかり間違えると、後でどう頑張っても取り返しがつかない。\n- たとえば「**Game of 24**」というパズル：4 つの数字（例: 4, 9, 10, 13）を +, −, ×, ÷ で組み合わせて 24 を作る。最初に「4 +」と書いてしまうと、もうこの組み合わせでは 24 にできないことが多いのに、AI は気づかず進んでしまう。\n- これまでの工夫として「**Chain-of-Thought（思考の鎖、略して CoT）**」という方法があった。これは「途中の計算を文章で書きながら答えなさい」と頼むやり方。でも結局 **一本道で書き続ける** だけで、「あ、この道はダメだ、戻ろう」ができない。\n- 人間が難しいパズルを解くときは「この手はどうかな…ダメっぽいな、別の手を試そう」と **枝分かれを試して戻る**。AI にもこれをやらせたい、というのがこの論文の動機。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n**思考を「木」にする**。これが論文のすべて。\n\n迷路を解くところを想像してみて。一本道で進む（CoT）と、行き止まりに当たっても引き返せない。でも、分かれ道のたびに「左右どっちが正解っぽいかな」と少し先まで見て、ダメそうなら戻って別の道を試す、というのが普通の迷路の解き方だよね。これと同じことを AI の思考でやらせるのが **Tree of Thoughts（思考の木、略して ToT）**。\n\n具体的には、AI に「次の一手」を **何通りか出させて**、それぞれを AI 自身に「これは見込みあり？無し？」と **採点させて**、見込みのある枝だけ深く進めていく。だめなら親の分かれ道に戻る（バックトラックする）。\n\n### 仕組み\n\n論文では「ToT を作るには 4 つの問いに答えればいい」と整理している。\n\n- **step1: 思考をどう区切る？（thought decomposition）**\n  - 「思考の 1 ステップ」を、問題に合わせて決める。\n  - Game of 24 なら「1 行の式」（例: `13 - 9 = 4`）が 1 ステップ。\n  - クロスワード（穴埋めパズル）なら「1 単語」が 1 ステップ。\n  - 作文タスクなら「文章の構想プラン 1 つ（数段落分）」が 1 ステップ。\n  - 小さすぎると AI が良し悪しを判断できないし、大きすぎると 1 発で書ききれない。ちょうどいいサイズに区切るのがコツ。\n\n- **step2: 次の一手をどう作る？（thought generator $G$）**\n  - 方法 A「**Sample**（サンプル）」: 同じお願いを何度もして、ランダムに違う答えを何個か出させる。作文みたいに自由度が高い問題向き。\n  - 方法 B「**Propose**（提案）」: 「次の一手を $k$ 個列挙して」と一気にお願いする。数式や単語みたいに、答えがダブりやすい問題向き。\n\n- **step3: それぞれの一手を採点する（state evaluator $V$）**\n  - 方法 A「**Value**（評価）」: 各候補を独立に「sure（確実）/ maybe（たぶん）/ impossible（無理）」と AI 自身に判定させる。Game of 24 で使う。\n  - 方法 B「**Vote**（投票）」: 候補を並べて「どれが一番有望？」と AI に多数決させる。作文みたいに点数が付けにくい問題で使う。\n\n- **step4: 木の探索方法を決める（search）**\n  - **BFS（幅優先探索）**: 各段で「上位 $b$ 個」だけ残して、横並びで進む。木が浅いとき（3 ステップ以内）に使う。Game of 24 と作文で採用。\n  - **DFS（深さ優先探索）**: 一番見込みのある枝をどんどん深く掘っていき、ダメなら親に戻る。木が深いとき（最大 10 ステップ）に使う。クロスワードで採用。\n\n「BFS（幅優先）」は迷路で **分かれ道に来たら両方を 1 歩ずつ進める** イメージ。「DFS（深さ優先）」は **片方を行けるところまで行って、行き止まったら戻る** イメージ。\n\n### 主要な数式\n\n#### ① 思考の木の「ノード（節）」とは何か\n\n$$ s = [x,\\, z_1, z_2, \\ldots, z_i] $$\n\n**この式が言ってること**: 木の 1 つの節（state, 状態）$s$ は、「最初の問題文 $x$」と「これまでに書いた思考のステップたち」を全部つなげたもの、というだけの意味。\n\n**記号の意味**:\n- $s$ … 思考の木の 1 つの分かれ道（節、ノード、状態）のこと\n- $x$ … 元の問題文（例: 「4 9 10 13 で 24 を作って」）\n- $z_1, z_2, \\ldots, z_i$ … ここまで考えた途中の思考ステップ（例: $z_1 = $「13−9=4」、$z_2 = $「10−4=6」）\n- $i$ … 今まで何ステップ思考したか、の番号\n\n**身近な例え**: テストの解答用紙の「**今書いたところまでの全部**」だと思えばいい。「問題文 ＋ ここまで自分が書いた途中式」をまるごとセットにして「今の状態」と呼ぶ感じ。次の 1 行を書く前に、いつも問題と今までの式を見直してから次を書くよね。あれをそのまま「状態」と呼んでいる。\n\n#### ② 次の一手の作り方（Sample 方式）\n\n$$ z^{(j)} \\sim p_\\theta^{CoT}(z_{i+1} \\mid x,\\, z_{1\\ldots i}) \\quad (j = 1, \\ldots, k) $$\n\n**この式が言ってること**: AI に「今の状態を見て、次の 1 ステップを書いて」とお願いする。同じお願いを $k$ 回繰り返して、$k$ 個の違う候補を作る、という意味。\n\n**記号の意味**:\n- $z^{(j)}$ … $j$ 番目に作った「次の一手」の候補\n- $\\sim$ … 「〜という決まりに従ってランダムに 1 つ作る」という記号（サイコロを振る感じ）\n- $p_\\theta$ … AI（LLM）のこと。$\\theta$ はその AI の中身の設定値。読者はここは「ChatGPT」と思って OK\n- $p_\\theta^{CoT}(\\ldots \\mid \\ldots)$ … 「縦棒 $\\mid$ の右側を見せたうえで、左側を AI に書いてもらう」という意味。CoT というラベルは「途中式を書かせるお願いの仕方」を示すだけ\n- $z_{i+1}$ … 「$i+1$ 番目の思考ステップ」、つまり次の一手\n- $x,\\, z_{1\\ldots i}$ … 問題文と、ここまで書いた思考全部（つまり今の状態 $s$）\n- $k$ … 候補を何個作るかの個数\n\n**身近な例え**: クラスで「次の問題、誰か解いてみて」と先生が同じ質問を 5 人にする感じ。5 人それぞれ違う答えを書いてくる。その中から良さそうなのを選びたい。$k$ は「何人に聞くか」の数。\n\n#### ③ 各候補を AI 自身に採点させる（Value 方式）\n\n$$ V(p_\\theta, S)(s) \\sim p_\\theta^{value}(v \\mid s) \\quad \\forall s \\in S $$\n\n**この式が言ってること**: いま手元にある候補たち $S$ のそれぞれ $s$ について、AI に「これって有望？」と聞いて、数字（例: 1〜10 点）か言葉（sure / maybe / impossible）で点数 $v$ を返してもらう、ということ。\n\n**記号の意味**:\n- $V$ … 採点係（state evaluator）。状態を入れると点数を返す関数\n- $S$ … 候補の集まり（例: 5 個の「次の一手」候補をまとめた袋）\n- $s$ … その中の 1 つの候補\n- $v$ … その候補の点数（例: 「sure」「maybe」「impossible」、または 1〜10 の数）\n- $\\forall s \\in S$ … 「$S$ の中のどの $s$ についても」という記号\n- $p_\\theta^{value}$ … AI に「採点してね」とお願いするときの言い方\n\n**身近な例え**: テストの自己採点。自分が書いた候補答案 5 つを並べて、「これは絶対正解、これは多分合ってる、これは絶対違う」と自分でラベルを貼っていくイメージ。AI に **自分で書いた候補を自分で採点させている** のがポイント。\n\n#### ④ BFS（幅優先探索）のアルゴリズム — 「広く浅く探す」\n\n$$ S_t = \\arg\\max_{S \\subset S'_t,\\, |S| = b} \\sum_{s \\in S} V_t(s) $$\n\n**この式が言ってること**: いまの段で作った候補たち $S'_t$ のうち、点数 $V_t$ の合計が一番大きくなる **上位 $b$ 個** だけを残して、残りは捨てる、という意味。\n\n**記号の意味**:\n- $S_t$ … 第 $t$ 段（深さ $t$）で生き残った候補たち\n- $S'_t$ … 第 $t$ 段で作ったすべての候補たち（生き残る前の全員）\n- $\\arg\\max$ … 「これを一番大きくする選び方を選んで」という記号\n- $S \\subset S'_t$ … 「$S$ は $S'_t$ の中から選ぶ部分集合」という意味\n- $|S| = b$ … 選ぶ個数を $b$ 個に固定\n- $V_t(s)$ … 候補 $s$ の点数\n- $\\sum_{s \\in S}$ … $S$ に入った候補の点数を全部足す\n\n**身近な例え**: マラソン大会の予選。各ラウンドで **上位 5 名（$b=5$）だけが次に進める**、それ以外は脱落、という仕組み。次のラウンドはまた走って、また上位 5 名だけ残る。これを目的地（ゴール、$t=T$）まで繰り返す。\n\n## 何がすごいの？\n\n論文では 3 つの新しいタスクで実験している（GPT-4 を使用、温度 0.7、2023 年 5 月 5〜16 日）。\n\n### Game of 24（4 数字で 24 を作るパズル、4nums.com から index 901〜1000 の 100 問）\n| 方法 | 成功率 |\n|---|---|\n| IO（普通に答えだけ書かせる） | 7.3% |\n| CoT（途中式も書かせる） | 4.0% |\n| CoT-SC（CoT を 100 回やって多数決） | 9.0% |\n| **ToT（$b=1$）** | **45%** |\n| **ToT（$b=5$）** | **74%** |\n| IO + Refine（書き直しを 10 回） | 27% |\n| IO best-of-100 / CoT best-of-100 | 33% / 49% |\n\nCoT が IO より悪い（4.0% < 7.3%）のは意外な発見。「途中式を書かせれば賢くなる」と思いがちだけど、最初を間違えると後戻りできないので逆効果になることもある、ということ。さらに、CoT で失敗した例の約 **60% は最初の 1 ステップ（最初の 3 単語）でもう詰んでいた**。これが「戻れる仕組みが必要」という ToT のいちばんの根拠。\n\n### Creative Writing（4 つの文を末尾に持つ 4 段落の文章を作る、100 問）\nGPT-4 が 0〜10 で採点した一貫性スコア：\n- IO: 6.19\n- CoT: 6.93\n- **ToT: 7.56**\n\n著者陣の盲検（どっちが ToT か知らずに）比較では、100 ペア中 **ToT 勝ち 41 / CoT 勝ち 21 / 引き分け 38**。書き直し（refine）を入れると ToT は 7.91 までさらに上がる。\n\n### 5×5 Mini Crosswords（小さなクロスワード、GooBix の 156 ゲームから 20 問）\n| 方法 | 文字正解率 | 単語正解率 | ゲーム完全正解率 |\n|---|---|---|---|\n| IO | 38.7% | 14% | 0/20 |\n| CoT | 40.6% | 15.6% | 1/20 |\n| **ToT** | **78%** | **60%** | **20%（4/20）** |\n\n切り分け実験（ablation, 機能を 1 つずつ外して効果を測る実験）：\n- 「枝刈り」を外すと: 単語正解率 60% → 41.5%\n- 「バックトラック（戻る）」を外すと: 60% → 20%\n\n→ **戻れることが、特にクロスワードでは大事** だと数字で示している。\n\n### 著者が挙げる貢献（contribution）\n1. AI の推論を「**木の探索**」として一般化する枠組み（ToT）を提案\n2. 「思考生成（Sample / Propose）× 状態評価（Value / Vote）× 探索（BFS / DFS）」というモジュール式の組み合わせの提示\n3. GPT-4 でも難しい 3 つの新タスク（Game of 24、Creative Writing、5×5 Crosswords）と切り分け実験\n4. AI の「直感的応答（System 1）」を、古い AI 研究の「じっくり考える（System 2）」で補強する位置付け\n\n### コスト\nGame of 24 で ToT は 1 問あたり **\\$0.74**（CoT を 100 回試す方法 \\$0.47 と同じくらい）。Creative Writing では CoT の約 5 倍。タダではないけど、性能向上に対して妥当な範囲。\n\n## キーワード辞典\n\n- **LLM（Large Language Model, 大規模言語モデル）** … たくさんの文章で学習した、文章を続きから書くのが得意な AI。ChatGPT の中身。\n- **GPT-4** … OpenAI が 2023 年に出した強い LLM。この論文の実験で主に使われる。\n- **トークン（token）** … AI が文章を扱うときの最小単位。だいたい「単語の一部」や「短い単語」1 つ分。\n- **自己回帰（autoregressive）** … 1 トークンずつ、前のトークンを見ながら次を決めて書いていく仕組み。途中で戻れない。\n- **プロンプト（prompt）** … AI へのお願い文・指示文。\n- **IO prompting（Input-Output）** … 「問題 → 答え」を直接書かせる、いちばん素朴なやり方。\n- **CoT（Chain-of-Thought, 思考の鎖）** … 答えだけでなく **途中の考え方も書かせる** 工夫。1 本道で書く。\n- **CoT-SC（Self-Consistency, 自己一貫性）** … CoT を $k$ 回サンプリングして、一番多かった答えを採用する多数決方式。\n- **ToT（Tree of Thoughts, 思考の木）** … この論文の提案。思考を木にして枝分かれと戻りを許す。\n- **state（状態、ノード）** … 木の 1 つの節。「問題文 + ここまでの思考」のセット。\n- **thought（思考）** … 推論の 1 ステップ。問題に応じて「1 つの式」「1 単語」「1 段落」など粒度を選ぶ。\n- **decomposition（分解）** … 1 つの思考をどの単位で区切るかを決めること。\n- **thought generator $G$** … 次の一手の候補を作る部分。Sample 方式と Propose 方式がある。\n- **state evaluator $V$** … 候補を採点する部分。Value 方式と Vote 方式がある。\n- **BFS（Breadth-First Search, 幅優先探索）** … 各段で上位 $b$ 個だけ残しながら横並びに進む探索。\n- **DFS（Depth-First Search, 深さ優先探索）** … 1 本を深く掘り、ダメなら戻る探索。\n- **backtrack（バックトラック、戻る）** … 行き止まりのとき、親の分かれ道に戻って別の道を試すこと。\n- **pruning（枝刈り）** … 見込みのない枝を切り落とすこと。\n- **ablation（切り分け実験）** … 「この部品がないとどれくらい性能が落ちるか」を測る実験。\n- **System 1 / System 2** … 心理学者カーネマンの言葉。System 1 は「直感的・速い思考」、System 2 は「じっくり・遅い思考」。論文は AI を System 1 から System 2 に近づけたいと主張。\n- **オラクル（oracle）比較** … 「もし $k$ 個の答えの中に正解があれば成功」と緩く判定した上限性能。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **「思考の粒度」の設計指針**: 論文では「small enough（小さく多様な候補が作れる）かつ big enough（評価ができる）」が目安。1 トークンずつでは評価できず、本 1 冊では生成できない、その中間を狙う。\n- **Sample vs Propose の使い分け**: 思考空間が広く自由（作文）なら Sample（多様性が大事）。思考空間が狭く制約強め（数式・単語）なら Propose（同じ文脈で違うものを並べて出させる方が重複を避けられる）。\n- **Value vs Vote の使い分け**: 各候補に絶対的なスコアを付けやすい（Game of 24 で「24 に近づきそう？」）なら Value。スコアが付けにくい（文章の一貫性）なら、候補を並べて Vote。\n- **BFS のアルゴリズム**: 初期状態から始め、各段で「思考生成 → 評価 → 上位 $b$ 個に枝刈り」を繰り返す。Game of 24 と Creative Writing で採用。\n- **DFS のアルゴリズム**: 最も有望な状態を深く掘る。$V(p_\\theta, \\{s\\})(s) \\le v_{th}$（評価が閾値以下）になったらその枝を捨てて親に戻る。クロスワードでは最大 100 ステップを予算とした。\n- **CoT が IO より悪くなる現象**: Game of 24 で CoT 4.0% < IO 7.3%。これは「途中式を書かせると、最初を間違えた瞬間に詰む確率も上がる」ため。エラー解析で約 60% の CoT 失敗は最初の 1 ステップで起きていた、というデータが裏付けている。\n- **生成と評価でモデルを使い分けるとコスト最適**: ablation で「生成 GPT-4 / 評価 GPT-3.5」だと 64%、「生成 GPT-3.5 / 評価 GPT-4」だと 31%。**生成の方が難しい仕事** で、評価は弱いモデルでもある程度こなせる。\n- **著者が認める限界**: (1) GPT-4 が既に CoT で解けるタスク（GSM8K では 86 → 90 で誤差レベル）には ToT は不要、(2) API コストが高い、(3) 試したタスクが 3 つしかない、(4) ToT 流の学習（fine-tuning）はまだ試されていない、(5) クロスワードで GPT-4 が知らない古い単語（例: ``agend''）を「impossible」と誤判定して枝刈りしてしまうケースがある。\n- **思想的源流**: Newell, Shaw, Simon（1959, 1972）の「問題解決は木の探索である」という古典 AI の考え方を、現代の LLM に持ち込んだ位置付け。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2305.10601v2/`\n- 正規ノート: `notes/arXiv-2305.10601v2.md`\n- GitHub: https://github.com/princeton-nlp/tree-of-thought-llm\n";
+const MACROS = {"\\rot": "\\multicolumn{1}{R{50}{1em}}", "\\todo": "\\textcolor{red}{[TODO: #1]}", "\\sy": "\\textcolor{MyDarkBlue}{[Shunyu: #1]}", "\\yc": "\\textcolor{teal}{[Yuan: #1]}", "\\kn": "\\textcolor{MyPurple}{[Karthik: #1]}", "\\tg": "\\textcolor{MyDarkGreen}{[Tom: #1]}", "\\dy": "\\textcolor{brown}{[Dian: #1]}", "\\bi": "\\mathbf{I}", "\\bm": "\\mathbf{m}", "\\bM": "\\mathbf{M}", "\\supp": "\\textcolor{black}{Supplementary Material}", "\\re": "#1", "\\html": "\\texttt{HTML}", "\\clean": "\\texttt{simple}", "\\search": "\\texttt{search[}{#1}\\texttt{]}", "\\click": "\\texttt{choose[}{#1}\\texttt{]}", "\\choice": "\\texttt{Choice}", "\\methodname": "\\texttt{TBD}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

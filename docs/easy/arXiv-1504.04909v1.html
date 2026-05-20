@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Illuminating search spaces by mapping elites（探索空間を「エリート地図」で照らし出す）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-1504.04909v1.md</code>
+  &nbsp;|&nbsp; macros: <code>15</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Illuminating search spaces by mapping elites（探索空間を「エリート地図」で照らし出す）\n\n- arXiv: https://arxiv.org/abs/1504.04909\n- 一次ソース: ../papers/arXiv-1504.04909v1/\n- 正規ノート: ../notes/arXiv-1504.04909v1.md\n\n---\n\n## 一言で言うと\n\n「一番いい答え 1 個」を探すんじゃなくて、「いろんなタイプ別に、それぞれのタイプの中で一番いい答え」を一気に集めて、地図みたいに並べちゃおうという新しい探し方を提案した論文。\n\n## どんな問題を解こうとしてるの？\n\n- たとえばロボットを設計したいとき、「いちばん速いロボット」を 1 個だけ知っても面白くない。\n  本当は「背が高くて重いロボットの中で一番速いやつ」「背が低くて軽いロボットの中で一番速いやつ」みたいに、\n  **タイプごとに一番強いやつを全部見てみたい**。そうすれば「背を高くすると速くなるんだな」とか「重くするとむしろ遅くなるんだな」みたいな関係も見える。\n- いままでの「探索アルゴリズム」（= コンピュータに「いい答えを自動で探させる」プログラム。たとえば「ロボットの形を少しずつ変えて速くしていく」みたいなやつ）は、\n  だいたい **1 個の最強の答えに収束しちゃう**。途中で見つかった「ちょっと違うけど面白い答え」は捨てちゃう。\n- 「いろんな答えを集めるアルゴリズム」（Novelty Search 系。← これは「新しさ」を点数にして変なやつを残す方法）もすでにあるが、\n  - 計算が重い（毎回ご近所さんとの距離を全部計算する）\n  - パラメータが多くて調整が大変\n  - **特徴空間（タイプの並べ方）を満遍なく埋めるのが苦手**（人気のエリアに偏っちゃう）\n- だから「もっとシンプルに、しかも満遍なく地図を埋める」方法がほしかった。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n**アイデアは「箱を並べて、箱ごとにチャンピオン 1 人だけ残す」**。\n\nイメージはこう。\n学校の体育で「身長 × 体重」で人を表に並べる、と思って。縦に身長、横に体重で、マス目をいっぱい作る。\n各マスには **そのマスの条件（その身長・体重）にあてはまる人の中で、走るのが一番速い人だけ** をシールで貼る。\n新しい人が来たら、そのマスの今のチャンピオンより速ければシールを貼り替える。遅ければ捨てる。\nこれを何回も繰り返すと、表全体が「身長 × 体重」ごとの最速ランナー一覧表になる。\n**これが MAP-Elites（マップ・エリーツ、エリートの地図、という意味）**。\n\nML 用語っぽく言い直すと:\n- 「箱」= 特徴空間のセル（マス目）。特徴空間 = ユーザが「この見方で並べたい」と決めた軸（身長と体重みたいな）の表。\n- 「箱の中のチャンピオン」= elite（エリート）。そのマスで今のところ一番性能がいい解。\n- 「シール」= 解の中身（ロボットの設計図など）。\n\n### 仕組み\n\n論文の擬似コード（Fig. mapElitesPseudocodeSimpleVersion）の通りに書くとこうなる:\n\n- step1: 表（地図）を空っぽで用意する。\n- step2: 最初は **ランダムに $G$ 個の解（ロボットの設計図など）を作る**。それぞれシミュレーションで性能と「特徴（身長や体重にあたる値）」を測る。\n- step3: それぞれを対応するマスに置く。同じマスに複数来たら一番性能がいいやつだけ残す（これで初期化おわり）。\n- step4: ここから繰り返し。**マスがすでに埋まってる中からランダムに 1 個選ぶ**。\n- step5: 選んだ解を少しだけランダムに改造する（突然変異 mutation。← これは「設計図のどこか 1 箇所をちょっと書き換える」みたいなこと）。\n- step6: 改造した新人を評価して、特徴と性能を測る。\n- step7: 新人が行くべきマスを見る。\n  - そのマスが **空っぽ** なら新人を入れる。\n  - 埋まってても **新人の方が性能が高ければ入れ替える**。\n  - 新人の方が弱ければ捨てる。\n- step8: step4〜7 をひたすら繰り返す。最後にできた地図を返す。\n\nここがミソ:\n- 普通のアルゴリズムは「いま生きてる集団」と「過去の記録」を別々に持つけど、MAP-Elites は **地図そのものが集団** になっている。だから cycling（行ったり来たり）が起こらない。\n- マスを見つけるのも置き換え判定も「そのマス見るだけ」で済むので **超軽い**（処理 1 回あたり一瞬で終わる）。\n\nさらに論文では:\n- **階層版（hierarchical MAP-Elites）**: 最初は粗いマス目（16×16）で始めて、途中で分割して細かく（最終 512×512）していく。retina 実験では iteration 0, 1250, 2500, 5000 で段階的に倍化。\n- **並列版**: 評価をたくさんのコンピュータに振り分けて同時に動かす。\n- 論文の実験はぜんぶこの「階層 + 並列」版で動かしている。\n\n### 主要な数式\n\n中核は (1) 採用判定のルール、(2) 評価指標の Global Reliability、(3) Precision。\n\n#### (1) 新人を採用するかどうかの判定\n\n$$\n\\text{if } \\mathcal{P}(\\mathbf{b'}) = \\emptyset \\ \\text{or}\\ \\mathcal{P}(\\mathbf{b'}) < p' \\ \\text{then}\\ \\mathcal{P}(\\mathbf{b'}) \\leftarrow p',\\ \\mathcal{X}(\\mathbf{b'}) \\leftarrow \\mathbf{x'}\n$$\n\n**この式が言ってること**: 新人 $x'$ が入るべきマス（住所 $\\mathbf{b'}$）を見て、**空っぽ** だったらそのまま入れる。**埋まってる**けど **新人の方が性能が高い** ならチャンピオンを入れ替える。それ以外は何もしない。これが地図を育てる中心ルール。\n\n**記号の意味**:\n- $\\mathbf{x'}$ … 新しく作った候補（ロボットの設計図など、つまり「解の中身」）\n- $\\mathbf{b'}$ … その新人の「特徴」を表す住所（身長と体重みたいに、軸ごとの値を並べたもの）。これがどのマスに入るかを決める\n- $p'$ … その新人の性能（速さ・正答率など、点数）\n- $\\mathcal{P}(\\mathbf{b'})$ … 地図のマス $\\mathbf{b'}$ にいまいるチャンピオンの点数。$\\emptyset$（空集合）は「まだ誰もいない」の意味\n- $\\mathcal{X}(\\mathbf{b'})$ … 地図のマス $\\mathbf{b'}$ にいまいるチャンピオン本人（解の中身）\n- $\\leftarrow$ … 「左に右の値を入れる」（代入）\n\n**身近な例え**: クラスの 100m 走の **席替えタイム表**。マス目は「身長 × 体重」のグループ。\n新しい人が走ったら、自分のグループの今までのチャンピオンと比べる。\n速ければ「ベストタイム掲示板」のそのマスを **自分の名前とタイムに書き換える**。遅ければ何もしない。\nたったこれだけのルールを毎日繰り返してると、各グループの最速タイム一覧表ができていく。\n\n#### (2) Global Reliability（地図全体の信頼度）\n\n$$\nG(m) = \\frac{1}{n(M)} \\sum_{x,y} \\frac{m(x,y)}{M(x,y)}\n$$\n\n**この式が言ってること**: 「この地図 $m$ は、各マスでどれくらい良い解を見つけられているか」を **全マス平均** で測る。各マスの点数を「いままで誰かが見つけたそのマスの最高点」で割って、**100% に近いほど良い**。空マスは 0 点として扱う（ペナルティ）。\n\n**記号の意味**:\n- $m$ … 評価したい地図（あるアルゴリズムの 1 回の実行で出来上がった地図）\n- $m(x,y)$ … 地図 $m$ のマス $(x,y)$ にいるチャンピオンの点数。誰もいなければ 0\n- $M(x,y)$ … マス $(x,y)$ について、**今までの全アルゴリズム・全実行の中で見つかった最高点**（理想点の代わり）\n- $n(M)$ … 「少なくとも誰か（どこかの 1 回の実行）が埋められたマス」の総数\n- $\\sum_{x,y}$ … 地図のすべてのマスを足し合わせる記号（← 「全部足す」の数学記号）\n- $\\frac{1}{n(M)}$ … 平均にするための割り算\n\n**身近な例え**: クラス全員のテストで、**各教科の理論上の満点**（その教科でクラスのだれかが一度でも取った最高点）を 100% と考える。\nあるアルゴリズム（生徒 1 人）が **国語 80 点 / 数学 90 点 / 理科 0 点（受けてない）/ 社会 70 点** だったら、\n$(0.80 + 0.90 + 0 + 0.70) \\div 4 = 0.60$ → 信頼度 60%。\n**受けなかった科目は 0 点扱い** だから、「いろんな科目をちゃんと埋めてる人」ほど高くなる。\n\n#### (3) Precision（自分が埋めたマスだけで見た精度）\n\n$$\nP(m) = \\frac{1}{n(m)} \\sum_{x,y \\in \\text{filled}_m} \\frac{m(x,y)}{M(x,y)}\n$$\n\n**この式が言ってること**: Global Reliability とほぼ同じだけど、**自分が解を置けたマスだけ** で平均をとる。\n空のマスは無視する。だから「自分が埋めるって決めたマスでは、ちゃんといい解を出せてるか？」を測ることになる。\n\n**記号の意味**:\n- $P(m)$ … 地図 $m$ の precision（「自分が選んだ範囲での精度」）\n- $\\text{filled}_m$ … 地図 $m$ で実際に何か解が入っているマスの集合\n- $n(m)$ … その地図 $m$ で埋まったマスの数\n- 他は (2) と同じ\n\n**身近な例え**: 同じテストの話で、こんどは **「自分が受けた科目だけ」で平均する**。\nさっきと同じく国語 80 / 数学 90 / 理科は受けず / 社会 70 だったら、$(0.80 + 0.90 + 0.70) \\div 3 = 0.80$ → precision 80%。\n「全教科埋めなきゃ」というプレッシャーが消えるので、**狭くても自信のあるところだけ受ければ高得点**になる。\nだから普通の最適化アルゴリズム（狭い範囲だけ深く探す）は precision で強くなりやすい。\n\n## 何がすごいの？\n\n論文では 3 つの問題で実験している（TeX 由来の数値）。\n\n### (1) ニューラルネットワーク（網膜判定タスク）\n- **問題**: 8 ピクセルの入力。左半分と右半分の両方に対象パターンがあるかを判定する。256 通りすべての入力に対する正答率が性能。\n- **特徴空間**: 軸 1 = connection cost（つなぎ目の長さ合計）、軸 2 = modularity（モジュール度。← 「ネットワークが分業しているか」の度合い）。解像度 512×512。10,000 iteration。\n- **比較**: 従来 EA（← 進化的アルゴリズム、Evolutionary Algorithm。設計図を「親→子→子の子…」と少しずつ変えて選抜していく方法）、NS+LC（Novelty Search + Local Competition）、ランダムサンプリング。各 20 run。\n- **結果**: 4 指標すべて（Global Performance / Reliability / Precision / Coverage）で **MAP-Elites が有意に勝つ**。p 値は $p < 1\\times 10^{-7}$（two-tailed Mann-Whitney U test。← これは「偶然じゃないと言える確信の度合い」を測る統計テスト。p が 0.05 より小さいと「ほぼ偶然じゃない」と言う）。\n- 著者談: 過去の MOLE 論文では **30 回分の MOLE 結果をマージしてやっと得た地図に、MAP-Elites は 1 回でほぼ追いつける**（ただし定量比較は本ドラフトでは未実施で anecdotal）。\n\n### (2) シミュレーションのソフトロボット（Voxcad）\n- **問題**: 10×10×10 のボクセル（小さな立方体）でロボットを組み立てる。材料 4 種類（骨・柔らかい肉・同位相筋肉・逆位相筋肉）。性能 = 10 秒間で走った距離。\n- **特徴空間**: 軸 1 = 骨の割合、軸 2 = ボクセル充填率。128×128。\n- **比較**: EA（性能だけ最大化）と EA+D（性能 + 多様性、NSGA-II ベース）。runs は EA=7, EA+D=5, MAP-Elites=8。\n- **結果**:\n  - **Global Reliability と Coverage で MAP-Elites が有意に良い**（$p < 0.002$）。\n  - Global Performance は MAP-Elites の中央値が高いが **有意差なし**（$p > 0.05$）。\n  - **Precision は MAP-Elites が有意に悪い**（$p < 0.01$）。← 多くのマスに評価を分散するから、1 マスあたりは詰めきれない。\n- 副産物として、ボクセル充填率 7% 付近で **縦に長い「1 ボクセル厚のシート型」が偶然見つかった**（地図のおかげで気づけた）。\n\n### (3) 実物のソフトロボットアーム\n- **問題**: dynamixel AX-18 サーボ 3 個 + フレキシブルチューブ。3 つの関節角度を選んで、先端の y 座標を最大化する。\n- **特徴空間**: 先端の x 座標を 64 マスに区切る。\n- **比較**: ランダムサンプリングと 8 段グリッドサーチ。\n- **結果**: 中間 x 領域（≈400–600）で MAP-Elites が両者を上回り、低 x 領域でも MAP-Elites が高性能解を多く返す。\n- ただし著者自身が「予備的なので reliable な統計ではない」と明記。評価回数は本文と実験パラメータ節で食い違っている部分あり。\n\n### 著者が論文で挙げている貢献\n1. **\"illumination algorithm\"（イルミネーション・アルゴリズム＝照らし出すアルゴリズム）** という新しい概念を導入し、最適化アルゴリズムの上位集合と位置付けた。\n2. **シンプルでパラメータが少ない MAP-Elites を初めて詳しく書いた**（過去の Cully et al. 2015 では簡略にしか説明されていなかった）。\n3. **評価指標 4 つ（Global Performance / Global Reliability / Precision / Coverage）を illumination 評価基準として定式化**した。\n4. **3 ドメインで NS+LC, EA, EA+D, ランダムサンプリング, グリッドサーチと比較**した。\n\n## キーワード辞典\n\n- **MAP-Elites** … 特徴空間をマス目に区切り、各マスに性能チャンピオン 1 個だけを保持していく探索アルゴリズム。本論文の主役。\n- **illumination algorithm（イルミネーション・アルゴリズム）** … 「特徴空間の各点で最高性能の解を返す」アルゴリズム。最適化（optimization）の上位概念。\n- **optimization algorithm（最適化アルゴリズム）** … 単一の最高性能解（または Pareto 前線）を返すアルゴリズム。\n- **feature space（特徴空間）** … ユーザが「この見方で並べたい」と決めた軸の表（例: 身長 × 体重）。MAP-Elites の地図そのもの。\n- **search space（探索空間）** … 解の中身（設計図など）が住んでいる空間。普通めちゃくちゃ広い。\n- **cell（セル）** … 特徴空間の 1 マス。各セルにエリート 1 個を保持。\n- **elite（エリート）** … セル内でこれまでに見つかった最強の解。\n- **genotype（ジェノタイプ／遺伝子型）** … 解の「設計図」表現。\n- **phenotype（フェノタイプ／表現型）** … 設計図を実際に組み立てたあとの姿（ロボット本体など）。\n- **fitness（フィットネス）** … 性能のこと。「点数」だと思えば OK。\n- **mutation（突然変異）** … 設計図のどこか 1 箇所をランダムに少し書き換えること。\n- **crossover（交叉）** … 2 つの設計図を切り貼りして子を作ること。\n- **evolutionary algorithm (EA)（進化的アルゴリズム）** … 「設計図を少し変える」「いい点数のやつを選ぶ」を繰り返す手法。ダーウィン的な進化を真似ている。\n- **Novelty Search** … 「点数」ではなく「他と違うこと（新しさ）」を報酬にして探索する手法。\n- **NS+LC（Novelty Search + Local Competition）** … Novelty Search に「ご近所だけで性能を競う」を組み合わせた手法。MAP-Elites の前身の 1 つ。\n- **MOLE（Multi-Objective Landscape Exploration）** … 「性能 vs ご近所からの距離」を多目的最適化する illumination 手法。MAP-Elites の前身のもう 1 つ。\n- **CPPN（Compositional Pattern-Producing Network）** … 「合成パターン生成ネットワーク」。座標 $(x,y,z)$ を入れると「そこに何の素材があるか」を出す関数。発生生物学を真似た間接エンコーディング。\n- **NEAT（NeuroEvolution of Augmenting Topologies）** … ネットワークの構造そのものを進化させるアルゴリズム。CPPN を進化させるのに使う。\n- **Voxcad** … ボクセル単位の柔らかいロボットを物理シミュレーションするソフト。\n- **Newman modularity（ニューマン・モジュラリティ）** … ネットワークが「グループ分け」されてる度合いを 0〜1 で測る指標。\n- **deceptive problem（だましの問題）** … 「点数が上がる方に進めば最強に着く」が成り立たない問題。山を登ると一旦下らないと最高峰に届かない地形。\n- **stepping stone（飛び石）** … 最終的な強い解にたどり着くために通る、途中の「弱いけど大事な解」のこと。\n- **Mann-Whitney U test** … 「2 グループの結果が偶然じゃなく違う」と言えるか判定する統計テスト。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **なぜ archive と population を分けないと cycling が起きるか**: Novelty Search 系では「人気のないエリア」を狙うので、集団が A→B→A→B と行き来する。MAP-Elites は地図 = 集団なので、一度埋まったセルは「埋まっている」という事実が消えない。だから「探した場所を忘れて戻ってしまう」現象が原理的に起こらない。\n- **同じ予算なら集中型 vs 分散型のトレードオフ**: 評価予算を $E$ 回として、$N$ セルに分散すると 1 セルあたりは $E/N$ 回。だから precision は悪化しやすい。これは MAP-Elites の **原理的な弱点**で、論文も「もっと回せば追いつくはず」とは言うが、必要評価数の理論はない。\n- **feature space 自体は探索できない**: 設計図 $x$ → 特徴 $b(x)$ は普通「多対一」（複数の設計図が同じ特徴に落ちる）かつ複雑なので、特徴空間を直接ステップで歩けない。だから「設計図空間で探して、結果として特徴空間に投影される」というルートになる。逆に「特徴空間で直接ステップできる」問題ならそもそも MAP-Elites は不要で、しらみつぶし探索でいい。\n- **階層版のスケジュール（retina の場合）**: 16×16 → 64×64（iter 0）→ 128×128（iter 1250）→ 256×256（iter 2500）→ 512×512（iter 5000）。バッチサイズ 2000、合計 10,000 iterations、初期バッチ 20,000。これは TeX の「Experimental parameters」節に明記。\n- **著者自身が認める制約**:\n  1. 既存セルを超えてマップを広げられない（最初に決めた軸の範囲を出ない）→ open-ended evolution（無限に新しいものが生まれ続ける進化）にはならない。\n  2. precision で optimization 系に劣ることがある。\n  3. 物理的に到達不能なセルが存在するため、Coverage の理想値は 1 にならない。\n- **論文は preliminary draft**: 冒頭の \"Author's Note\" で著者自身が「実験は最終版で全部やり直す予定。データは変わりうる」と明記。実際 soft robot の runs 数（EA=7, EA+D=5, MAP-Elites=8）は不揃いで、real arm の評価回数も本文（640 / 729）と実験パラメータ節（420 / 512）で食い違いがある。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-1504.04909v1/`\n- 正規ノート: `notes/arXiv-1504.04909v1.md`\n";
+const MACROS = {"\\todo": "\\textcolor{red}{[#1]}", "\\done": "\\textcolor{Emerald}{[#1]}", "\\comment": "\\textcolor{blue}{[#1]}", "\\jmccomment": "\\textcolor{magenta}{[#1]}", "\\lowpriority": "\\textcolor{green}{[#1]}", "\\todoOfficialVersion": "", "\\captionfont": "\\small\\sffamily\\bfseries #1\\normalfont\\sffamily", "\\textfraction": "0.05", "\\topfraction": "0.95", "\\bottomfraction": "0.95", "\\floatpagefraction": "0.95", "\\@biblabel": "\\quad#1.", "\\refname": "", "\\headrulewidth": "0pt", "\\footrulewidth": "0pt"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

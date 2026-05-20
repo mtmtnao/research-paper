@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>TIES-Merging: モデルをまぜるときの「ケンカ」を仲裁する方法（中学生向け解説）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2306.01708v2.md</code>
+  &nbsp;|&nbsp; macros: <code>10</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# TIES-Merging: モデルをまぜるときの「ケンカ」を仲裁する方法（中学生向け解説）\n\n- arXiv: https://arxiv.org/abs/2306.01708\n- 一次ソース: ../papers/arXiv-2306.01708v2/\n- 正規ノート: ../notes/arXiv-2306.01708v2.md\n\n---\n\n## 一言で言うと\n\n別々の仕事を覚えた AI たちを 1 体に合体させるとき、「意見が食い違う部分」を多数決で仲裁してから平均すると、ちゃんと強い 1 体になるよ、という話。\n\n## どんな問題を解こうとしてるの？\n\n### 現実の困りごと\n\n世の中には、最初は同じだった AI（事前学習モデル ← 大量のデータでまずは「読み書きや画像認識の基礎」を仕込んだ AI のこと）を、\n\n- 「英語→フランス語翻訳」だけ追加で勉強させた AI\n- 「文章を要約する」だけ追加で勉強させた AI\n- 「画像を分類する」だけ追加で勉強させた AI\n\n…のように、別々の仕事に特化（fine-tuning ← 事前学習済み AI に「この仕事だけ」を追加で覚え込ませること）させたものがたくさん公開されている。\n\n困りごとは:\n\n- 仕事の数だけ AI を保存しないといけない（容量がすごい）\n- それぞれが孤立していて、互いの知識を活かせない\n\n理想は「全部できる 1 体の AI」を作ること。\nふつうの方法は **マルチタスク学習**（← 全部の仕事のデータを同時に見せて 1 体に訓練するやり方）だが、これは全データを集めて長時間訓練する必要があってお金も時間もかかる。\n\nそこで **モデルマージ（model merging）** ← 既にできあがった複数の AI の中身（パラメータ ← AI が覚えた数字たちのこと、何百万〜何十億個ある）を、追加訓練なしで「平均」して 1 体にまぜる技術が注目されている。\n\n### 既存の方法の何が足りなかったか\n\nこれまでの「単純に平均する」「重要度で重み付けて平均する」みたいな方法だと、**マージする AI の数を増やすほど性能が下がる**という問題があった。\n原因は、AI 同士の **干渉（interference ← 「お互いに邪魔し合うこと」、波が打ち消し合うイメージ）** 。論文はこれを 2 種類に整理した:\n\n1. **冗長パラメータによる干渉**: fine-tuning でほとんど動かなかった「どうでもいい数字」が、他の AI で「ものすごく重要な数字」と平均されて、重要な数字を薄めてしまう。\n2. **符号の不一致による干渉**: 同じ位置のパラメータが、AI A では「+0.5」、AI B では「−0.5」みたいに正負（プラス/マイナス）が逆だと、平均すると 0 になって両方の知識が消える。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n例え話: クラスの 5 人で「文化祭の出し物」を 1 つに決めるとき、いきなり 5 人の意見を「ぜんぶ足して 5 で割る」みたいなことはできない。次の順でやるのが賢い。\n\n1. **どうでもいい意見をカット** … 「特にこだわりない」みたいな弱い意見は捨てる（**Trim**）。\n2. **多数決で方向を決める** … 「やる派」と「やらない派」のうち、声の大きい方（=こだわりの強さの合計）を採用する（**Elect**）。\n3. **勝った側の意見だけで平均する** … 「やる派」が勝ったら、「やる派」の人たちが言ってる中身（出し物の内容）だけを平均する。「やらない派」は無視（**Disjoint Merge**）。\n\nTIES-Merging は、AI のパラメータ 1 個 1 個についてこれをやる。「TIES」は **TrIm, Elect Sign & Merge**（カット、符号を選挙、まぜる）の略。\n\n### 仕組み\n\n事前準備として、各仕事 $t$ の AI から **タスクベクトル** ← 「fine-tuning で AI のどの数字がどっち向きにどれだけ動いたか」を表す数字の列、を作る:\n\n「fine-tune 後の数字 − 最初の数字」を全パラメータについて引き算する。これは「fine-tuning でこのパラメータは +0.3 動いた、こっちは −0.7 動いた…」というリストになる。\n\nそのあと:\n\n- **step 1 (Trim)**: タスクごとに、タスクベクトルの中で **絶対値（プラスマイナスを無視した大きさ）が大きい上位 20%** だけ残し、残り 80% は 0 にする。\n- **step 2 (Elect)**: パラメータの位置ごとに、全タスクから集まった値を「プラス組」と「マイナス組」に分ける。**それぞれの合計の大きさ** を比べて、大きい方の符号（+ か −）をその位置の「採用符号」にする。\n- **step 3 (Disjoint Merge)**: パラメータの位置ごとに、step 2 で勝った符号と同じ符号を持つタスクの値**だけ**を取り出して平均する。負け組と 0 は無視。\n- 最後に、まぜたタスクベクトル $\\tau_m$ をスケール係数 $\\lambda$（既定で 1）倍して、もとの事前学習モデルに足し戻す: 合体モデル = 最初の AI + $\\lambda$ × $\\tau_m$。\n\nハイパーパラメータ（人間が決める設定値）は $k=20$（残す上位の割合）と $\\lambda=1$ の 2 個だけ。論文ではこの値を固定で使い回しても強いと主張している。\n\n### 主要な数式\n\n#### 数式 1: タスクベクトルの定義\n\n$$ \\tau_t = \\theta_\\text{ft}^t - \\theta_\\text{init} $$\n\n**この式が言ってること**: 「仕事 $t$ を覚えた後の AI の数字」から「最初の AI の数字」を引いて、「仕事 $t$ を覚える過程で AI の中身がどう変わったか」を取り出している。\n\n**記号の意味**:\n- $\\tau_t$ … 仕事 $t$ の「変化分」のリスト（タスクベクトル ← AI が覚えた変化を全部並べた数字の列）\n- $\\theta_\\text{ft}^t$ … 仕事 $t$ を fine-tuning した後の AI のパラメータ全部（数百万〜数十億個の数字）\n- $\\theta_\\text{init}$ … 最初の事前学習モデルのパラメータ全部\n- 添字の $t$ … 何番目の仕事か（翻訳なら 1 番、要約なら 2 番、みたいな番号）\n\n**身近な例え**: 4 月の身体測定で身長 150 cm だった人が、1 年後に 158 cm になった。「成長した分」は 158 − 150 = 8 cm。$\\tau_t$ はこの「成長した分」を、身長だけじゃなく体のあらゆる部分（足の長さ、髪の長さ、足のサイズ…）について全部リスト化したもの。AI で言うと「数百万箇所の変化」を全部リストにしたやつ。\n\n#### 数式 2: 符号の選挙（Elect）\n\n$$ \\gamma_m^p = \\text{sgn}\\!\\left(\\sum_{t=1}^{n} \\hat{\\tau}_t^p\\right) $$\n\n**この式が言ってること**: パラメータの位置 $p$ について、全タスクの「変化分」を**そのまま全部足す**。足した結果がプラスなら +1、マイナスなら −1 を採用符号にする。「マイナス組」と「プラス組」のどちらが量的に勝ったかを多数決している。\n\n**記号の意味**:\n- $\\gamma_m^p$ … 位置 $p$ で採用された符号（+1 か −1）。$\\gamma$ はギリシャ文字「ガンマ」\n- $\\text{sgn}(x)$ … 中身が正なら +1、負なら −1 を返す関数（符号関数 ← 「プラスかマイナスかだけ取り出す道具」）\n- $\\sum_{t=1}^{n}$ … 1 番目の仕事から $n$ 番目の仕事まで全部足し算する記号（シグマ ← 「順番に足す」マーク）\n- $\\hat{\\tau}_t^p$ … 仕事 $t$ で、位置 $p$ の数字。ハット記号 $\\hat{}$ は「step 1 のカット後の値」を意味する\n- $n$ … まぜる仕事（AI）の総数\n\n**身近な例え**: 5 人がそれぞれ「お祭りでクラスはいくら寄付するか」を紙に書く。「+500 円」「+300 円」「−200 円（やらない側）」「+100 円」「−50 円」と書いたとする。全部足すと +650 円でプラス。だから「やる」が勝ち。**何人がプラスか**ではなく、**金額の合計**で決めるのがポイント。1 人が大きな額を書くと逆転できる。\n\n#### 数式 3: 勝ち組だけで平均（Disjoint Merge）\n\n$$ \\tau_m^p = \\frac{1}{|\\mathcal{A}^p|} \\sum_{t \\in \\mathcal{A}^p} \\hat{\\tau}_t^p, \\quad \\mathcal{A}^p = \\{t \\mid \\hat{\\gamma}_t^p = \\gamma_m^p\\} $$\n\n**この式が言ってること**: 位置 $p$ について、「step 2 で勝った符号」と同じ符号を持っている仕事だけを集めて、その値の平均をとる。負け組や 0 の人は数に入れない（だから分母も負け組を含めない）。\n\n**記号の意味**:\n- $\\tau_m^p$ … 合体モデルの位置 $p$ の最終的な変化分（これを事前学習モデルに足す）\n- $\\mathcal{A}^p$ … 位置 $p$ で「勝ち組」になっている仕事の番号の集まり（カッコ $\\{\\cdot\\}$ は集合を表す記号）\n- $|\\mathcal{A}^p|$ … その集まりの人数（つまり勝ち組の仕事の数）\n- $\\hat{\\gamma}_t^p$ … 仕事 $t$ における位置 $p$ の符号\n- $\\gamma_m^p$ … 位置 $p$ で勝った符号（数式 2 で決めたやつ）\n- $\\sum_{t \\in \\mathcal{A}^p}$ … 勝ち組の中だけで足し算\n\n**身近な例え**: さっきのお祭り寄付で「やる」が勝った。次は具体的な金額を決める。プラスを書いた 3 人（+500、+300、+100）だけ集めて (500+300+100) ÷ 3 = 300 円に決定。マイナス組の 2 人は無視。これが「勝ち組だけで平均」。\n\n#### 数式 4: 合体モデルを作る\n\n$$ \\theta_m = \\theta_\\text{init} + \\lambda \\cdot \\tau_m $$\n\n**この式が言ってること**: 数式 3 で作った「みんなの変化分の総意」$\\tau_m$ をスケール調整して、最初の AI に足し戻す。これで合体モデルのパラメータが完成。\n\n**記号の意味**:\n- $\\theta_m$ … 合体モデルの全パラメータ\n- $\\theta_\\text{init}$ … 最初の事前学習モデル\n- $\\lambda$ … スケール係数（ラムダ ← 0.8〜3 くらいで調整、論文の標準は 1）。「変化分をどれくらい強めに足すか」のつまみ\n- $\\tau_m$ … 合体タスクベクトル（数式 3 で位置ごとに作ったやつを全部並べたもの）\n\n**身近な例え**: 料理のレシピで「ベースのスープ（= $\\theta_\\text{init}$）」に「みんなが提案した味の変更点（= $\\tau_m$）」を加える。$\\lambda$ は「どれくらい濃く加えるか」のさじ加減。$\\lambda = 1$ なら提案通り、$\\lambda = 2$ なら倍盛り。\n\n## 何がすごいの？\n\n### 主な成績（in-domain ← 訓練時と同じ種類のテスト）\n\n論文の Table 1（in-domain、ハイパラ調整あり）の結果。数字は「精度の平均」（高いほど良い）:\n\n- **(IA)$^3$ / T0-3B**（言語、PEFT ← 一部だけ訓練する省エネ fine-tuning）: TIES = **66.4** / Task Arithmetic = 63.9（+2.5）\n- **T5-base**（言語、フル fine-tuning）: TIES = **73.9** / Task Arithmetic = 73.2（+0.7）\n- **T5-large**（言語、フル fine-tuning）: TIES = **76.9** / Task Arithmetic = 73.3（+3.6）\n- **ViT-B/32**（画像）: TIES = **73.6** / RegMean = 71.8（+1.8）\n- **ViT-L/14**（画像）: TIES = **86.0** / Task Arithmetic = 84.5（+1.5）\n\n平均でいうと、NLP で +2.3%、Vision で +1.7% も既存の最強ベースラインを上回った（abstract / introduction より）。\n\n### OOD（out-of-domain ← 訓練と違う種類のテスト）\n\n- T5-base: TIES = **35.3** / RegMean = 34.3（+1.0）\n- T5-large: TIES = **40.4** / RegMean = 36.0（+4.4）\n\nOOD でも勝てているのは強い。\n\n### どこが効いていたか（ablation ← 「部品を 1 つずつ外して効果を測る実験」）\n\n(IA)$^3$ での貢献の大きさ順: **Scale（$\\lambda$ の調整） > Disjoint Mean（勝ち組だけ平均） > Elect（符号選挙） > Trim（カット）**。\n特に Disjoint Mean を外すと 70.7 → 67.5 に落ちる。「勝ち組だけで平均する」のが地味に大事。\n\n### Oracle Sign の実験（理論上限の確認）\n\n「もし**正しい符号**を全部知っていたら」と仮定して符号だけ multitask モデルから借りると、(IA)$^3$ で 66.4 → **72.0** まで上がる。本当の multitask 学習は 73.1。**つまり TIES の改善余地のほとんどは「符号をどれだけ正しく当てられるか」に集約されている**ことを示した。今後の研究の方向（multitask の符号を推定する）を明示した。\n\n### 著者が挙げている貢献（abstract / introduction より）\n\n1. モデルマージの干渉を「冗長パラメータ」と「符号の不一致」の 2 つに整理した\n2. 3 ステップで closed-form（追加訓練不要）、ハイパラ 2 個だけの TIES-Merging を提案\n3. PEFT/フル fine-tuning、言語/画像、T5-base/large、ViT-B/L、in-domain/OOD、validation 有/無 とたくさんの設定で有効性を確認\n4. 符号の重要性を flipping sign 実験で実証し、Oracle Sign 上限を示した\n\n## キーワード辞典\n\n- **事前学習モデル（PTM, Pre-Trained Model）** … 大量のデータで「基礎」を仕込んだ AI。これに各仕事を追加で覚えさせる\n- **fine-tuning（ファインチューニング）** … 事前学習済み AI を、特定の仕事だけ追加で勉強させて専門家にする工程\n- **パラメータ** … AI が覚えた数字。何百万〜何十億個ある\n- **モデルマージ（model merging）** … 複数の AI のパラメータを、追加訓練なしで「平均」みたいに足し合わせて 1 体にする技術\n- **タスクベクトル（task vector）** … 「fine-tuning でパラメータがどう動いたか」のリスト。fine-tune 後 − 最初 の引き算で作る\n- **干渉（interference）** … 複数の AI を足したときに、お互いの数字が打ち消し合って情報が失われる現象\n- **冗長パラメータ** … fine-tuning でほとんど動いていない、その仕事には大して関係のないパラメータ\n- **符号（sign）** … プラスかマイナスか。AI のパラメータが「どっち向きに動いたか」を表す\n- **PEFT（Parameter-Efficient Fine-Tuning）** … パラメータの一部だけ訓練する省エネな fine-tuning。論文では (IA)$^3$ という PEFT 手法を使う\n- **(IA)$^3$** … 既存パラメータに「掛け算する係数」だけを訓練する PEFT 手法（論文の例の 1 つ）\n- **T5 / ViT** … T5 は言語用、ViT は画像用の有名な事前学習モデル\n- **マルチタスク学習（multitask learning）** … 複数の仕事を同時に 1 体に訓練する従来手法。マージ手法のお手本（上限）\n- **Task Arithmetic / Fisher Merging / RegMean** … TIES 以前の代表的なマージ手法（比較対象）\n- **Model Soups** … 同じ仕事の AI を複数まぜる類似手法\n- **ハイパーパラメータ** … 人間が決めて与える設定値（ここでは $k=20$、$\\lambda=1$）\n- **in-domain / out-of-domain (OOD)** … 訓練時と同じ種類のテストか、違う種類のテストか\n- **validation set** … ハイパラを決めるための「練習用テスト」。これが無い実運用設定でも TIES は強いと主張\n- **ablation（アブレーション）** … 提案手法の部品を 1 つずつ取り除いて効果を測る実験\n- **Oracle Sign** … 「正しい答えを知っているズル」をした上限を測る実験。改善余地を可視化する\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **なぜ「上位 20% カットでも性能が落ちない」のか**: 論文 Fig. fig:reset-bottomk で、タスクベクトルの絶対値上位 20% だけ残して残り 80% を 0 にしても、11 タスク平均の性能はほぼ落ちないことを実測している。fine-tuning では多くの数字が「動くけどあまり仕事に効いていない」状態らしい。つまりタスクベクトルは情報的にかなりスカスカ（スパース ← 中身がほとんど 0 でも構わない、の意）で圧縮できる。\n- **flipping signs（符号反転）の実験**: 高 magnitude 側（上位 20〜30%）の符号を反転させると性能が単調に崩壊するが、bottom 70〜80% の符号を反転させても性能はほぼ無傷。これは「大きく動いた数字の方向が、その仕事の本質を握っている」ことを示している。逆に冗長な部分は方向すらどうでもいい。\n- **$k=20$、$\\lambda=1$ が万能か?**: 著者は $k \\in \\{10,20,30\\}$、$\\lambda \\in [0.8,3.0]$ を (IA)$^3$ で grid search し、$k=20$ / $\\lambda \\approx 1$ を選んだ。これを未調整で ViT や T5 にも流用しても勝つと主張するが、PEFT とフル fine-tuning では task vector の分布が違うはずなので、$k=20$ が普遍的に最適とは限らない（正規ノートの批評コメントより）。\n- **同じタスクの複数 ckpt でも符号衝突がある**: Appendix Fig. fig:same_task_interference。同じ仕事を同じデータで 10 回訓練しても、毎回微妙に違う「経路」で AI が学習するので、同じパラメータでも符号がばらつく。Model Soups 系（同タスクの平均）にも TIES が効く根拠。\n- **論文が認めている限界**（Appendix sec:limitation）:\n  1. weight interpolation がなぜ動くかの理論はまだない\n  2. 共通の初期化・アーキテクチャ前提（違う AI 同士は混ぜられない）\n  3. マージはまだ multitask 学習に届いていない（Oracle Sign 72.0 < multitask 73.1）\n  4. どの checkpoint を混ぜるか選ぶ方法が未解決\n  5. multitask の符号を multitask モデル無しで推定する方法は open question\n- **Algorithm 1 の正確な手順**（method.tex より）:\n  各タスク $t$ について\n   $\\tau_t \\leftarrow \\theta_t - \\theta_\\text{init}$\n   $\\hat\\tau_t \\leftarrow$ keep_topk_reset_rest_to_zero($\\tau_t$, $k$)\n  全タスクまとめて\n   $\\gamma_m \\leftarrow \\text{sgn}(\\sum_t \\hat\\tau_t)$\n  各パラメータ $p$ について\n   $\\mathcal{A}^p = \\{t \\mid \\hat\\gamma_t^p = \\gamma_m^p\\}$\n   $\\tau_m^p \\leftarrow \\frac{1}{|\\mathcal{A}^p|} \\sum_{t \\in \\mathcal{A}^p} \\hat\\tau_t^p$\n  最後に $\\theta_m \\leftarrow \\theta_\\text{init} + \\lambda \\cdot \\tau_m$\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2306.01708v2/`\n- 正規ノート: `notes/arXiv-2306.01708v2.md`\n";
+const MACROS = {"\\myblue": "\\textcolor{azureblue}{~#1}", "\\myorange": "\\textcolor{orange}{~#1}", "\\cmark": "\\ding{51}", "\\xmark": "\\ding{55}", "\\greencmark": "{\\color{mygreen}\\cmark}", "\\redxmark": "{\\color{red}\\xmark}", "\\Arrow": "\\parbox{#1}{\\tikz{\\draw[->](0,0)--(#1,0);}}", "\\methodshort": "\\textsc{Ties-Merging}", "\\method": "\\textsc{TrIm, Elect Sign \\& Merge}", "\\hlight": "\\textcolor{magenta}{#1}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

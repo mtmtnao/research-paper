@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Language Models are Super Mario: 仲間の能力を「タダで」吸収する言語モデル（日本語パラフレーズ）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2311.03099v3.md</code>
+  &nbsp;|&nbsp; macros: <code>5</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Language Models are Super Mario: 仲間の能力を「タダで」吸収する言語モデル（日本語パラフレーズ）\n\n- arXiv: https://arxiv.org/abs/2311.03099\n- 一次ソース: ../papers/arXiv-2311.03099v3/\n- 正規ノート: ../notes/arXiv-2311.03099v3.md\n\n---\n\n## 一言で言うと\n\n学習済みの言語モデル（文章を作る AI）の「ちょっと変えた差分」のうち 90〜99%を捨てても性能が落ちないし、捨ててから複数モデルを足し合わせると 1 つのモデルが複数の特技を同時に持てる、という発見の話。\n\n## どんな問題を解こうとしてるの？\n\n- **現実の困りごと**: 「数学が得意な AI」「コードが書ける AI」「指示に従うのが上手な AI」と、得意分野ごとに別々の AI が世の中にいる。これを 1 体にまとめたいけど、普通にやると AI を作り直すのに巨大な GPU（画像処理が得意な計算チップ。AI の学習には何百台も必要で電気代もすごい）と何ヶ月もかかる。\n  - 例え話: ポケモンの 3 匹（炎・水・草）を 1 匹にしたい。でも普通は「もう一回タマゴから育て直す」しか方法がなくて大変。\n- **これまでのやり方の何が足りなかったか**:\n  - 既存の「モデル合体（model merging）」は、複数モデルの数字をそのまま足したり平均したりするだけ。\n  - すると数字どうしが**ぶつかって干渉し合い**、合体後はどの能力も中途半端になってしまう。\n  - 例え話: 3 種類の絵の具をぜんぶ混ぜると茶色っぽくなって元の色が分からなくなるのと同じ。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n著者たちはまず、「fine-tuning（ファインチューニング = 大きな AI を特定の仕事用に追加学習で少し調整すること）で AI の中身がどれだけ変わったか」を計算しました。これを **delta（デルタ。差分のこと）** と呼びます。\n\nそして驚くべきことに気付きます。**この差分のうち 90〜99% を消しゴムで消しても、AI の賢さはほとんど変わらない**のです。例えるなら、学校のノートをファインチューニングで書き換えたつもりが、実は書き換えたページの 99% は無駄書きで、本当に大事な書き込みは 1% だけだった、という話。\n\nそこで提案されたのが **DARE（ダーレ = Drop And REscale。ドロップしてリスケール）**: ランダムに差分の大部分を 0 にして消し、残った差分を少し大きくする、たったそれだけのシンプル手法。これだけで、合体させたとき互いの邪魔が減り、1 体に複数の特技を持たせられます。\n\n### 仕組み\n\n- **step1: 差分を取り出す**。元の学習済み AI の数字（pre-trained parameters）と、ファインチューニング後の AI の数字（SFT parameters）の引き算をする。これが delta = 差分。\n  - SFT は Supervised Fine-Tuning（教師ありファインチューニング）の略。「お手本付きで AI を追加学習させる」こと。\n- **step2: ランダムに大部分を消す**。差分のそれぞれの数字について、サイコロを振って「確率 p で 0 にする」。たとえば p=0.9 なら 90% の差分が消える。\n- **step3: 残ったものを大きくする**。生き残った差分を $1/(1-p)$ 倍する。p=0.9 なら 10 倍。これは「消した分の埋め合わせ」のため。\n- **step4: 元の AI に足し戻す**。pre-trained に「スカスカになった差分」を足して、推論（AI に質問して答えを出させること）用のモデルを作る。\n- **step5: 合体させたいときは、各モデルでこの step1〜4 をやってから、足し算で 1 体にまとめる**。たとえば数学モデルとコードモデルそれぞれ DARE を通してから加算 → 1 つのモデルで数学もコードもできる。\n\n### 主要な数式\n\n#### 数式 1: 差分の定義\n\n$$\\bm{\\delta}^t = \\bm{\\theta}_{\\text{SFT}}^t - \\bm{\\theta}_{\\text{PRE}}$$\n\n**この式が言ってること**: 「タスク $t$ 用にファインチューニング済みの AI の数字」から「もとの学習済み AI の数字」を引いて、追加学習で変化した分（差分）を取り出しているよ。\n\n**記号の意味**:\n- $\\bm{\\delta}^t$ … タスク $t$ 用の「差分」。AI の追加学習で変わった量。$\\bm{\\delta}$ は「デルタ」というギリシャ文字で、数学では「ちょっとした変化」によく使う。太字 $\\bm{}$ になっているのは「ベクトル（数を順番に並べたもの。住所の数字みたいに、たくさんの数で 1 つの物を表す道具）」だから。AI の場合、何十億個もの数が並んでいる。\n- $\\bm{\\theta}_{\\text{SFT}}^t$ … タスク $t$ 用にファインチューニングした後の AI の中身の数字（全部）。$\\theta$ は「シータ」。AI の世界で「パラメータ（AI の中身の数値のかたまり）」を表す慣習文字。\n- $\\bm{\\theta}_{\\text{PRE}}$ … 追加学習前の、もとの AI の数字（全部）。\n\n**身近な例え**: 引っ越し前と引っ越し後の家具の位置を比較する話に似ている。$\\bm{\\theta}_{\\text{SFT}}$ が「引っ越し後の家具の位置」、$\\bm{\\theta}_{\\text{PRE}}$ が「引っ越し前の位置」、引き算した $\\bm{\\delta}$ が「何 cm 動かしたか」のメモ。\n\n#### 数式 2: DARE 本体（ドロップしてリスケール）\n\n$$\\bm{m}^t \\sim \\text{Bernoulli}(p)$$\n$$\\bm{\\widetilde{\\delta}}^t = (\\bm{1} - \\bm{m}^t) \\odot \\bm{\\delta}^t$$\n$$\\bm{\\hat{\\delta}}^t = \\bm{\\widetilde{\\delta}}^t / (1 - p)$$\n\n**この式が言ってること**: サイコロで「ここは消す/消さない」のメモ表を作って、消す場所の差分を 0 にして、残った差分を $1/(1-p)$ 倍する、という 3 段階。\n\n**記号の意味**:\n- $\\bm{m}^t$ … 「消すか残すか」をランダムに決めたメモ表（0 か 1 がたくさん並んだもの）。\n- $\\text{Bernoulli}(p)$ … 「ベルヌーイ分布」。コイン投げみたいに「確率 $p$ で 1（消す）、確率 $1-p$ で 0（残す）」と決めるルール。確率を知らない人は「サイコロで $p$ の確率で当たり」と思って OK。\n- $p$ … 消す割合（ドロップ率）。0.9 なら 90% 消す。\n- $\\bm{1}$ … 全部 1 が並んだリスト。\n- $\\odot$ … 「同じ位置どうしを掛け算」する記号。リストどうしを位置で揃えて 1 個ずつ掛ける。\n- $\\bm{\\widetilde{\\delta}}^t$ … 「消した後」の差分（一部が 0 になっている）。\n- $\\bm{\\hat{\\delta}}^t$ … 最終的な差分。残ったものを $1/(1-p)$ 倍して大きくした版。\n\n**身近な例え**: 100 人いる合唱団のうち、サイコロで 90 人にお休みしてもらって、残った 10 人にマイクで 10 倍の音量を出してもらう感じ。全体の合計音量は前と同じになるけど、声を出している人はずっと少ない。\n\n#### 数式 3: なぜリスケールが必要か（期待値の保存）\n\n$$\\mathbb{E}[\\hat{h}_i] = h_i^{\\text{PRE}} + (1-p) \\cdot \\gamma \\cdot \\Delta h_i$$\n\n$\\gamma = 1/(1-p)$ とすると $(1-p) \\cdot \\gamma = 1$ となり、$\\mathbb{E}[\\hat{h}_i] = \\mathbb{E}[h_i]$（DARE 後と元の AI の出力が「平均的に」一致する）。\n\n**この式が言ってること**: 差分の 90% を消したままだと AI の出力が小さくなりすぎるけど、残った 10% を 10 倍に大きくしておけば、「平均すると元と同じ」になるよ。\n\n**記号の意味**:\n- $\\mathbb{E}[\\cdot]$ … 「期待値」。サイコロを 100 回振った平均みたいなもの。ランダムな結果の「ならしてみた平均的な値」のこと。今回はサイコロで誰を消すかが毎回違うので、その平均を取る。\n- $\\hat{h}_i$ … DARE 後の AI が出した $i$ 番目の出力。\n- $h_i^{\\text{PRE}}$ … もとの学習済み AI が出した $i$ 番目の出力。\n- $\\Delta h_i$ … 「差分が出力に与える影響」。ファインチューニングで変わった分の出力。\n- $p$ … 消した割合。\n- $\\gamma$ … 残ったものを何倍にするかの倍率（リスケール係数）。\n- $(1-p) \\cdot \\gamma$ … 「残った割合 × 何倍にしたか」。これが 1 になるように調整したい。\n\n**身近な例え**: クッキー 10 枚を箱に入れたいけど、運ぶ途中で 9 枚はワープで消える設定。最初から 100 枚入れておけば、9 割消えても 10 枚届く。$1/(1-p)$ 倍は「途中で消える分を見越して最初から多めに作る」のと同じ理屈。\n\n#### 数式 4: DARE を使った合体（Task Arithmetic との組み合わせ）\n\n$$\\bm{\\theta}_{\\text{M}} = \\bm{\\theta}_{\\text{PRE}} + \\lambda \\cdot \\sum_{k=1}^{K} \\bm{\\hat{\\delta}}^{t_k}$$\n\n**この式が言ってること**: もとの AI に、DARE でスカスカにした「各タスクの差分」を全部足し合わせて、合体モデルを作るよ。$\\lambda$ は「足す強さ」のつまみ。\n\n**記号の意味**:\n- $\\bm{\\theta}_{\\text{M}}$ … 合体後（Merged）の AI の数字。\n- $\\bm{\\theta}_{\\text{PRE}}$ … 元の学習済み AI の数字。\n- $\\lambda$ … 「ラムダ」。差分をどれくらいの強さで足すかのつまみ（普通 0.5〜1.0 の間）。\n- $\\sum_{k=1}^{K}$ … 「$k$ を 1 から $K$ まで動かしてぜんぶ足す」の記号（シグマ。合計の意味）。\n- $K$ … 合体させるモデルの個数（例: 数学・コード・指示従いの 3 つなら $K=3$）。\n- $\\bm{\\hat{\\delta}}^{t_k}$ … $k$ 番目のタスクの「DARE 後の差分」。\n- $t_k$ … $k$ 番目のタスク。\n\n**身近な例え**: カレーの基本ルー（pre-trained）に、「辛さスパイス（数学差分）」「香りスパイス（コード差分）」「コクスパイス（指示差分）」を全部スプーン $\\lambda$ 杯ずつ混ぜる、という料理レシピ。DARE はスパイスを「実は 9 割の粉は要らないからふるい落として、残った 1 割を濃縮したもの」にすること。\n\n## 何がすごいの？\n\n- **差分のほとんどはゴミだった**: WizardMath-70B（数学が得意な 700 億パラメータの AI）では p=0.99 まで上げても性能を保てた。つまり差分の **99% が消しても OK**。\n- **モデルが大きいほど高い p に耐える**: 7B/13B モデルは途中で壊れるが、70B は p=0.99 で平気。これは scaling laws（モデルサイズと性能の規則性）と似た傾向。\n- **合体で元のモデルを超える例**: WizardLM-13B（指示従い）+ WizardMath-13B（数学）+ llama-2-13b-code-alpaca（コード）を **TIES-Merging + DARE** で合体すると、AlpacaEval（指示従いの試験）で **72.50** を達成。元の WizardLM-13B 単体（67.20）より上。\n- **Task Arithmetic + DARE の改善幅**:\n  - LM & Math & Code 合体 vs LM 単体: AlpacaEval で **+3.10%**\n  - LM & Math 合体 vs Math 単体: GSM8K（小学校〜中学校レベルの算数文章題）で **+3.18%**\n  - LM & Code 合体 vs Code 単体: MBPP（プログラミング問題）で **+19.57%**\n- **エンコーダ（BERT/RoBERTa）の GLUE では改善幅控えめ**: Average/Task Arithmetic/Fisher/RegMean/TIES でそれぞれ +0.58%/+0.36%/+0.37%/-0.03%/+0.84%。デコーダ側ほど劇的ではない。\n- **DARE は MP（Magnitude-based Pruning。値の小さい順に消す方法）より強い**: 高い p のとき特に差が広がる。MP に rescale を足すと逆に悪化（p=0.7 で AlpacaEval 43.85→10.61、GSM8K 46.70→0.37）。\n- **リスケールが必須**: リスケール無し（DropOnly）だと、WizardMath-7B で p=0.5/0.9 のとき層ごとの出力類似度が 0.85/0.68 まで落ちる。DARE は >0.95 を保つ。\n- **実用品も作った**: **supermario_v2** が 2024-01-28 時点で **Open LLM Leaderboard（誰でも 7B モデルを競わせる公開ランキング）の 7B 部門 1 位**（Average 75.49）。GPU なしの CPU だけで作れた。\n- **限界条件もちゃんと示している**: WizardCoder-Python-13B を本来の CodeLlama ではなく Llama-2 を pre-train として DARE すると、p=0.1 でも HumanEval/MBPP が 63.41/55.4 → **0.0/0.0** に崩壊。差分の絶対値が 0.01 を超える「継続事前学習」系では DARE は通用しない。\n- **差分ではなく fine-tuned 全体を消すと崩壊**: p=0.1 で WizardLM-13B AlpacaEval 67.20 → 8.56、WizardMath-13B GSM8K 64.22 → 0.38。これは「SFT は新しい能力を入れているのではなく、もとの AI に眠っていた能力を解放しているだけ」という強い証拠。\n- **著者が論文中で挙げている貢献**: (1) SFT 差分の極端な冗長性を実験・理論で示した、(2) 学習・GPU 不要の超単純な疎化手法 DARE を提案、(3) 既存マージ手法の汎用プラグインとして有効、(4) Hugging Face/peft/mergekit に採用され、Open LLM Leaderboard 1 位モデルを公開。\n\n## キーワード辞典\n\n- **AI / 言語モデル（LM = Language Model）** … 文章を読んで意味を理解したり、続きの文章を作ったりするコンピュータプログラム。例: ChatGPT。\n- **パラメータ（parameter）** … AI の中身の数字。何十億個もある。AI の「賢さ」はこの数字の組み合わせで決まる。\n- **pre-trained（プリトレーンド）** … 「事前学習済み」。大量の本やネット文章で先に勉強させた状態の AI。\n- **SFT（Supervised Fine-Tuning。教師ありファインチューニング）** … 大きな AI を、特定の仕事用にお手本付きで追加学習させること。\n- **delta（デルタ）= 差分パラメータ** … ファインチューニング前後の AI の数字の引き算。「追加学習でどれだけ変わったか」のメモ。\n- **DARE（ダーレ）** … 著者の提案手法。差分のほとんどをランダムに 0 にして、残りを大きくするだけ。\n- **drop rate $p$** … 何割の差分を 0 にするかの数字（0.9 なら 90%）。\n- **rescale（リスケール）** … 大きさを揃え直すこと。残ったものを $1/(1-p)$ 倍する操作。\n- **model merging（モデル合体）** … 複数の AI の数字を 1 体にまとめる技術。\n- **Task Arithmetic** … モデル合体の手法の 1 つ。差分を $\\lambda$ 倍して足し合わせる。\n- **TIES-Merging** … モデル合体の手法の 1 つ。値の小さい差分を切る → 符号を多数決 → 残りを平均、の 3 段階。\n- **Average Merging / Fisher Merging / RegMean** … その他のモデル合体手法。\n- **Magnitude-based Pruning（MP。マグニチュード・プルーニング）** … 値の小さい差分から順に消していく刈り込み手法。DARE のライバル。\n- **Dropout（ドロップアウト）** … AI の学習中に途中の出力をランダムに 0 にして「丸暗記」を防ぐ古典手法。DARE と似ているが、Dropout は学習中だけ・出力に対して行うのに対し、DARE は推論時に永久・差分に対して行う点が違う。\n- **embedding（エンベディング）** … AI が文章を理解するとき内部で作る「数字の並びによる意味表現」。AI の中での「脳内イメージ」みたいなもの。\n- **cosine similarity（コサイン類似度）** … 2 つの数字の並びがどれだけ「同じ向きを向いているか」を 0〜1 で測る指標。1 に近いほどそっくり。\n- **GPU** … 画像処理が得意な計算チップ。AI の学習にはこれが何百台も必要で電気代もすごい。「GPU なし」は「CPU = 普通のパソコンの頭脳だけ」で済むという意味。\n- **GLUE（グルー）** … 英語の文章理解能力を測るテストセット。CoLA・SST-2・MRPC など 8 種類の小テストの集合。\n- **AlpacaEval** … AI がどれくらい指示に従えるかを「他の AI に審査させる」評価。win rate（勝率）で測る。\n- **GSM8K** … 小学校〜中学校レベルの算数文章題のテスト。\n- **MATH** … もっと難しい数学コンテスト級の問題。\n- **HumanEval / MBPP** … プログラムを書かせて動くかどうかでスコアをつけるテスト。pass@1 は「1 回で正解できた割合」。\n- **WizardLM / WizardMath / WizardCoder** … それぞれ指示従い・数学・コードに特化してファインチューニングされた AI。\n- **Llama 2 / Code Llama / Mistral-7B** … 元になる「pre-trained」AI の名前。\n- **Open LLM Leaderboard** … Hugging Face という AI 共有サイトが運営する、誰でも自分の AI のスコアを載せて競える公開ランキング。\n- **scaling laws（スケーリング則）** … 「AI を大きくするほど性能が予測可能に良くなる」という経験則。\n- **Bernoulli 分布** … コイン投げみたいに「確率 $p$ で 1、確率 $1-p$ で 0」になるルール。\n- **期待値 $\\mathbb{E}$** … サイコロを何度も振って平均を取った値。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **理論は期待値（1 次モーメント）の保存しか言っていない**: $\\mathbb{E}[\\hat{h}] = \\mathbb{E}[h]$ は「平均すれば同じ」。でも、ランダムに消したぶん値のばらつき（分散）は実は $1/(1-p)$ 倍に大きくなる（p=0.99 なら 100 倍）。著者自身も「rough proof（おおざっぱな証明）」と書いていて、上限の理論的特定は将来課題。それでも実際に層を重ねた AI が壊れない理由は実験的な結果から推測するしかない。\n- **TIES-Merging が DARE で特に伸びる理由**: TIES は「値の小さい差分を切る」ステップを内部に持っていて、そこで本来の性能をちょっと削っていた。DARE で先にゼロ詰めしておくと、TIES がさらに切るものがなくなり、ロスが消える。役割が補完的。\n- **使える条件**: 差分の絶対値が 0.002 以内なら DARE OK、0.01 を超えると危ない。これは経験則であり、自分のモデルに DARE を試す前に差分のヒストグラム（数値の散らばり具合のグラフ）を見るだけで予測できる。\n- **「fine-tuned 全体を消す vs 差分だけ消す」の対比が重要**: 全体を消すと p=0.1 で性能ゼロ、差分だけなら p=0.99 でも無傷。これが「SFT は能力を入れているのではなく解放しているだけ」という主張の最も強い証拠。\n- **モデルサイズと許容ドロップ率の関係**: 7B/13B は手前で折れ、70B は p=0.99 まで耐える。「大きい AI ほど中身に余白（冗長性）が多い」という解釈で、合体させたい場合は大きいモデルほど「タダ飯（free lunch）」を得やすい。\n- **エンコーダ系（BERT/RoBERTa）で効きが弱い**: 著者は「デコーダ系の方が能力収容力が大きいから」と説明しているが、これは事後的な後付けにも見える。\n- **シード（乱数の初期値）依存**: DARE はランダムドロップなので、毎回違うサイコロを振る。論文ではシードによる結果のばらつき（信頼区間）はあまり報告されておらず、「1 位」のマージン（差の余裕）が分からないという弱点がある。\n- **倫理面（Impact Statement）**: DARE で作った合体モデルでも、偏見や差別的な発言などの危険な出力は残り得る。著者も「コミュニティと当局の慎重な規制が必要」と書いている。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2311.03099v3/`\n- 正規ノート: `notes/arXiv-2311.03099v3.md`\n";
+const MACROS = {"\\theHalgorithm": "\\arabic{algorithm}", "\\figref": "Figure \\ref{#1}", "\\tabref": "Table \\ref{#1}", "\\secref": "Section \\ref{#1}", "\\equref": "Equation (\\ref{#1})"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

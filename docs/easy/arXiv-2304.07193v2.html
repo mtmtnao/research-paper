@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>DINOv2: Learning Robust Visual Features without Supervision（教師なしで頑丈な画像の特徴を学ぶ大規模モデル「DINOv2」）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2304.07193v2.md</code>
+  &nbsp;|&nbsp; macros: <code>70</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# DINOv2: Learning Robust Visual Features without Supervision（教師なしで頑丈な画像の特徴を学ぶ大規模モデル「DINOv2」）\n\n- arXiv: https://arxiv.org/abs/2304.07193\n- 一次ソース: ../papers/arXiv-2304.07193v2/\n- 正規ノート: ../notes/arXiv-2304.07193v2.md\n\n---\n\n## 一言で言うと\n\n文字の説明文を一切使わず、画像だけを大量に見せて学ばせるだけで、「画像のことなら何でも分かる万能な目」を作った研究だよ。\n\n## どんな問題を解こうとしてるの？\n\n- **困りごと**: 写真を扱う AI（例: 写真を分類する・物の輪郭をなぞる・奥行きを当てる）は、いままで「タスクごと」に別々に作る必要があった。文章の AI（ChatGPT みたいなやつ）は「1 個でいろんなことができる万能モデル（= foundation model、いろんな仕事の土台になるモデルのこと）」が登場してすごく便利になったのに、画像の方ではそういう「1 個で何でもこなす万能モデル」が遅れていた。\n  - 身近な例えで言うと「漢字テスト用ノート」「計算テスト用ノート」「英語テスト用ノート」を別々に作っていた状態。1 冊で全教科に使える「万能ノート」が欲しい、というのが目標。\n- **これまでのやり方の何が足りなかったか**:\n  - 主流だった **CLIP** という方法（← 画像と、その画像を説明する英語のキャプションをペアにして学ばせる方法。テキストを「先生」にする）は、キャプションが画像に書かれた情報のごく一部しか説明していないので、画像の細かい情報（奥行きや、物のどの部分がどこにあるか）を取りこぼしてしまう。\n  - 一方、文字を使わずに画像だけから学ぶやり方（**自己教師あり学習 / Self-Supervised Learning = SSL**。「正解ラベル」を人間が付けなくても、画像同士の関係から AI が勝手に問題を作って解く学び方）は、これまで小さなデータ（ImageNet-1k という 130 万枚くらいの綺麗な画像セット）でしか上手くいっておらず、データを増やそうとすると逆に質が下がっていた。\n  - つまり「文字を使わずに、しかも大量のデータで、しかも特徴の質を落とさずに学ぶ」のは未解決だった。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n例え話で言うと、こんな感じ。\n\n学校の先生（teacher モデル）と生徒（student モデル）の 2 人がいる。同じ 1 枚の写真を「全体を写したコピー」と「一部だけを切り取ったコピー」に切り分けて、先生には全体を見せ、生徒には一部だけを見せる。生徒は「先生がこの写真をどう思ったか」を当てるように練習する。先生は、生徒が過去に出した答えを少しずつ混ぜて更新していく（生徒がちょっとずつ成長した姿が新しい先生になる）。これを大量の画像で繰り返すと、生徒は「画像のどこに何が写っているか」を、誰にも答えを教わらずに段々わかるようになる。\n\nさらに DINOv2 では、(1) インターネットから集めた 12 億枚の画像から「似たような画像が偏らないように」自動で 1 億 4200 万枚を選び抜くデータ作りと、(2) 10 億個のパラメータ（モデルが覚える数字の個数）を持つ巨大モデルを安定して学習させるための高速化テクニックを、たくさん詰め込んでいる。\n\n### 仕組み\n\n- **step1: データを集めて整える（LVD-142M を作る）**\n  - 公開されているウェブから 12 億枚の画像を集める。\n  - 重複を除く（PCA hash という、画像のざっくりした特徴を短い数字列にして、似ていたら同じとみなす技術）。\n  - 不適切画像（NSFW = Not Safe For Work、見せられない画像のこと）を除き、顔をぼかす。\n  - 「お手本になる綺麗な画像セット」（ImageNet-22k や Google Landmarks など）を query（探す元）にして、ウェブの 12 億枚の中から「似ている画像」を取ってくる。これで「綺麗で多様な 1 億 4200 万枚」のデータが完成。\n- **step2: 大きいモデル（ViT-g/14、約 11 億パラメータ）を 1 個、自己教師ありで学習する**\n  - 同じ画像から「大きな切り抜き 2 枚」と「小さな切り抜き複数枚」を作って、先生（teacher）と生徒（student）に別々に渡す。\n  - 生徒は「先生が出した答え」に近づくように学習する。\n  - 画像全体レベルの比較（DINO loss）と、画像の小さな区画（patch）レベルの比較（iBOT loss）の 2 種類を同時に行う。\n  - **KoLeo 正則化**（特徴をバラけさせる罰）を追加して、生徒が「どの画像も似たような答えにしてサボる」のを防ぐ。\n  - 学習の最後に短期間だけ高解像（518×518 ピクセル）で追加学習し、細かい情報も拾えるようにする。\n- **step3: 小さいモデル（ViT-S/B/L）を「蒸留 (distillation)」で作る**\n  - 蒸留 ← 大きくて賢いモデルの答えを、小さなモデルに真似させて学ばせる方法。生徒が先生をコピーするイメージ。\n  - 小さなモデルをゼロから訓練するよりも、大きな ViT-g を先生にして真似させた方が精度が出る。\n- **step4: 学習を高速化する工夫**\n  - 独自の **FlashAttention**（← 後で解説。Attention という重い計算を、メモリを節約して速くする実装）。\n  - **sequence packing**（長さの違うデータをくっつけて 1 本にして処理する工夫。混ざらないように仕切りを入れる）。\n  - **efficient stochastic depth**（モデルの層の一部をランダムにスキップする時、計算自体もサボる実装）。\n  - **FSDP**（Fully-Sharded Data Parallel。モデルが大きすぎて 1 個の GPU に乗らないので、複数の GPU に分けて持つ仕組み）。\n  - これらで、似た手法の iBOT に比べて **約 2 倍速・メモリ 1/3** で動く。\n\n### 主要な数式\n\n論文に出てくる中核 2 個を解説するよ。\n\n#### 1. DINO 損失（画像全体レベルの「先生に近づけ」式）\n\n$$ \\mathcal{L}_{\\mathrm{DINO}} = - \\sum p_t \\log p_s $$\n\n**この式が言ってること**: 先生が出した「答えの確率」と、生徒が出した「答えの確率」がズレているほど大きな罰になる。生徒はこの罰を小さくしようとして、先生の答え方を真似ていく。\n\n**記号の意味**:\n- $\\mathcal{L}_{\\mathrm{DINO}}$ … 「ロス（loss）」と読む。間違いの大きさを表す数。これが小さいほど良い学習。\n- $p_t$ … 先生（teacher）が画像を見て出した「答えの確率」。例えば「これは犬っぽさ 70%、猫っぽさ 20%、鳥っぽさ 10%」みたいな、合計 1 になる数字の組。\n- $p_s$ … 生徒（student）が同じ画像（の別の切り抜き）を見て出した「答えの確率」。同じく合計 1 になる数字の組。\n- $\\log$ … 「ログ」と読む関数。0 に近い数を入れるとマイナスにすごく大きな数を返す。「自信がなさすぎる答え」に大きな罰を与えるための関数。\n- $\\sum$ … シグマ。後ろの数を全部足すという意味の記号。\n- マイナス記号（先頭の $-$）… 全体をひっくり返して「ズレてるほど大きな正の数」にするため。\n\n**身近な例え**: 答え合わせのテストみたいなもの。先生が「この問題の正解は犬 70%・猫 20%・鳥 10% だよ」と言ったら、生徒も「犬 70%・猫 20%・鳥 10%」と書けば罰はゼロ。生徒が「鳥 100%」と書いて自信満々に外したら罰がすごく大きい。これを繰り返して、生徒は先生の答え方をどんどん真似ていく。\n\n#### 2. KoLeo 正則化（特徴をバラけさせる罰）\n\n$$ \\mathcal{L}_{\\mathrm{koleo}} = - \\frac{1}{n} \\sum_{i=1}^n \\log( d_{n, i}) $$\n\nここで $d_{n,i} = \\min_{j \\neq i} \\| x_i - x_j \\|$（$i$ 番目の点から、自分以外の一番近い点までの距離）。\n\n**この式が言ってること**: バッチ（同時に処理する画像の束）の中で、画像同士の「特徴」がくっつきすぎていたら罰を与える。みんなが満員電車みたいにギュウギュウなのは NG、ちゃんと散らばっていてね、という指示。\n\n**記号の意味**:\n- $\\mathcal{L}_{\\mathrm{koleo}}$ … 「バラけてなさ罰」。これが小さいほどバラけている。\n- $n$ … バッチに入っている画像（特徴）の個数。\n- $x_i$ … $i$ 番目の画像の特徴。中身は「数を順番にたくさん並べたもの」（住所の数字みたいに、複数の数で 1 つの画像を表す道具）。\n- $\\| x_i - x_j \\|$ … 2 つの特徴の「距離」。座標が近いほど小さくなる、地図上の直線距離みたいなもの。\n- $\\min_{j \\neq i}$ … 「自分以外で一番近い相手までの距離」を選ぶ操作。\n- $\\log$ … 入れる数が小さい（= ご近所が近い）ほど、マイナスにすごく大きくなる関数。前にマイナスがついているので「近すぎると罰が大きい」になる。\n- $\\frac{1}{n} \\sum$ … 全員ぶん足して平均する操作。\n\n**身近な例え**: 教室で全員が一箇所にギューッと集まると怒られて、ちゃんと教室全体に散らばって座ると褒められるイメージ。これがあると、似たような画像を全部「同じ答え」にしてサボる生徒に、「サボるな、もっと違いを出せ」と注意できる。\n\n## 何がすごいの？\n\n著者は「frozen feature」と呼ばれる評価方法を中心に使っている。これは「学習が終わった後、AI の本体は触らずに固定したまま（= frozen）、最後の答えだけ単純な仕掛けで読み出す」やり方で、特徴そのものの質を直接測るやり方。\n\n- **ImageNet-1k**（画像分類の標準ベンチマーク、1000 種類の物を分類するテスト）\n  - ViT-g/14: linear 評価で **86.5%**、kNN 評価で **83.5%**。\n  - OpenCLIP ViT-G/14（86.2%）や EVA-CLIP（86.4%）といった「テキストを先生に使う最強モデル」を上回った。← つまり「テキストの先生なし」でも勝てることを示した。\n  - 元になった iBOT ViT-L/16（82.3%）から **+4.2%** 改善。\n- **ロバストネス（意地悪な画像にどれだけ強いか）**\n  - ImageNet-A（AI が間違えやすい画像集）: 75.9\n  - ImageNet-R（絵画・スケッチなど別ドメイン）: 78.8\n  - ImageNet-Sketch（スケッチ画像）: 62.5\n  - iBOT 比で A は +29.6%、R は +22.1%、Sketch は +23.0%。\n- **細かい画像の分類**\n  - iNat2018（生き物の分類）: 81.6（OpenCLIP-G より +8.6）\n  - iNat2021: 85.7（+9.7）\n- **物の位置を当てる系（pixel レベル）**\n  - ADE20k のセマンティックセグメンテーション（画像のどの部分が何かを塗り分ける課題）で、frozen backbone + ViT-Adapter + Mask2former 構成で **60.2 mIoU**。\n  - 奥行き推定（NYUd の RMSE）: DPT 構成で 0.279。SoTA の BinsFormer（0.330）と同等以上。\n- **同じ場所を写した別画像を見つけるタスク（instance retrieval）**\n  - Oxford-Hard で mAP **54.0**。OpenCLIP-G より **+34** という大差。← テキスト先生では拾えない「ピクセル細部」の情報をちゃんと持っている証拠。\n- **著者が論文中で挙げている貢献**:\n  1. 自己教師ありだけで、テキスト先生付きの最強モデル（OpenCLIP / EVA-CLIP）と同等以上の汎用視覚特徴を初めて作った。\n  2. メタデータに頼らず、画像同士の似てる度で自動的にデータを選び抜く pipeline（LVD-142M、1 億 4200 万枚）を作った。\n  3. 10 億パラメータ級のモデルを安定して学ぶための実装（独自 FlashAttention、sequence packing、efficient stochastic depth、FSDP）を整え、iBOT 比で 2 倍速・メモリ 1/3 にした。\n  4. モデルとコードを Apache 2.0 で公開した。\n\n## キーワード辞典\n\n- **foundation model（ファウンデーションモデル）** … 1 個でいろんなタスクに使える「土台モデル」。\n- **self-supervised learning (SSL)** … 人間が「正解ラベル」を付けなくても、データそのものから AI が問題を作って自分で学ぶ方法。\n- **weakly-supervised learning (WSL)** … キャプション（説明文）など弱い手がかりを使って学ぶ方法。CLIP がその代表。\n- **CLIP** … 画像とキャプションをペアで学ぶ有名なモデル。テキストが「先生」になる。\n- **ViT (Vision Transformer)** … 画像を小さな正方形（patch）に切って、文章の単語みたいに扱って処理するモデル。\n- **patch** … 画像を 14×14 ピクセルなどの小さな正方形に切ったもの。ViT の最小単位。\n- **DINO** … 「先生と生徒が同じ画像の別の切り抜きを見て、生徒が先生を真似する」自己教師あり学習法。本論文の元の方法。\n- **iBOT** … DINO に「patch を隠して当てさせる」課題を足した方法。本論文の直接の元。\n- **MAE (Masked Autoencoder)** … 画像の patch を隠して元に戻す方法（本論文の比較対象、frozen 比較で大差負け）。\n- **teacher / student** … 自己教師ありでよく出てくる「お手本役 / 真似役」のペア。\n- **EMA (Exponential Moving Average)** … 過去の値をだんだん混ぜて平均を取る方法。先生モデルを「生徒の過去の姿の平均」として作るのに使う。\n- **softmax** … 数の組を「合計 1 の確率」に変換する関数。\n- **cross-entropy（クロスエントロピー）** … 2 つの確率分布がどれだけズレてるか測る罰。DINO loss の本体。\n- **Sinkhorn-Knopp 中心化** … バッチ全体で「先生の答えが偏らないように」整える計算。\n- **KoLeo** … 特徴がバラけるように罰を与える正則化。\n- **正則化 (regularization)** … 学習がやりすぎたり偏ったりしないように、追加で課す罰のこと。\n- **distillation（蒸留）** … 大きなモデルの答えを真似させて、小さなモデルを賢くする方法。\n- **embedding（埋め込み）** … 画像や単語を「数の並び」に変換した表現。\n- **frozen feature** … 学習済みモデル本体を固定したまま、その出力（特徴）だけを使う評価法。\n- **linear 評価** … frozen feature の上に「足し算と掛け算 1 段だけの簡単な分類器」を載せて測る評価。\n- **kNN 評価** … 学習済み特徴を使って「似ている画像を k 個探して多数決」で分類する評価。\n- **fine-tune** … モデル本体も追加学習で微調整すること。frozen の反対。\n- **FlashAttention** … Transformer の重い計算「Attention」を、メモリ節約して速くする実装。\n- **Attention** … Transformer の中で「どの patch と どの patch が関係あるか」を計算する仕組み。\n- **stochastic depth** … 学習中にネットワークの層をランダムにスキップする工夫（過学習を防ぐ）。\n- **FSDP (Fully-Sharded Data Parallel)** … 1 個の巨大モデルを複数 GPU に分けて持つ仕組み。\n- **GPU** … 画像処理に強い並列計算チップ。AI 学習に使う。\n- **batch（バッチ）** … 一度にまとめて処理する画像の束。\n- **LVD-142M** … 本論文で作った 1 億 4200 万枚の画像データセット。\n- **ImageNet-1k / -22k** … 1000 種類 / 22000 種類の物のラベル付き画像データセット。\n- **ADE20k** … 部屋や街の画像で「ここは床・ここは机」みたいに塗り分ける課題のデータセット。\n- **mIoU** … セグメンテーションの良さを測る数値（高いほど良い）。\n- **RMSE** … 奥行き推定などの誤差の大きさ（小さいほど良い）。\n- **mAP** … 検索や検出タスクの良さを測る数値（高いほど良い）。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **なぜ「自己教師あり」が pixel レベルで強いのか**: テキスト（キャプション）は「犬が走っている」くらいの粗い情報しか持っていない。一方、画像同士を直接比較する自己教師あり学習は、毛並みや影や輪郭といった「ピクセル単位の細かい違い」まで答えに使う必要があるので、結果的に細部の特徴を覚える。奥行き推定や物の位置当てで CLIP 系に大差で勝つのはこの差。\n- **head untying（DINO と iBOT の出力ヘッドを別々にした）**: iBOT の元論文は「ヘッドを共有した方が良い」と言っていたが、本論文では大規模だと逆で「別々にした方が良い」と判明。論文中の正直な逆発見ポイント。\n- **KoLeo の効きどころ**: 分類精度ではほとんど変わらないが、「同じ場所を写した別画像を探す」タイプのタスク（instance retrieval）で大きく効く（Oxford-M で +8）。特徴がバラけている方が「探す」のに向く、という具体例。\n- **distillation の不思議**: ViT-L をゼロから訓練すると 84.5%、ViT-g (86.5%) を先生に蒸留すると 86.3%。先生（86.5%）と生徒（86.3%）がほぼ並ぶ。「巨大モデルを 1 個作って、実運用は蒸留した中サイズを使う」という計算予算配分の指針になる。\n- **計算コスト**: ViT-g 1 回の学習で 22000 GPU 時間（A100 という強い GPU 換算）、二酸化炭素換算で 3.7 トン。プロジェクト全体だと数百〜千トン規模。同条件で OpenCLIP-G を再現すると 10 倍の電力がかかると報告されていて、自己教師あり学習はテキスト encoder を捨てる前提で見ると電力的にもお得、と主張している。\n- **TeX に書かれている弱み**: Dollar Street という「世帯収入の異なる家の写真」での精度が、アフリカで欧州より 25.7% 低い等、地域・収入バイアスが残っていることを著者自身が認めている。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2304.07193v2/`\n- 正規ノート: `notes/arXiv-2304.07193v2.md`\n";
+const MACROS = {"\\figleft": "{\\em (Left)}", "\\figcenter": "{\\em (Center)}", "\\figright": "{\\em (Right)}", "\\figtop": "{\\em (Top)}", "\\figbottom": "{\\em (Bottom)}", "\\captiona": "{\\em (a)}", "\\captionb": "{\\em (b)}", "\\captionc": "{\\em (c)}", "\\captiond": "{\\em (d)}", "\\newterm": "{\\bf #1}", "\\train": "\\mathcal{D}", "\\valid": "\\mathcal{D_{\\mathrm{valid}}}", "\\test": "\\mathcal{D_{\\mathrm{test}}}", "\\tens": "\\bm{\\mathsfit{#1}}", "\\etens": "\\mathsfit{#1}", "\\pdata": "p_{\\rm{data}}", "\\ptrain": "\\hat{p}_{\\rm{data}}", "\\Ptrain": "\\hat{P}_{\\rm{data}}", "\\pmodel": "p_{\\rm{model}}", "\\Pmodel": "P_{\\rm{model}}", "\\ptildemodel": "\\tilde{p}_{\\rm{model}}", "\\pencode": "p_{\\rm{encoder}}", "\\pdecode": "p_{\\rm{decoder}}", "\\precons": "p_{\\rm{reconstruct}}", "\\laplace": "\\mathrm{Laplace}", "\\E": "\\mathbb{E}", "\\Ls": "\\mathcal{L}", "\\R": "\\mathbb{R}", "\\emp": "\\tilde{p}", "\\lr": "\\alpha", "\\reg": "\\lambda", "\\rect": "\\mathrm{rectifier}", "\\softmax": "\\mathrm{softmax}", "\\sigmoid": "\\sigma", "\\softplus": "\\zeta", "\\KL": "D_{\\mathrm{KL}}", "\\Var": "\\mathrm{Var}", "\\standarderror": "\\mathrm{SE}", "\\Cov": "\\mathrm{Cov}", "\\normlzero": "L^0", "\\normlone": "L^1", "\\normltwo": "L^2", "\\normlp": "L^p", "\\normmax": "L^\\infty", "\\parents": "Pa", "\\argmax": "\\operatorname{arg\\,max}", "\\argmin": "\\operatorname{arg\\,min}", "\\sign": "\\operatorname{sign}", "\\Tr": "\\operatorname{Tr}", "\\xmark": "\\textcolor{DecrRed}{\\ding{55}}", "\\cmark": "\\textcolor{IncrGreen}{\\ding{51}}", "\\YFCC": "YFCC", "\\MMCC": "C2", "\\YFCCMMCC": "YFCC+C2", "\\LaViDa": "LVD-142M", "\\OURS": "DINOv2", "\\OPENOURS": "Open\\OURS", "\\etal": "\\emph{et al.}", "\\myparagraph": "\\vspace{0.5em}\\noindent\\textbf{#1}", "\\extrafootertext": "\\bgroup\n    \\renewcommand\\thefootnote{\\fnsymbol{footnote}}\n    \\renewcommand\\thempfootnote{\\fnsymbol{mpfootnote}}\n    \\footnotetext[0]{#1}\n    \\egroup", "\\thefootnote": "\\fnsymbol{footnote}", "\\thempfootnote": "\\fnsymbol{mpfootnote}", "\\qinc": "\\footnotesize\\textcolor{IncrGreen}{$\\uparrow #1$}", "\\qdec": "\\footnotesize\\textcolor{DecrRed}{$\\downarrow #1$}", "\\qeq": "\\footnotesize{$=#1$}", "\\rone": "#1", "\\rtwo": "#1", "\\rthree": "#1", "\\fix": "\\marginpar{FIX}", "\\new": "\\marginpar{NEW}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

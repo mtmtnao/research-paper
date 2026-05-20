@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Paired Open-Ended Trailblazer (POET): 終わりなく難しさと多様さを増やしながら、課題と解き方を同時に作りつづけるアルゴリズム</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-1901.01753v3.md</code>
+  &nbsp;|&nbsp; macros: <code>17</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Paired Open-Ended Trailblazer (POET): 終わりなく難しさと多様さを増やしながら、課題と解き方を同時に作りつづけるアルゴリズム\n\n- arXiv: https://arxiv.org/abs/1901.01753\n- 一次ソース: ../papers/arXiv-1901.01753v3/\n- 正規ノート: ../notes/arXiv-1901.01753v3.md\n\n---\n\n## 一言で言うと\n\nロボットに歩かせる「コース」と「歩き方」を、人間が決めずに同じ計算機の中で同時に作りつづける仕組み。\n\n## どんな問題を解こうとしてるの？\n\n- ふつうの機械学習（コンピュータが大量のデータから自分でルールを覚える勉強のしかた）は、「人間が問題を用意 → コンピュータが解く」という形しかなかった。\n  - 例えるなら、先生がテストを作って生徒が解く、というワンパターン。\n- でも、人間が思いつく問題には限りがある。本当に賢いものを作りたかったら、「問題そのもの」も自分で作りつづけてほしい。自然界の進化がそうやってアリやキリンやヒトを生み出してきたのと同じように。\n- これまでの方法には次の足りなさがあった:\n  - **直線的なカリキュラム学習**（簡単 → 中くらい → 難しい、と一本道で難しさを上げていく勉強法）は、ゴールを人間が決めないと組めない。しかも「どの中間問題が役に立つか」は事前にはわからない。\n  - **GAN や自己対戦**（コンピュータ同士で戦わせて強くなる方法）は、対戦ルール自体（コース、報酬の決め方）はずっと固定のまま。コースが変わらないと、本当に新しい能力は生まれにくい。\n  - **MCC（Minimal Criterion Coevolution、最低限の条件で共進化）** という先行研究は、問題と解を一緒に進化させたが、「今その場で解ける問題しか受け付けない」せいで難しさがなかなか伸びず、しかも問題ごとに「最後までうまく解く」圧力が無かった。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n**「コース」と「歩く人形」をペアにして、たくさん同時に育てる**。さらに、ある人形が他のペアの「コース」で試しに走ってみて、もし元の住人より上手に走れたら住人の座を奪う。\n\n例えるなら、たくさんの教室が並んだ学校を想像する。各教室には「黒板に書かれた問題」と「その問題を解く生徒」が 1 組ずついる。先生は新しい教室を時々作って、「今の生徒たちにとって、簡単すぎず・難しすぎない問題」だけを残す。さらに、よその教室の生徒に隣の教室のテストを受けさせて、もし元の住人より高得点だったらその子をその教室に転入させる。こうして「いつのまにか難問を解ける生徒」が生まれる、というのが POET の発想。\n\n### 仕組み\n\nPOET は次の 3 つを繰り返す。論文では「POET の本体ループ」と呼ばれている。\n\n- **step 1（新しいコース作り）**: 今あるコースのどれかをちょっとだけ変えて子コースを作る（例: 段差の高さを 0.2 だけ高くする）。\n- **step 2（各ペアを少しだけ練習させる）**: 全部の教室で、人形がそのコースで少しでも上手になるように、重み（人形の脳みその数字）を更新する。中で使っているのは ES（Evolution Strategies、進化戦略。後で説明する）。\n- **step 3（転入試験）**: 全部の教室どうしで「あなたの教室のコース、うちの生徒に試させてください」をやる。元の住人より高得点なら、その子に住人の座を交代。\n\nこのとき、コースを残すかどうかには 2 つのフィルターがある:\n\n- **親が再生産できる条件**: その教室の生徒のスコアが 200 以上（だいぶ歩けている）でないと、新しい子コースを生む資格がない。\n- **子コースが受理される条件（Minimal Criterion = 最低限の合格基準）**: 親の生徒を子コースに突っ込んでみて、得たスコアが「50 〜 300」の範囲なら採用。簡単すぎ（300 超）も難しすぎ（50 未満）もダメ。\n- さらに、新しさ（=今のコース集合とどれくらい違うか）を見て、より「珍しい」コースを優先して入れる。\n- 教室の定員（同時に走らせる数）は 20 で固定。あふれたら一番古い教室から閉じる。\n\nここで出てきた用語を補足する:\n\n- **エージェント** … その教室の「生徒」。中身は小さなニューラルネットワーク（数字をたくさん使って入力→出力を計算する仕組み。脳みそのおもちゃ版）。具体的には「目から入る 24 個の数字」を受け取って「足の関節をどう動かすかの 4 個の数字」を出す。\n- **ニューラルネットワーク** … 入力の数字に重みをかけて足し合わせ、ぐにゃっと曲げる関数（活性化関数）を通して、また次の層に送る、という計算を何段か重ねたもの。重みの値を変えると振る舞いが変わる。\n- **重み（パラメータ）** … ニューラルネットワークの中にある「調節つまみ」の値。学習というのはこのつまみをちょっとずつ回して、得点が上がる向きを探すこと。\n- **ES（Evolution Strategies、進化戦略）** … 重みの値を「ちょっとだけランダムにずらしたコピー」をたくさん作って走らせ、得点が高かった方向に本体の重みを少しずらす、という学習法。微分（高校で習う傾きのこと）を直接計算せず、サイコロを振って良い方向を多数決で探す、と思えばよい。\n- **転入試験 = transfer（転移）** … 別のコースで育った人形を、今のコースで走らせてみる試み。論文では `EVALUATE_CANDIDATES` という名前で呼ばれている。\n\n### 主要な数式\n\n#### ① コースを 1 歩進むときの点数（報酬関数）\n\n論文の式（experiments セクション）:\n\n$$\n\\text{(1 ステップあたりの点数)} =\n\\begin{cases}\n-100, & \\text{転んだとき}\\\\\n130 \\cdot \\Delta x - 5 \\cdot \\Delta(\\text{hull\\_angle}) - 0.00035 \\cdot (\\text{applied\\_torque}), & \\text{それ以外}\n\\end{cases}\n$$\n\n**この式が言ってること**: 人形が 1 歩進むごとに、「前にどれだけ進めたか」「胴体がどれくらい傾いたか」「モーターをどれくらい強く回したか」の 3 つで点数が決まる。前に進めば大きく加点、傾けば減点、力を入れすぎても少し減点。転んだら一気に −100 点。\n\n**記号の意味**:\n- $\\Delta x$ … この 1 ステップで前にどれだけ進んだか（メートル相当の小さな数）\n- $\\Delta(\\text{hull\\_angle})$ … 胴体（人形の本体）の傾きが 1 ステップでどれだけ変わったか\n- $\\text{applied\\_torque}$ … 関節を動かすのに使った力の合計（強くひねるほど大きい）\n- $-100$ … 転倒の罰\n- 係数の $130, 5, 0.00035$ … それぞれの項目を「どれくらい重く見るか」の重みづけ。前進をいちばん大事にしている\n\n**身近な例え**: 体育のシャトルランの採点と似ている。「進んだ距離 × たくさん点」「フォームがブレたら少し減点」「むだに大声を出したら少し減点」「コケたら一発で大減点」というルール表。前進が一番点になるけれど、力みすぎや姿勢崩れはじわじわ点が減る。\n\n#### ② 子コースを受け入れる条件（Minimal Criterion = 最低限の合格基準）\n\n論文の式（algorithm セクション）:\n\n$$\n50 \\;\\leq\\; E^{\\text{child}}(\\theta^{\\text{child}}) \\;\\leq\\; 300\n$$\n\n**この式が言ってること**: 新しく作った子コース $E^{\\text{child}}$ に、親から受け継いだ子人形 $\\theta^{\\text{child}}$ を試しに走らせる。そのスコアが 50 以上 300 以下に収まったら「ちょうどいい難しさ」と判定して採用、はみ出したらボツ。\n\n**記号の意味**:\n- $E^{\\text{child}}$ … 新しく作った子コース（環境のこと。$E$ は environment の頭文字）\n- $\\theta^{\\text{child}}$ … その子コースに最初に住まわせる人形の重み（$\\theta$ は「シータ」で、機械学習で「調節つまみの値」を表す慣習）\n- $E^{\\text{child}}(\\theta^{\\text{child}})$ … 「その人形がそのコースを走ったときに得たスコア」を表す関数の書き方\n- $50, 300$ … 下限と上限。論文で実験的に決めた数字\n\n**身近な例え**: 漢字ドリルを作る先生のチェック表。「子どもに 1 回やらせてみて、点数が 50〜300 点の範囲に収まらないドリルは配らない」というルール。300 を超える → 簡単すぎてやる意味なし。50 未満 → 難しすぎて投げ出してしまう。ちょうど「がんばれば届く宿題」だけ残す、という ZPD（発達の最近接領域、「すぐ届く成長ゾーン」）の考え方を、数字で実装している。\n\n#### ③ コースとコースの「違い具合」を測る距離（直接最適化との比較に使う）\n\n論文の式（results セクション）:\n\n$$\n\\text{距離}(E_A, E_B) \\;=\\; \\frac{1}{\\beta} \\left\\Vert \\frac{e(E_A) - e(E_B)}{e(E_{\\text{Max}})} \\right\\Vert_2\n$$\n\n**この式が言ってること**: 2 つのコース $E_A$ と $E_B$ が「どれくらい違うか」を 1 つの数字にまとめる。コースを「特徴の数字をいくつか並べたカード」とみなして、対応するマスの差を全部使って距離を測る。最後に $\\beta$ で割って、最大コースと真っ平らコースの距離が 1 になるように揃えている。\n\n**記号の意味**:\n- $e(E_A), e(E_B)$ … コース $A, B$ の特徴を数字で並べたもの（段差の高さ・穴の幅・凸凹の度合いなど 5 つの数字）。これは「ベクトル」と呼ばれる（=数字を順番に並べた住所みたいなもの）\n- $e(E_{\\text{Max}})$ … 全部の項目が最大値まで振り切ったときの数字リスト。割り算で「項目ごとの 100% を 1.0」にそろえる\n- $\\Vert \\cdot \\Vert_2$ … 並べた数字をそれぞれ 2 乗して足して平方根を取る、という計算。中学校で習う三平方の定理を「3 次元・5 次元」と次元を増やしただけ\n- $\\beta = \\sqrt{5}$ … 5 項目あるので、最大コース ↔ 真っ平らコースの距離がちょうど 1 になるようにそろえる定数\n\n**身近な例え**: 2 つの料理レシピが「どれくらい違うか」を数値化するイメージ。「砂糖・塩・しょうゆ・酢・みりん」の 5 項目を満点で割って % にし、それぞれの差を 2 乗して足して平方根する。地図上の 2 点間の距離（三平方の定理）を「5 次元の地図」に拡張しただけ。\n\n## 何がすごいの？\n\n論文の実験はすべて **OpenAI Gym の Bipedal Walker（二足歩行ロボット）を改造したコース** で行われた。コースは「段差（stump）」「穴（gap）」「階段の高さ・段数（step）」「地面の凸凹（roughness）」の 5 種類のパラメータで作られる。クリア条件はスコア 230 以上。\n\n実験規模:\n- 1 回の POET 実行 = **25,200 回のループ**、同時に走る教室 20 個、ES の中で試す重みのコピーは 512 個、合計 **256 個の CPU を使って約 10 日**。\n- 人形の脳みそは「入力 24 → 隠れ層 40 → 隠れ層 40 → 出力 4」の小さな 3 層ニューラルネット（tanh で曲げる）。\n\n主な結果:\n\n- **ES 単体ではぜんぜん解けない**: POET が作って解いた 5 つの難コースに対し、ES を 2 倍の時間（16,000 ステップ）回しても、最高スコアはそれぞれ **17.9 / 39.6 / 13.6 / 24.0 / 19.2** にとどまった。クリア基準 230 にまるで届かない。人形は「障害物の手前で止まって、転ばないように得点を稼ぐ」というズルい固まり方をしてしまう。\n- **直線カリキュラム法より強い**: 「同じゴールに向かって難しさを単線で上げる」方式と同じ計算予算で比べた。\n  - challenging（=参照値の 1.2〜4.5 倍を 1 項目だけ満たす） → カリキュラム法もだいたい届く。\n  - very challenging（2 項目満たす）、extremely challenging（3 項目満たす） → カリキュラム法は届かず、距離の差が **統計的にもはっきり**（Mann-Whitney U 検定で p < 0.01）。\n  - POET が各レベルを解くのにかかった平均ループ回数: 638±133 / 1,180±343 / 2,178±368。\n- **転入（transfer）を切ると一気にダメになる**: POET から転入機能だけを外すと、extremely challenging のコースは **1 個も作られ・解かれない**。3 回のラン全体での転入試行は約 19,000 回ずつ、成功率は **53.62% / 49.26% / 48.89%**。だいたい半分の試行で「よその教室の子の方が今の住人より上手」と判定された。\n- **子から親への逆向き転入の具体例**: 平らな床用の「膝立ち歩き」の親エージェントが、子コース（小さな段差）で「立って跳ぶ歩き方」を学習。1,175 ループ目に逆方向で親に転入すると、親側のスコアが **309 → 349** に伸びた。転入を切って親で 3,000 ループ追加で走らせても、ずっと膝立ちのままだった。\n\n著者が論文の中で「貢献」として挙げているのは:\n1. 「コースを生成・コースで最適化・コース間で転移」を 1 回の実行ですべてやる新アルゴリズム POET（先行手法の MCC・CMOEA・ES を組み合わせたもの）。\n2. 「事前にゴールを決めずに」発見した課題群が、同じ計算予算の単線カリキュラム法より遠くまで届くことを定量的に示した。\n3. 転入機能を外すと open-ended な複雑化が止まることを、削除実験で実証した。\n4. 同じ 1 回の実行の中で、穴・段差・凸凹・階段といった種類の違う障害に対応した多様な歩行が同時に獲得されることを示した。\n\n## キーワード辞典\n\n本文に出てきた専門用語を、出てきた順番で並べる。\n\n- **オープンエンド（open-ended）** … 「終わりがなく、新しいものが生まれ続ける」性質。自然界の進化のように、ずっと新種が出続ける状態のこと。\n- **カリキュラム学習** … 簡単な問題から始めて、少しずつ難しい問題に進ませる勉強のさせ方。\n- **エージェント** … 環境の中で行動する「主役」。この論文では二足歩行する人形の脳みそ（ニューラルネットワーク）。\n- **環境（environment）** … エージェントが置かれて行動する「場」。この論文では地形（コース）のこと。\n- **ニューラルネットワーク** … 入力の数字に重みをかけて足し合わせ、関数を通す、を何段か重ねた計算機。重みを調整して賢くする。\n- **強化学習（RL: Reinforcement Learning）** … 「行動して報酬をもらい、もっと報酬が大きくなるように行動を変える」勉強法。犬にお手を教えるイメージ。\n- **報酬（reward）** … エージェントの行動の良し悪しを表す点数。\n- **進化戦略（ES: Evolution Strategies）** … 重みをランダムに少しずらしたコピーを大量に作って試し、点数が良かった方向に本体を寄せる学習法。微分を直接使わない。\n- **共進化（coevolution）** … 2 つ以上のものが、お互いに影響を与え合いながら一緒に変化していくこと。\n- **MCC（Minimal Criterion Coevolution）** … 「最低限の基準を満たす」だけで再生産を許す形の共進化。POET の直接の元ネタ。\n- **CMOEA（Combinatorial Multi-Objective Evolutionary Algorithm）** … 多くの部分課題を組み合わせた目的を、多様性を保ちながら解く進化アルゴリズム。POET の発想に取り入れられた。\n- **ゴール切り替え（goal switching）** … ある場所で育ったエージェントを、他の場所に放り込んでみると意外と良い結果が出る、という発見の活用。POET の transfer の元ネタ。\n- **stepping stone（飛び石）** … 最終ゴールに直接は似ていないが、後で振り返ると重要な経由地だった解。\n- **GAN（Generative Adversarial Network、敵対的生成ネットワーク）** … 2 つのネットワーク（作る側・見破る側）を競わせて画像などを作る方法。共進化的な発想の身近な例。\n- **novelty（新しさ）** … 既存のものとどれくらい違っているか。POET では新しい子コースを優先するために使う。\n- **Minimal Criterion（最低限の基準、MC）** … 子コースを受け入れるかどうかを判定する不等式（この論文では 50 ≤ スコア ≤ 300）。\n- **transfer（転移、転入）** … 別の環境で育ったエージェントを別の環境に移植してみる試み。\n- **bipedal walker** … 2 本足のロボット人形のシミュレータ。OpenAI Gym という有名な強化学習練習場に入っている。\n- **OpenAI Gym** … 強化学習の練習問題が詰まったソフトウェア。\n- **LIDAR（ライダー）** … レーザーで距離を測るセンサー。人形は 10 本の LIDAR で前方の障害物を見ている。\n- **tanh（ハイパボリックタンジェント）** … 入力を −1 〜 +1 の範囲に押し込む滑らかな関数。ニューラルネットの「ぐにゃっと曲げる」部分でよく使う。\n- **Adam** … 学習率を自動で調節してくれる、ニューラルネット学習の定番ツール。\n- **single-sample t-test（1 標本 t 検定）** … 観測値 1 個を、別の集団の分布と比べて「統計的に十分離れているか」を測るテスト。POET は同じターゲットを何度も再現しないので n=1 になってしまうため、こういう特殊なテストを使っている。\n- **Mann-Whitney U 検定** … 「2 つのグループのデータが同じ分布から来ていそうか、ずれていそうか」を順位を使って判定する統計検定。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **POET の本当の貢献は「カリキュラムは線でなく木（むしろ森）として組め」というメッセージ**。直線カリキュラムは強い目的志向がある一方、寄り道できない。POET は何十本もの寄り道を同時に走らせ、転入でショートカットを発見する。\n- **逆向き転入（子 → 親）が効くのが面白い**。普通のカリキュラム学習は「簡単 → 難しい」の片道切符なので、難しい子コースで身につけた技を、もう一度簡単な親コースに戻して活かす、という発想自体が無い。論文中で「膝立ち歩きの親が、子コースの立ち歩きを逆輸入して立てるようになる」例が示されている（スコア 309 → 349）。\n- **ES の数式（参考）**: $\\nabla_{\\theta} J(\\theta) \\approx \\frac{1}{n\\sigma} \\sum_{i=1}^{n} E(\\theta + \\sigma \\epsilon_i) \\epsilon_i$ という更新式を使っている。直感的には「重み $\\theta$ にランダムなノイズ $\\epsilon_i$ をかけたコピーを $n=512$ 個作って走らせ、得点 $E$ が高かった方向の重みづけ平均だけ本体を動かす」というもの。微分（=数学で「傾きを直接計算する」操作）を使わず、サイコロを振って勾配を近似する。中学生向けに言えば「テストの点を上げる方向を、500 人の友達にランダムなフォーム改造を試させて多数決で決める」ようなやり方。\n- **「open-ended な研究は普通の ML ベンチマークと評価のし方が違う」**ということが論文の中で繰り返し強調されている。POET は「あらかじめ決めたゴールに到達したか」で評価できない（そもそもゴールを決めずに走るから）。そのため著者らは「POET が作ったコースを後から固定して、他の手法に挑ませる」という変則的な比較を採用している。\n- **限界（著者自身が discussion で挙げている）**:\n  - コースの種類が 5 項目しかない「直接エンコーディング」なので、難しさに天井がある（最大値で頭打ち）。次は CPPN などの間接エンコーディングで開きたい、と書いている。\n  - 人形の体の形は固定。本当はジャンプ幅の上限が体の形で決まってしまう。\n  - 報酬関数も固定。本当に open-ended なら「何を良しとするか」も共進化させたい。\n  - POET は「事前に決めた特定のゴール」を狙うことはできない（=普通のカリキュラム学習との直接対決という意味では公平性に議論の余地がある）。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-1901.01753v3/`\n- 正規ノート: `notes/arXiv-1901.01753v3.md`\n";
+const MACROS = {"\\algorithmiccomment": "%\n  \\hfill\\#\\ \\eqparbox{COMMENT}{#1}%", "\\todo": "\\comments{\\textcolor{red}{[TODO: #1]}}", "\\done": "\\comments{\\textcolor{green}{[DONE: #1]}}", "\\add": "\\comments{\\textcolor{red}{[TODO: insert #1]}}", "\\jc": "\\comments{\\textcolor{deepForestGreen}{[JC: #1]}}", "\\blue": "\\comments{\\textcolor{blue}{#1}}", "\\vm": "\\comments{\\textcolor{brown}{[VM: #1]}}", "\\jl": "\\comments{\\textcolor{magenta}{[Joel: #1]}}", "\\ks": "\\comments{\\textcolor{purple}{[Ken: #1]}}", "\\fs": "\\comments{\\textcolor{maroon}{[Felipe: #1]}}", "\\rw": "\\comments{\\textcolor{blue}{[Rui: #1]}}", "\\lowpriority": "\\comments{\\textcolor{green}{[#1]}}", "\\later": "\\comments{\\textcolor{green}{[Later: #1]}}", "\\maybe": "\\comments{\\textcolor{lightgray}{[Maybe: #1]}}", "\\removed": "\\comments{\\textcolor{lightgray}{#1}}", "\\comments": "#1", "\\argmax": "\\operatorname{argmax}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

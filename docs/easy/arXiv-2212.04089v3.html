@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Editing Models with Task Arithmetic（タスク算術でモデルを編集する）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2212.04089v3.md</code>
+  &nbsp;|&nbsp; macros: <code>57</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Editing Models with Task Arithmetic（タスク算術でモデルを編集する）\n\n- arXiv: https://arxiv.org/abs/2212.04089\n- 一次ソース: ../papers/arXiv-2212.04089v3/\n- 正規ノート: ../notes/arXiv-2212.04089v3.md\n\n---\n\n## 一言で言うと\n\n学習し終わったAIの「重み（中身の数字）」を、足したり引いたりするだけで、新しい技を覚えさせたり悪い癖を消したりできる、という発見の論文だよ。\n\n## どんな問題を解こうとしてるの？\n\n- AI（ニューラルネットワーク。たくさんの数字＝「重み」を組み合わせて、画像を見分けたり文章を作ったりする計算機のこと）は、最初に「事前学習」という大量の練習で基礎力をつけてから使われるよ。\n- でも、いざ使う場面では「もっと交通標識を上手に見分けてほしい」「悪口を言う癖をやめてほしい」「個人情報を読み取らないようにしたい」と、後から AI の性格を変えたい場面がたくさんあるんだ。\n- これまでのやり方は **追加で勉強させる（fine-tuning。ファインチューニング ← 一度作ったAIに、新しいデータでもう一回練習させて性格を寄せる作業）** がメインで、お金も時間もかかるし、やり方によっては元の力まで壊してしまうことがあった。\n- もっと安く・速く・追加の勉強なしで AI を編集する統一的な方法が欲しい、というのがこの論文の出発点。\n\n## どうやって解いたの？\n\n### コアアイデア\n\nAI の中身は「ものすごくたくさんの数字の集まり」だよ。例えるなら、何百万個もの音量つまみがズラリと並んだ巨大なミキサーを想像してみて。\n\n- 事前学習が終わった状態のつまみの位置を **「基本セット」** と呼ぶ。\n- ある仕事（例: 交通標識を見分ける）を覚えさせた後のつまみの位置を **「上手バージョン」** と呼ぶ。\n\nこのとき著者たちは、**「上手バージョン」のつまみ位置から「基本セット」のつまみ位置を引いた差分** を **タスクベクトル（task vector）** と呼んでいるよ。\n（ベクトル ← 数を順番に並べたもの。住所の数字みたいに、いっぱいの数で 1 つの物を表す道具だよ）\n\nこのタスクベクトルがすごいのは、**ただの引き算で作っただけなのに、足したり引いたり混ぜたりすると AI の性格が予想通りに変わる** ことだよ。例えるなら、料理のレシピで「砂糖を 10g 増やす」というメモを別の料理に貼り付けたら同じく甘くなる、というイメージ。\n\n### 仕組み\n\n著者が提案する 3 つの算術操作はこんな感じ。\n\n- **step1: タスクベクトルを作る** — 仕事 t を覚えさせる前と後で、つまみの位置の差を取って、これを「仕事 t のタスクベクトル」と呼ぶ。\n- **step2: 引き算（negation。ネゲーション ← 「マイナスをつける」という意味）** — タスクベクトルを引き算するように貼り付けると、その仕事が **下手** になる。悪口を言う癖や、覚えてほしくない情報を忘れさせるのに使える。\n- **step3: 足し算（addition）** — いろんな仕事のタスクベクトルを全部足し算で貼り付けると、**1 個のAIで複数の仕事ができる** ようになる。8 個の仕事を 1 個のAIに詰め込むこともできた。\n- **step4: 類推（analogy。アナロジー ← 「A が B に対応するように、C は何に対応する？」というたとえ）** — 「A:B = C:D」という関係になる 4 つの仕事のうち 3 つだけタスクベクトルがあれば、4 つ目のタスクベクトルを「C + (B − A)」で作れる。データが無い仕事に対しても効くんだ。\n- **step5: スケーリング係数 λ を調整** — 貼り付けるときには「どれくらい強く貼るか」の倍率 λ（ラムダ）を決めて掛ける。手元の「お試し用データ」で一番成績の良い λ を選ぶよ。\n\n### 主要な数式\n\n#### ① タスクベクトルの作り方\n\n$$\\tau_t = \\theta_\\text{ft}^t - \\theta_\\text{pre}$$\n\n**この式が言ってること**: 「仕事 t を覚えさせた後のAIの中身」から「最初のAIの中身」を引き算するだけで、その仕事の特徴を表す道しるべ（タスクベクトル）が手に入るよ、という意味。\n\n**記号の意味**:\n- $\\tau_t$（タウ・ティー）… 仕事 t のタスクベクトル。つまり「この仕事ができるようになるための調整メモ」のこと。\n- $\\theta_\\text{ft}^t$（シータ・エフティー）… 仕事 t を追加で覚えさせた後の、AI の中身（何百万個もの数字の集まり）。\"ft\" は fine-tuned（追加練習済み）の略。\n- $\\theta_\\text{pre}$（シータ・プリ）… 最初の事前学習だけ終わった状態の AI の中身。\"pre\" は pre-trained（事前学習済み）の略。\n- 引き算は **要素ごと（element-wise）** に行う。つまり「同じ場所のつまみ同士で引き算する」ということ。\n\n**身近な例え**: 料理のレシピノートを思い浮かべて。\"基本のカレー\" のレシピと \"甘口カレー\" のレシピがあったとき、両者を見比べて「砂糖 +10g、唐辛子 −2g、…」と差分だけメモしたものがタスクベクトル。このメモがあれば、別の鍋でも「甘口にする調整」だけを再利用できるよね。\n\n#### ② タスクベクトルの適用\n\n$$\\theta_\\text{new} = \\theta + \\lambda \\, \\tau_\\text{new}$$\n\n**この式が言ってること**: 元のAI の中身に、タスクベクトルを λ 倍だけ足し算して貼り付けると、新しいAI ができるよ、という意味。λ を変えれば「ちょっとだけ貼る」「強めに貼る」を調整できる。\n\n**記号の意味**:\n- $\\theta_\\text{new}$ … 編集後の、新しいAI の中身。\n- $\\theta$ … 編集する前のAI の中身（普通は事前学習済みのもの）。\n- $\\lambda$（ラムダ）… 「どれくらい強く貼り付けるか」の倍率。0 だと何も変わらない、1 だと普通に足す、大きいほど強く反映される。お試し用データで一番成績が良い値を選ぶ。\n- $\\tau_\\text{new}$ … 貼り付けたいタスクベクトル（次の式①〜③のどれかで作る）。\n\n**身近な例え**: 味噌汁を作るとき、出汁の素を入れる量を「ティースプーン何杯にするか」決めるのと同じ。少なすぎると味が出ないし、入れすぎるとしょっぱい。一番おいしい量を試しながら決める感覚が λ。\n\n#### ③ 引き算：忘れさせる\n\n$$\\tau_\\text{new} = -\\tau$$\n\n**この式が言ってること**: タスクベクトルにマイナスをつけて貼り付けると、その仕事が下手になる（＝忘れる、抑える）方向にAI を動かせる。\n\n**記号の意味**:\n- $\\tau$ … 忘れさせたい仕事のタスクベクトル。例: 「悪口を上手に言う」タスクベクトル。\n- $-\\tau$ … その逆向き。「悪口を言う方向と反対」にAI を動かす道しるべ。\n- これを上の式②に入れて $\\theta_\\text{new} = \\theta - \\lambda\\,\\tau$ として使う。\n\n**身近な例え**: ジャンケンで「グーを出すクセ」を直したいとき、わざと「グーを出したくなる気持ちを反対向きに引っ張る」ようなもの。クセそのものを抑える方向に体を動かす感じ。\n\n#### ④ 類推（アナロジー）\n\n$$\\tau_\\text{new} = \\tau_C + (\\tau_B - \\tau_A)$$\n\n**この式が言ってること**: 「A:B = C:D」という関係（A から B に変えるのと同じ変え方を C にも適用すると D になる）のとき、A・B・C のタスクベクトルだけ持っていれば、D のタスクベクトルを作れる。D のデータが手元に無くてもいい。\n\n**記号の意味**:\n- $\\tau_A, \\tau_B, \\tau_C$ … 仕事 A, B, C それぞれのタスクベクトル。\n- $\\tau_B - \\tau_A$ … 「A を B に変えるための差分」。例: 「Amazon レビューで言語モデル」→「Amazon レビューで感情判定」に変える差分。\n- $\\tau_C + (\\tau_B - \\tau_A)$ … その「変え方」を C に適用した結果。「Yelp レビューで言語モデル」に同じ差分を足せば、「Yelp レビューで感情判定」ができるはず、というアイデア。\n\n**身近な例え**: 地図のたとえが分かりやすいよ。「東京駅から渋谷駅へ行く道のり」を知っていれば、「大阪駅」から同じ向き・同じ距離だけ歩けば、大阪での \"渋谷っぽい場所\" にたどり着けるかも、という発想。実際の街なら誤差は出るけど、AI の重み空間ではちゃんと近い場所に着く、というのが面白い結果。\n\n## 何がすごいの？\n\n著者が論文で示している主な結果と「貢献」は次の通り（数字は全部 TeX から）。\n\n- **画像で「忘れさせる」**（Table 1、CLIP ViT-L/14 ← CLIP は画像と文章をペアで学習した AI、ViT-L/14 はそのサイズ違い）\n  - 8 つの画像仕事の平均正答率: 事前学習だけのとき **64.8%** → タスクベクトルを引き算した後 **19.0%**（−45.8 ポイントの「忘却」に成功）。\n  - 一方、関係ない仕事（ImageNet ← 画像分類の有名なベンチマーク）の正答率は 75.5% → 72.9%（−2.6 ポイントだけ）。\n  - 比較した他の「忘却法」: gradient ascent（勾配上昇法 ← AI の学習を「わざと逆向き」にする方法。詳しくは次節）は target 3.93% だが ImageNet が 16.3% まで崩壊。ランダムなベクトルを引いただけでは forget できず 60.9%。**負タスクベクトルが一番バランスが良い**。\n\n- **文章で「悪口を言う癖を消す」**（Table 2、GPT-2 Large ← OpenAI の文章生成AI）\n  - 悪口を含む文の生成率: 4.8% → **0.8%（6 倍減）**。\n  - 平均「悪さスコア」: 0.06 → 0.01。\n  - 関係ない文章タスク（WikiText-103 で perplexity ← どれだけ次の単語を当てられるかの指標、小さいほど良い）は 16.4 → 16.9（+0.5 だけ悪化、ほぼ同じ）。\n  - 比較: gradient ascent は perplexity が 10$^{10}$（10兆）を超えて完全に壊れる。「悪口ではない文章で fine-tune する」やり方より、negation の方が悪口は減らせるし文章力も保てる。\n\n- **足し算でマルチタスク化**（§4.1、CLIP）\n  - 8 個の画像仕事のうち 2 個分のタスクベクトルを足したら、専門化された 2 つの fine-tune モデルを使ったときの **98.9%** の精度（正規化精度）を、たった 1 個のモデルで達成。\n  - 8 個全部足したときの平均正規化精度は **91.2%**。\n\n- **足し算で単独仕事も伸びる**（Table 3、T5-base + Hugging Face Hub の 427 個のチェックポイント）\n  - GLUE という英語ベンチマークの 4 タスク平均: fine-tune 単独 **78.1** → タスクベクトルを足すと **78.6**（+0.5）。\n  - 内訳: MRPC +0.8、RTE +0.2、CoLA +0.7、SST-2 +0.2。全部わずかに改善。\n\n- **類推（アナロジー）で「ラベルなしのまま」精度UP**（Table 4、T5-large）\n  - Yelp 感情判定の正答率: 仲間の Amazon で fine-tune しただけ 95.0 → 類推で **95.1**（ターゲットで直接 fine-tune した 95.5 に肉薄）。\n  - Amazon 感情判定: 94.8 → **95.2**（ターゲットの 95.5 に肉薄）。\n  - **target のラベルを使わずに**、ターゲットで直接学習したときの精度に近づけたのがポイント。\n\n- **少数派の画像も類推で +3.4 ポイント改善**（Fig. 4）\n  - 「実写の犬 / 実写のライオン / スケッチの犬」の 3 つのタスクベクトルから「スケッチのライオン」のタスクベクトルを作ると、事前学習だけのモデルより平均 +3.4 ポイント向上。これは新しい学習データを約 100 サンプル集めるのと同じくらい効くらしい。\n\n- **著者がはっきり主張している「貢献」**:\n  1. 重み空間での「タスクベクトル算術」という統一的な編集枠組み（引き算・足し算・類推の 3 つ）を提案したこと。\n  2. 画像（CLIP）・自然言語（T5）・文章生成（GPT-2）の 3 種類のAI、複数のサイズで効くことを示したこと。\n  3. **追加学習なし・推論時の余計な計算なし** で、マルチタスク化・忘却・データなし汎化を実現するレシピを示したこと。\n  4. 世の中に公開されている学習済みモデル（Hugging Face Hub など）が、実は「タスクベクトルの倉庫」として使い回せる、と示したこと。\n\n## キーワード辞典\n\n出てきた順番で並べているよ。\n\n- **事前学習（pre-training）** … AI に大量のデータで「基礎の勉強」をさせる最初の工程。ここで AI は世の中の一般知識を覚える。\n- **fine-tuning（ファインチューニング）** … 一度作った AI に、もう少しだけ追加データで勉強させて、特定の仕事ができるように調整する作業。「追加練習」。\n- **重み（weights）** … AI の中身そのもの。たくさんの数字（つまみ）の集合体で、これが変わるとAI の答えも変わる。\n- **タスクベクトル（task vector）** … 「fine-tuning した後の重み」から「事前学習だけの重み」を引いた差分。仕事の特徴を表す「調整メモ」。\n- **negation（ネゲーション、引き算）** … タスクベクトルにマイナスをつけて使う操作。AI にその仕事を「忘れさせる」効果。\n- **addition（アディション、足し算）** … 複数のタスクベクトルを足して使う操作。AI に複数の仕事を同時にできる力を持たせる。\n- **analogy（アナロジー、類推）** … 「A:B = C:D」という関係を使って、データが無い仕事のタスクベクトルを作る操作。\n- **CLIP** … OpenAI が作った、画像と文章を結びつけて学習した AI のシリーズ。本論文の画像実験のベース。\n- **ViT-B/32, ViT-B/16, ViT-L/14** … CLIP のサイズ違い。「L」は大きい（Large）、「B」は中くらい（Base）。数字は画像を小分けにする粒度。\n- **GPT-2** … OpenAI が作った文章生成 AI のシリーズ。Large は大きいバージョン。\n- **T5** … Google が作った「文章を入れると別の文章を出す」AI。base・small・large などサイズ違いがある。\n- **GLUE** … 英語の言語理解能力を測るための、4〜10 個の小さなテストを集めたベンチマーク（成績表セット）。\n- **MRPC, RTE, CoLA, SST-2** … GLUE に含まれる個別の小テスト名。文の言い換え判定や感情判定など。\n- **perplexity（パープレキシティ）** … 文章生成AI の「次の単語をどれだけ当てられるか」の指標。小さいほどよく当てられる。\n- **gradient ascent（勾配上昇法）** … 通常の学習はミスを減らす向きに調整するけれど、これは「わざとミスを増やす向き」に調整する忘却テクニック。\n- **Detoxify** … 文章がどれくらい「毒（悪口など）」を含むかを判定する別のAI。本論文で文章の毒性を測るのに使った。\n- **Civil Comments** … ネットのコメントに「毒度スコア」が振られたデータセット。本論文では毒度 0.8 超のコメントで fine-tune してから negation する。\n- **ImageNet** … 1,000 種類の物の画像を集めた巨大データセット。本論文ではコントロール用（編集が他の力を壊していないかを確認）に使う。\n- **Hugging Face Hub** … 世界中のAI 開発者が学習済みモデルを共有しているウェブサイト。本論文では 427 個の公開モデルをタスクベクトルの素材として使った。\n- **要素ごと（element-wise）** … 同じ位置にある数字同士で計算するという意味。つまみが何百万個並んでいるとき、1 番のつまみ同士、2 番のつまみ同士、…と1個ずつ計算する。\n- **正規化精度（normalized accuracy）** … 「専門化したモデルの精度」を 1 として、それを基準に正答率をスケールし直したもの。複数の仕事の難しさを揃えて平均するときに便利。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **なぜ足し算でうまくいくの？**: Fig. 5 で著者は「異なる仕事のタスクベクトル同士はだいたい直交（向きがバラバラ）」と観察している。直交 ← 2 つのベクトルが「お互いに干渉しない・全然違う方向」を向いていること。仕事ごとに調整しているつまみの位置がバラバラだから、足してもケンカしないと考えられる。例外は、MNIST・SVHN・GTSRB（どれも数字認識が絡む）や EuroSAT・RESISC45（どちらも衛星写真）のような「似た仕事同士」だけ。\n\n- **学習率に敏感**: Fig. 6（lr_ablation）では、fine-tune 時の学習率（learning rate ← 1 ステップでどれだけ重みを動かすかの大きさ）を上げすぎると、タスクベクトルの加算の方が単独の fine-tune よりも先に精度が崩れる、と書かれている。だから「他人の作ったタスクベクトルを混ぜるなら、低めの学習率で fine-tune されたものを選ぼう」と著者は推奨。\n\n- **fine-tune の途中段階でもいい**: Fig. 7（intermediate task vectors）では、fine-tune の途中で取ったタスクベクトルが、最後まで学習し終えたタスクベクトルとほぼ同じ向きにすぐ収束する、と示されている。つまり「最後まで頑張って fine-tune しなくても、早めに切り上げてもそこそこ良いタスクベクトルが手に入る」ということ。計算コストの節約になる。\n\n- **制限**: 著者自身が §6 Limitations ではっきり書いている通り、\n  - 同じ **アーキテクチャ**（AI の設計図）でないと足し引きできない。\n  - 同じ **事前学習の初期化**（スタート地点が同じ重み）から fine-tune されたモデル同士でないとダメ。\n  - ただし Hugging Face Hub には「同じ BERT-base から派生したモデル」が 3,000 個以上、「同じ T5-small から派生したモデル」も 800 個以上あるから、実用上は素材に困らない、とも書いている。\n\n- **negation は本当に「意味として」毒を消しているの？**: TeX には書かれていないが、おそらく Detoxify という別のAI による毒性スコアに頼っているだけなので、表面的なトリガー単語を避けているのか、それとも本当に毒のある考えを抑え込めているのかまでは、この論文だけでは断言できない（評価方法の限界として考えられる）。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2212.04089v3/`\n- 正規ノート: `notes/arXiv-2212.04089v3.md`\n- 公式コード（TeX 本文に記載）: https://github.com/mlfoundations/task_vectors\n";
+const MACROS = {"\\arraystretch": "0.9", "\\cmark": "\\ding{51}", "\\xmark": "\\ding{55}", "\\dunderline": "{%\n  \\sbox0{#3}%\n  \\ooalign{\\copy0\\cr\\rule[\\dimexpr#1-#2\\relax]{\\wd0}{#2}}}", "\\customfootnotetext": "{% Group to localize change to footnote\n  \\renewcommand{\\thefootnote}{#1}% Update footnote counter representation\n  \\footnotetext[0]{#2}}", "\\thefootnote": "#1", "\\fix": "\\marginpar{FIX}", "\\new": "\\marginpar{NEW}", "\\figleft": "{\\em (Left)}", "\\figcenter": "{\\em (Center)}", "\\figright": "{\\em (Right)}", "\\figtop": "{\\em (Top)}", "\\figbottom": "{\\em (Bottom)}", "\\captiona": "{\\em (a)}", "\\captionb": "{\\em (b)}", "\\captionc": "{\\em (c)}", "\\captiond": "{\\em (d)}", "\\newterm": "{\\bf #1}", "\\train": "\\mathcal{D}", "\\valid": "\\mathcal{D_{\\mathrm{valid}}}", "\\test": "\\mathcal{D_{\\mathrm{test}}}", "\\tens": "\\bm{\\mathsfit{#1}}", "\\etens": "\\mathsfit{#1}", "\\pdata": "p_{\\rm{data}}", "\\ptrain": "\\hat{p}_{\\rm{data}}", "\\Ptrain": "\\hat{P}_{\\rm{data}}", "\\pmodel": "p_{\\rm{model}}", "\\Pmodel": "P_{\\rm{model}}", "\\ptildemodel": "\\tilde{p}_{\\rm{model}}", "\\pencode": "p_{\\rm{encoder}}", "\\pdecode": "p_{\\rm{decoder}}", "\\precons": "p_{\\rm{reconstruct}}", "\\laplace": "\\mathrm{Laplace}", "\\E": "\\mathbb{E}", "\\Ls": "\\mathcal{L}", "\\R": "\\mathbb{R}", "\\emp": "\\tilde{p}", "\\lr": "\\alpha", "\\reg": "\\lambda", "\\rect": "\\mathrm{rectifier}", "\\softmax": "\\mathrm{softmax}", "\\sigmoid": "\\sigma", "\\softplus": "\\zeta", "\\KL": "D_{\\mathrm{KL}}", "\\Var": "\\mathrm{Var}", "\\standarderror": "\\mathrm{SE}", "\\Cov": "\\mathrm{Cov}", "\\normlzero": "L^0", "\\normlone": "L^1", "\\normltwo": "L^2", "\\normlp": "L^p", "\\normmax": "L^\\infty", "\\parents": "Pa", "\\argmax": "\\operatorname{arg\\,max}", "\\argmin": "\\operatorname{arg\\,min}", "\\sign": "\\operatorname{sign}", "\\Tr": "\\operatorname{Tr}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

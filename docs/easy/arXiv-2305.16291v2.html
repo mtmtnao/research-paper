@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Voyager: An Open-Ended Embodied Agent with Large Language Models（大規模言語モデルで動く、終わりのない世界の探検エージェント「ボイジャー」）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2305.16291v2.md</code>
+  &nbsp;|&nbsp; macros: <code>15</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Voyager: An Open-Ended Embodied Agent with Large Language Models（大規模言語モデルで動く、終わりのない世界の探検エージェント「ボイジャー」）\n\n- arXiv: https://arxiv.org/abs/2305.16291\n- 一次ソース: ../papers/arXiv-2305.16291v2/\n- 正規ノート: ../notes/arXiv-2305.16291v2.md\n\n---\n\n## 一言で言うと\n\nChatGPT の親戚（GPT-4 ← OpenAI が作った、すごく賢い文章生成 AI）にマインクラフトを「自分で目標を立てて遊ばせ」、覚えたワザを溜めて使い回せるようにした、初の生涯学習エージェント。\n\n## どんな問題を解こうとしてるの？\n\n- マインクラフトは「クリア」という決まったゴールがなく、木を切る → 道具を作る → 鉄を掘る → ダイヤを取る、と自分で目標を決めて遊んでいくゲーム。人間ならどんどん上達するけど、これを AI にやらせるのが超むずかしい。\n- 今までの AI には大きく 2 タイプあって、どっちも足りない部分がある:\n  - **強化学習タイプ**（試行錯誤して「ご褒美」を最大化するように学ぶ AI ← 犬におやつでお手を教えるイメージ）。動きの 1 コマ 1 コマを学ぶので、長い手順がいるタスクが苦手。\n  - **LLM タイプ**（大規模言語モデル ← 大量の文章を読んで賢くなった文章 AI のこと。ChatGPT がこれ）を使う既存エージェント。1 回 1 回のタスクは出来ても、覚えたことを「次のタスクのために溜めて使い回す」仕組みがなかった。\n- つまり「自分で次の目標を考え、できるようになったことを覚え、新しい世界でも応用する」ことを、人の手助けナシで延々と続ける AI がいなかった。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n例えるなら、3 人の友達がチームを組んでマインクラフトをプレイしている感じ。\n1 人目は「先生」役で「次は石のツルハシを作ってみよう」とお題を出す。\n2 人目は「ノート係」役で、できるようになったワザを 1 つ 1 つノート（プログラムのコード）にして集めている図鑑みたいなもの。\n3 人目は「審判」役で「今、課題はクリアできた？まだ？じゃあこう直そう」とチェックする。\nこの 3 役を全部 GPT-4 という同じ AI に役割を切り替えてやってもらう、というのが Voyager の発想。\n\nそして覚えたワザはふつうの文章じゃなくて **JavaScript のプログラム**（コンピュータへの命令を文で書いたもの ← 料理のレシピみたいに、順番通りやれば同じ結果が出る）として保存する。レシピだから他のレシピと組み合わせて、もっと複雑な料理（＝スキル）を作れる。\n\n### 仕組み\n\nVoyager の中身は 3 つのモジュール。\n\n- **モジュール 1: 自動カリキュラム（Automatic Curriculum）**\n  - 「先生」の役。GPT-4 にエージェントの今の状態（持っている道具、近くにあるブロック、いる場所、HP など）を見せて「次にやるべき新しい目標」を出させる。\n  - 大方針はたった一つ「できるだけ多様なことを発見しろ」。これだけで、今いる場所が砂漠なら砂やサボテンを集めるタスクが、森ならまず木を切るタスクが出てくるように動く。\n  - GPT-4 はちょっと高いので、補助の質問（「今これって何だっけ？」みたいな細かい NLP 作業 ← 自然言語処理：文章を扱うコンピュータ処理のこと）は安い GPT-3.5 に振っている。\n\n- **モジュール 2: スキルライブラリ（Skill Library）**\n  - 「ノート係」の役。タスクをクリアできた時のコードを「`craftStoneShovel()`（石のシャベルを作る）」のような名前で保存していく図鑑。\n  - 新しいタスクが来たら、図鑑から「今のタスクに似たコード」を 5 個くらい引っ張ってきて GPT-4 に見せる。GPT-4 はそれを参考にして新しいコードを書くので、ゼロから書くより早い。\n  - 似てるかどうかの判定には「埋め込み（embedding ← 文章を数の並びに変換して、似た意味の文章が近い数の並びになるようにする技術。ここでは OpenAI の text-embedding-ada-002 という API を使う）」を使う。\n  - コードのままなので、組み合わせて複雑なワザに発展できる（レシピを組み合わせて新しい料理を作るイメージ）。古いワザを上書きしないので「前にできていたのに急に出来なくなる現象」（catastrophic forgetting ← 破滅的忘却：新しいことを覚えると古い記憶が消える、AI でよくある困った現象）が起きない。\n\n- **モジュール 3: イテレーティブ・プロンプティング（Iterative Prompting）**\n  - 「審判 ＆ 直し屋」の役。GPT-4 が書いたコードを実際にマインクラフトで動かして、3 種類のフィードバックでコードを直していく:\n    1. **環境フィードバック**: ゲーム側から返るメッセージ。例: 「鉄インゴットが 7 個足りないから鉄の胸当ては作れません」\n    2. **実行エラー**: プログラムが壊れた時のエラー（料理のレシピで「材料 X はキッチンにないよ」と言われる感じ）\n    3. **セルフ検証（Self-Verification）**: もう 1 体の GPT-4 を「審判（critic ← 評価役）」として立てて、「今の状態見て、このタスク達成できてる？できてないなら何が足りない？」と判定させる。\n  - 直しは **最大 4 ラウンドまで**。4 回やってもダメなら諦めて、先生役に別のタスクを頼む。\n  - 審判が「OK」と言ったコードだけが図鑑に登録される。\n\n- **裏ワザ的な工夫**\n  - **温度（temperature ← AI が文章を生成するときの「気まぐれ度」。0 なら毎回同じ答え、大きいほどバラついた答えになる）** は、先生役だけ 0.1（少し多様性を持たせる）、それ以外は全部 0（同じ答えを安定して出す）。\n  - **連鎖思考プロンプティング（Chain-of-Thought ← AI に「考えを書きながら答えて」と指示する技術）** を使って、コードを書く前に GPT-4 に「どう書くか」を言葉で説明させる。\n\n### 主要な数式\n\nこの論文は「GPT-4 にどう指示文を渡すか」という設計の話なので、紙に書く方程式はほぼ出てこない。本文 TeX 中にも中核となる数式は登場しない。なので「数式の解説」は省略する。\n\n数値で出てくる重要な指標を 1 つだけ平易に言うと、「**プロンプティング iteration（イテレーション）**」というのが性能の単位になっている。これは「GPT-4 に 1 回お題を出して、コード書いて、動かして、直す」までの 1 セットのこと。少ない iteration でゴールにたどり着けるほど効率がいい。\n\n## 何がすごいの？\n\nすべて論文 TeX に書いてある数値のみ:\n\n- **発見した道具・アイテムの数**: Voyager は 160 iteration で **63 個のユニークなアイテム**を発見。ベースライン（比較対象）の **3.3 倍**（abstract / experiment §4.3）。\n- **マップを動いた距離**: ベースラインの **2.3 倍**（experiment §4.3）。\n- **テックツリー（道具の進化段階）の到達速度**（Table 1, 3 回試行の平均, 最大 160 iteration）:\n\n  | 道具 | Voyager | AutoGPT | ReAct / Reflexion |\n  |---|---|---|---|\n  | 木の道具 | 6±2 iter（3/3 成功）| 92±72（3/3）| 0/3 |\n  | 石の道具 | 11±2（3/3）| 94±72（3/3）| 0/3 |\n  | 鉄の道具 | 21±7（3/3）| 135±103（3/3）| 0/3 |\n  | ダイヤの道具 | **102（1/3）**| 0/3 | 0/3 |\n\n  Voyager だけがダイヤ層まで到達。論文 abstract は木の道具に関して **15.3 倍速い**、石は 8.5 倍速い、鉄は 6.4 倍速いと書いている。\n- **新しい世界での未知タスク（ゼロショット汎化 ← zero-shot generalization：訓練していない新しい問題をいきなり解くこと）**（Table 2, 最大 50 iteration, 持ち物ゼロ・新マップ）: Voyager は Diamond Pickaxe / Golden Sword / Lava Bucket / Compass の **4 タスク全部で 3/3 成功**（18〜21 iteration 程度）。ReAct / Reflexion / AutoGPT 単体は全部 0/3。\n- **スキル図鑑は持ち運べる**: 同じ AutoGPT に Voyager のスキル図鑑を差し込んであげると、Diamond Pickaxe・Golden Sword は 1/3、Compass は 2/3、Lava Bucket は 0/3 まで上がる。図鑑だけ抜き出して別の AI に渡しても効くことを示している（Table 2, experiment §4.3）。\n- **アブレーション**（部品を 1 つずつ抜いて性能が下がるか確認する実験）の主な数値（experiment §4.4）:\n  - 自動カリキュラムをランダムに置き換えると、発見アイテム数が **-93%**。\n  - セルフ検証モジュールを取ると **-73%**。\n  - コード生成だけ GPT-3.5 に下げると、Voyager の **1/5.7** しかアイテムを取れない。\n\n- **著者が論文中で挙げている貢献**（intro 末尾より）:\n  1. LLM だけで動く、初めての「身体を持って終わりのない世界で生涯学習する」エージェント。\n  2. 実行可能なコードをスキルの単位にして、組み立て可能・解釈可能・壊れにくい記憶を作ったこと。\n  3. 環境フィードバック・エラー・セルフ検証を組み合わせた反復プロンプティングの仕組み。\n  4. MineDojo 上で、既存の LLM エージェントを大きく上回る成績を出し、新しい世界でも応用できることを示したこと。\n\n## キーワード辞典\n\n- **LLM（Large Language Model）** … 大量の文章を学んで賢くなった文章 AI のこと。本論文では GPT-4 を使う。\n- **GPT-4 / GPT-3.5** … OpenAI 社の LLM。GPT-4 の方がだいぶ賢いが料金は 15 倍高い。論文中の値は GPT-4 = `gpt-4-0314`、GPT-3.5 = `gpt-3.5-turbo-0301`。\n- **エンボディド（embodied）エージェント** … ゲーム世界や現実世界に「体」を持って動き回る AI のこと。文章だけ返す AI と対比される言葉。\n- **生涯学習（lifelong learning）** … 一度の勉強で終わらず、ずっと続けて新しいことを覚え続けること。\n- **MineDojo** … マインクラフトを AI 研究用に使えるようにしたオープンソース基盤。Voyager の実験土台。\n- **Mineflayer** … マインクラフトを JavaScript（プログラミング言語）から動かせる高水準ライブラリ。「右に歩け」「ブロックを置け」のような命令を提供する。\n- **API（Application Programming Interface）** … ソフトウェア同士が会話するための窓口の総称。\n- **プロンプト（prompt）** … LLM に渡す指示文。「次のタスクを考えて」みたいなお願いの文章のこと。\n- **プロンプティング iteration** … 「指示 → コード生成 → 実行 → 結果フィードバック」を 1 セットとした単位。論文中の性能の単位。\n- **In-context learning（インコンテキスト学習）** … LLM に例を 2〜3 個見せるだけで、その場でやり方を覚えてくれる現象。Voyager がスキル図鑑から類似コードを引いて見せるのもこれを利用している。\n- **Chain-of-Thought（連鎖思考）** … LLM に答えだけ言わせず「考える過程」も書かせる指示の仕方。考えながら答えると正解率が上がりやすい。\n- **温度（temperature）** … LLM の答えのばらつき度合いを決める数値。0 だと安定、高くするとランダムさが増す。\n- **埋め込み（embedding）** … 文章を「意味が近いほど近い数の並び」に変換する技術。検索や類似度判定に使う。\n- **ベースライン（baseline）** … 比較対象として置く既存手法のこと。Voyager は ReAct・Reflexion・AutoGPT と比べた。\n- **ReAct / Reflexion / AutoGPT** … LLM エージェントの先行手法。それぞれ「考えと行動を交互に出す」「失敗を振り返って次に活かす」「ゴールを小タスクに分解して回す」のが特徴。元々マインクラフト用ではないので、論文では再解釈して動かしている。\n- **テックツリー** … マインクラフトで「木 → 石 → 鉄 → ダイヤ」と順番にしか作れない道具の進化系統樹。\n- **ゼロショット汎化（zero-shot generalization）** … 練習していない新しい問題を、初めての状態でいきなり解けること。\n- **アブレーション（ablation）** … 部品を 1 つずつ取り外して、その部品が本当に効いているか確かめる実験。\n- **破滅的忘却（catastrophic forgetting）** … AI が新しいことを覚えると古いことを忘れてしまう、よくある困った現象。\n- **ハルシネーション（hallucination）** … LLM が「もっともらしいけど嘘」を堂々と言ってしまう現象。Voyager でも「銅の剣（存在しない）」を作れと指示する例があった。\n- **クリティック（critic）** … 強化学習などで「今のやり方どう？」と評価する役。Voyager では別の GPT-4 がこの役をやる。\n- **セルフ検証（self-verification）** … 自分（と同じ AI）が課題達成できたかを判定する仕組み。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **「コードをスキルの単位にする」設計が効いている理由**: ふつう AI のスキルは数字のかたまり（モデルの重み）で保存されるけど、それだと取り出して読むことも、組み合わせることもしにくい。コードは人間が読めるし、関数呼び出しで組み立て可能で、デバッグもできる。だから図鑑として運用しやすい。\n- **セルフ検証が一番効くアブレーション結果（-73%）の意味**: Reflexion のような「失敗を反省させる」だけの仕組みと違い、Voyager のセルフ検証は「成功したかどうか」を独立した GPT-4 が判定する。これが「次のタスクへ進むか / 同じタスクをやり直すか」のスイッチになっており、ゴールがあいまいなオープンワールドで、報酬関数の代わりに働いている。\n- **GPT-3.5 だと 1/5.7 になる**: 同じ仕組みでも、土台の LLM のコード生成能力が「ある閾値」を越えていないと連続学習として成立しない。設計の問題ではなく「LLM の地力」が支配的に効くポイント。\n- **著者自身が認める限界**（discussion §）:\n  - GPT-4 の費用が高い（GPT-3.5 の 15 倍）。\n  - 行き詰まることがある（4 ラウンドでも書ききれないタスク）。\n  - セルフ検証が誤判定する（クモを倒した証拠の「クモの糸」を成功シグナルだと認識しない例）。\n  - カリキュラム LLM が幻覚で「銅の剣」「銅の胸当て」（マイクラに存在しない）を要求することがある。コード生成側も丸石（cobblestone）を燃料扱いする、存在しない関数を呼ぶなどのハルシネーション例がある。\n- **比較の注意点**: 著者は VPT や DreamerV3 のような「ピクセル画像から低レベル操作を学ぶマイクラ AI」とは直接比較しない、と明示している（apple-to-apple ではないため）。Voyager の貢献は「LLM エージェントというカテゴリの中で SOTA（State Of The Art ← その時点での最高性能）」と読むのが正しい。\n- **マルチモーダル（複数の入力モード、特に視覚）は未対応**: Voyager は文章しか扱わない。家やネザーゲートのような 3D の構造物作りは、人間が「審判」「先生」を肩代わりして実演している（experiment §4.5）。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2305.16291v2/`\n- 正規ノート: `notes/arXiv-2305.16291v2.md`\n";
+const MACROS = {"\\thefigure": "A.\\arabic{figure}", "\\thetable": "A.\\arabic{table}", "\\lstlistingname": "Pseudocode", "\\Todo": "\\colorbox{Thistle}{\\color{White} #1}\\xspace", "\\Urgent": "\\colorbox{Red}{\\color{White} #1}\\xspace", "\\Tocite": "\\colorbox{Orange!90}{\\color{White} cite:#1}\\xspace", "\\Highlight": "\\colorbox{Yellow}{#1}", "\\RebuttalSilent": "#1", "\\textcolorbox": "\\colorbox{#1}{\\strut #2}", "\\narrowcolorbox": "\\setlength{\\fboxsep}{2pt}\\colorbox{#1}{#2}", "\\voyager": "\\mbox{\\textsc{Voyager}}\\xspace", "\\bestscore": "\\textcolor{darkgreen}{\\mathbf{#1}}", "\\bestpercent": "\\textcolor{darkgreen}{\\text{#1\\%}}", "\\para": "\\paragraph{#1}\\looseness=-1", "\\weburl": "\\url{https://voyager.minedojo.org}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

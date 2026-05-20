@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Denoising Diffusion Probabilistic Models（ノイズを少しずつ消して絵を作る方法）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2006.11239v2.md</code>
+  &nbsp;|&nbsp; macros: <code>36</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Denoising Diffusion Probabilistic Models（ノイズを少しずつ消して絵を作る方法）\n\n- arXiv: https://arxiv.org/abs/2006.11239\n- 一次ソース: ../papers/arXiv-2006.11239v2/\n- 正規ノート: ../notes/arXiv-2006.11239v2.md\n\n---\n\n## 一言で言うと\n\nきれいな写真にちょっとずつノイズ（ザラザラ）を足す逆再生を AI に覚えさせ、純粋なザラザラから新しい写真を作る方法。\n\n## どんな問題を解こうとしてるの？\n\n- AI に「世の中にありそうな新しい画像」を自分で描かせたい。たとえばネコの写真を 100 万枚見せた AI が、まだ世界に 1 枚も存在しないネコの写真をスラスラ描ける、みたいなことをやりたい。\n- 当時は **GAN**（← 2 つの AI を競わせて絵を上手くする仕組み、後述）が一番きれいな画像を作れていた。けれど GAN は学習が不安定で、ときどき同じような絵しか出さなくなる（モード崩壊）という弱点があった。\n- 別の選択肢として **diffusion model**（拡散モデル ← この論文の主役。ノイズを足したり消したりして画像を作る仕組み）という古い手法（2015 年の論文）があったが、これで「GAN に負けないくらいきれいな絵が作れる」と示した人はまだ誰もいなかった。\n- 著者たちはこの diffusion model をうまく作り直して、ついに「GAN と同じか、それ以上にきれいな絵」を出すことに成功した。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n「写真をきれいに描く」のは難しいが、「ちょっとザラザラした写真を、少しだけきれいにする」のなら簡単そう。これを 1000 回くり返せば、真っ白なザラザラからきれいな写真ができるはず——というアイデア。\n\n例えるなら**けしゴムの逆再生**。先生が黒板に書いた絵を、子どもが少しずつ消していくと、最終的に黒板は真っ白になる。これを録画しておいて逆再生すれば、真っ白な黒板から絵が浮かび上がる。AI には「逆再生の各コマで、次の 1 ステップで何が消されたか」を当てる練習だけさせる。一発で絵を完成させるのではなく、1000 コマぶんの「ちょっとだけきれいにする」を学ばせる。\n\n### 仕組み\n\n- **step1: ノイズを足していく前向きの流れ（forward process）を決める**\n  - 元の画像 $\\bx_0$ に、ちょっとだけザラザラ（ガウスノイズ ← 平均ゼロのランダムな点々）を足して $\\bx_1$ にする。\n  - $\\bx_1$ にまたザラザラを足して $\\bx_2$。これを $T=1000$ 回くり返すと $\\bx_T$ はほぼ完全な砂嵐になる。\n  - 各ステップでどれだけザラザラを足すかは $\\beta_t$ という決まった数で、人間が手で決める（学習しない）。論文では $\\beta_1 = 0.0001$ から $\\beta_T = 0.02$ まで一直線に増える設定。\n- **step2: 逆の流れ（reverse process）を AI に学ばせる**\n  - 「砂嵐から少しザラザラを取った絵」「もう少し取った絵」…「ほぼ完成した絵」を順に作っていく逆向きの流れを、ニューラルネットワーク（U-Net ← 画像を入れて画像を返す、お絵描き専用の AI 構造）に予測させる。\n- **step3: AI には「ノイズそのもの」を当てさせる**\n  - ふつうに考えると「次のコマの画像」を予測させたくなるが、この論文の発見は「**画像に乗ってる残りのノイズ $\\bepsilon$ がどんな形だったか**」を当てさせるほうが、ずっと学習がうまくいくということ。\n  - 学習中の AI は「ザラザラ画像 $\\bx_t$ と今のステップ番号 $t$」を受け取り、「乗ってるノイズの中身」を出力する。\n- **step4: 損失（loss ← AI の間違いの大きさ）はシンプルな引き算の二乗にする**\n  - 「本物のノイズ」と「AI が予想したノイズ」の差を二乗して足すだけ。難しい重み付けは捨てる（これが $L_\\mathrm{simple}$）。\n- **step5: 完成した AI で絵を作る（サンプリング）**\n  - 真っ白な砂嵐 $\\bx_T$ を用意 → AI が「乗ってるノイズ」を予測 → そのぶん引く → ちょっとだけランダムを足す → 1000 回くり返す → 最後に出てきた $\\bx_0$ がきれいな絵。\n\n### 主要な数式\n\n#### ① ノイズを足す前向きの 1 ステップ\n\n$$ q(\\bx_t \\mid \\bx_{t-1}) = \\mathcal{N}\\!\\left(\\bx_t;\\ \\sqrt{1-\\beta_t}\\,\\bx_{t-1},\\ \\beta_t \\bI\\right) $$\n\n**この式が言ってること**: 1 ステップ前の画像 $\\bx_{t-1}$ を、ほんの少し縮めて（$\\sqrt{1-\\beta_t}$ 倍）、その上にザラザラ（強さ $\\beta_t$）をふりかけたものが次のコマ $\\bx_t$ になる、ということ。「画像を少し薄くして、ノイズを少し足す」操作を式で書いただけ。\n\n**記号の意味**:\n- $\\bx_{t-1}$ … 1 ステップ前のザラザラ画像\n- $\\bx_t$ … 次のコマのザラザラ画像\n- $\\beta_t$ … 各ステップでどれだけノイズを足すかの強さ（0.0001 〜 0.02 のとても小さい数）\n- $\\sqrt{1-\\beta_t}$ … 「元の画像をどれだけ薄めるか」を決める係数（1 にちょっと足りない数）\n- $\\mathcal{N}(\\cdot;\\ \\mu,\\ \\Sigma)$ … ガウス分布（← 平均 $\\mu$ を中心に、ばらつき $\\Sigma$ でランダムな値を出すサイコロ）\n- $\\bI$ … 「全方向に同じ強さでランダムを足す」という意味の単位行列。中学生向けには「各ピクセルに、独立に同じ強さでザラザラをふりかける」と思って OK\n- $q$ … 人間が手で決めた「ノイズを足す側」のルール（AI は学習しない）\n\n**身近な例え**: スマホで撮った写真の彩度をほんの少しだけ下げて、その上から砂のフィルターを薄くかける加工アプリ。これを 1000 回くり返すと、写真は最後に真っ白な砂嵐になる。\n\n#### ② いきなり $t$ ステップ後を作れる便利な式\n\n$$ \\bx_t = \\sqrt{\\bar\\alpha_t}\\,\\bx_0 + \\sqrt{1-\\bar\\alpha_t}\\,\\bepsilon,\\qquad \\bepsilon \\sim \\mathcal{N}(\\bzero, \\bI) $$\n\n**この式が言ってること**: 元画像 $\\bx_0$ から $t$ ステップ後の画像 $\\bx_t$ は、「元画像を少し薄めたもの」と「ランダムなノイズ $\\bepsilon$」を混ぜたもので一発で書ける。1000 回まわさなくても、好きな途中地点の絵を直接作れるという便利な公式。学習中は $t$ をサイコロで選んでこの式で $\\bx_t$ を作る。\n\n**記号の意味**:\n- $\\bx_0$ … 元のきれいな画像\n- $\\bx_t$ … $t$ ステップ後のザラザラ画像\n- $\\bepsilon$ … 平均 0・ばらつき 1 のランダムなノイズ（同じサイズの画像状の数列）\n- $\\bar\\alpha_t$ … $1-\\beta_1, 1-\\beta_2, \\dotsc, 1-\\beta_t$ をぜんぶ掛け合わせた数。$t$ が大きいほど 0 に近づく\n- $\\sqrt{\\bar\\alpha_t}$ … 元画像をどれだけ薄めるかの係数。$t=0$ なら 1（元のまま）、$t=T$ ならほぼ 0（消える）\n- $\\sqrt{1-\\bar\\alpha_t}$ … ノイズをどれだけ強く乗せるかの係数。$t$ が大きいほど 1 に近づく\n\n**身近な例え**: 透明な絵の具（元画像）と灰色の絵の具（ノイズ）を、レシピの分量どおりに混ぜると、欲しい濃さの灰色の絵ができる。$t$ が大きいほど灰色の比率が増えて、最後はほぼ純灰色（純粋なノイズ）になる。\n\n#### ③ AI が解く問題（簡略化した損失）\n\n$$ L_\\mathrm{simple}(\\theta) = \\mathbb{E}_{t,\\bx_0,\\bepsilon}\\!\\left[\\,\\bigl\\|\\bepsilon - \\bepsilon_\\theta\\bigl(\\sqrt{\\bar\\alpha_t}\\,\\bx_0 + \\sqrt{1-\\bar\\alpha_t}\\,\\bepsilon,\\ t\\bigr)\\bigr\\|^2\\right] $$\n\n**この式が言ってること**: 「ふりかけた本物のノイズ $\\bepsilon$」と「AI が予想したノイズ $\\bepsilon_\\theta$」を引き算して、二乗して、それの平均が小さくなるよう AI を訓練する。要するに **AI に「混じってるノイズの正体を当てさせる」テスト** を、いろんな $t$・いろんな画像・いろんなノイズで毎回出題して、間違いの大きさを最小にする。\n\n**記号の意味**:\n- $\\theta$ … AI の中身の数（パラメータ ← AI が学習で調整するつまみ）\n- $\\bepsilon$ … 本物のノイズ（出題者が用意した答え）\n- $\\bepsilon_\\theta(\\cdot, t)$ … AI の予想したノイズ。中身はパラメータ $\\theta$ で決まる\n- $\\sqrt{\\bar\\alpha_t}\\bx_0 + \\sqrt{1-\\bar\\alpha_t}\\bepsilon$ … ②で作ったザラザラ画像 $\\bx_t$。これを AI に見せる\n- $\\|\\cdot\\|^2$ … 各ピクセルの差を二乗して全部足す（差の大きさを表す）\n- $\\mathbb{E}_{t,\\bx_0,\\bepsilon}$ … 「いろんな $t$・画像・ノイズで平均を取る」という意味（期待値 ← サイコロを何回もふって平均する感覚）\n\n**身近な例え**: 漢字テスト。先生（出題者）が「もとの正しい漢字」と「上から落書きされたノイズ」を分けて持っていて、生徒（AI）には落書きされた漢字だけを見せる。生徒は「どんな落書きが乗っているか」を答案用紙に書く。答えとのズレが少ないほど良い点。これを毎日 1000 種類の漢字 × 1000 段階の落書き濃度で出題して訓練する。\n\n#### ④ AI が完成した後、絵を作る 1 ステップ\n\n$$ \\bx_{t-1} = \\frac{1}{\\sqrt{\\alpha_t}}\\!\\left(\\bx_t - \\frac{1-\\alpha_t}{\\sqrt{1-\\bar\\alpha_t}}\\,\\bepsilon_\\theta(\\bx_t, t)\\right) + \\sigma_t \\bz $$\n\n**この式が言ってること**: 今のザラザラ画像 $\\bx_t$ から、AI が予想したノイズ $\\bepsilon_\\theta$ をちょうど良い量だけ引き、ちょっとだけ縮めて、最後にまた少しランダム $\\bz$ を足す。これを $t = T$ から $t = 1$ まで 1000 回くり返すと、最後にきれいな絵 $\\bx_0$ が出てくる。\n\n**記号の意味**:\n- $\\bx_t$ … 今のザラザラ画像\n- $\\bx_{t-1}$ … 1 ステップきれいになった画像\n- $\\bepsilon_\\theta(\\bx_t, t)$ … AI が予想した「今乗ってるノイズの正体」\n- $\\alpha_t = 1 - \\beta_t$ … 1 にちょっと足りない数\n- $\\bar\\alpha_t$ … ②と同じ、$\\alpha_1$ から $\\alpha_t$ をぜんぶ掛けた数\n- $\\sigma_t$ … 加えるランダムの強さ（論文では $\\sigma_t^2 = \\beta_t$ に固定）\n- $\\bz$ … 平均 0・ばらつき 1 のランダム（最後のステップ $t=1$ ではゼロにする）\n\n**身近な例え**: 消しゴムで黒板を消すとき、AI は「次にどこを消すべきか」を教える先生役。教えられた通りに消したあと、ほんの少しだけ手の震えで余計な線が残る（$\\sigma_t \\bz$）。それを 1000 回くり返すと、最初真っ白な砂嵐だった黒板に絵が浮かび上がる。\n\n## 何がすごいの？\n\n- **CIFAR10**（← 32×32 ピクセルの小さな写真 10 種類が集まった有名なデータセット）の **unconditional**（← どのカテゴリの絵を作るか指定せずに、なんでもいいから作るモード）で次の成績を出した:\n  - **FID**（← 生成画像と本物の画像の「似ている度合い」を測る指標。小さいほど良い）: **3.17**。当時の論文中の他のモデルの大半より良い数字（class-conditional GAN も含めて）。\n  - **IS（Inception Score）**（← 生成画像のクオリティと多様性を測る指標。大きいほど良い）: **9.46 ± 0.11**。\n  - **NLL（Negative Log Likelihood）**（← モデルがデータをどれくらい上手く説明できるかの指標。小さいほど良い。bits/dim はピクセルあたり何ビットで表せるかの単位）: テストで $\\leq 3.75$。\n- **LSUN**（← 寝室・教会・ネコなどジャンル別に集めた 256×256 ピクセルの大きい写真データセット）でも:\n  - 寝室 FID **4.90**（大型モデル）/ 6.36（小型）。ProgressiveGAN（FID 8.34）より良い。\n  - 教会 FID **7.89**。ProgressiveGAN（6.42）よりは少し悪い。\n  - ネコ FID **19.75**。ここは GAN 系（StyleGAN2 で 6.93）に大きく負けている。\n  - 著者は abstract で「LSUN 256×256 で ProgressiveGAN と同程度」と要約。\n- **CelebA-HQ**（← 有名人の顔写真 256×256 のデータセット）でも見た目きれいな顔画像を生成（論文では数値の比較ではなく作例で示す）。\n- **大事な実験的発見（Table 2 の ablation）**:\n  - 「ちゃんと数学的に正しい重み付き損失」で訓練すると FID は 13.51 だが、**重み付けを捨てたただの引き算の二乗 ($L_\\mathrm{simple}$) にした途端 FID が 3.17 まで激変**。理論的に最適な訓練法と、人間の目に良く見える画像を作る訓練法は別物だと分かった。\n  - 「ノイズの分散 $\\sigma_t^2$」も AI に学ばせようとすると、訓練が壊れて使えない絵しか出ない。固定して動かさないのが正解。\n- **著者が主張する貢献（contribution）**:\n  1. diffusion model と「**denoising score matching**（← データ分布の傾きをノイズ除去で学ぶ別系統の手法）+ **Langevin dynamics**（← 傾きに沿ってランダムに動いてサンプルする物理由来の方法）」が実は同じものだと、ノイズ予測パラメータ化を通して証明した。\n  2. シンプルにした損失 $L_\\mathrm{simple}$ が画像の質を劇的に上げる、という経験的な発見。\n  3. diffusion を「**progressive lossy decoder**（← 段階的に画像を復元する圧縮方式）」「**autoregressive model**（← 1 ピクセルずつ順番に予測するモデル）の一般化」として解釈する rate-distortion（圧縮の質と量のトレードオフ）視点。\n  4. 公開実装あり（github.com/hojonathanho/diffusion）。\n\n## キーワード辞典\n\n出現順:\n\n- **diffusion model（拡散モデル）** … 画像にノイズを少しずつ足す→ 逆にノイズを少しずつ引いて画像を作る、という仕組みの生成モデル。\n- **GAN（Generative Adversarial Network、敵対的生成ネットワーク）** … 2 つの AI（描く側・見破る側）を競わせて絵を作らせる仕組み。きれいだが学習が不安定。\n- **VAE（Variational AutoEncoder、変分自己符号化器）** … 画像を「短い数の列」に圧縮 → そこから画像を復元する仕組み。学習が安定しているがぼやけがち。\n- **flow（normalizing flow、フロー）** … 単純なランダムから、ぐねぐねと変形を重ねて画像を作るモデル。\n- **autoregressive model（自己回帰モデル）** … 1 ピクセルずつ「次のピクセル、次のピクセル」と順番に予測して画像を作るモデル。きれいだが遅い。\n- **forward process（前向き過程）** … 画像にノイズを足していく決まった手続き。学習しない。\n- **reverse process（逆向き過程）** … ノイズから画像を取り戻す手続き。AI が学習する。\n- **Markov chain（マルコフ連鎖）** … 「次のコマは今のコマだけで決まる（前のコマは関係ない）」ような時系列。各ステップが独立に進むイメージ。\n- **ガウスノイズ** … 平均 0 を中心にした、釣鐘型のランダム。砂嵐ノイズの一種。\n- **variational bound（変分下界 / ELBO）** … 直接は計算できない「画像っぽさのスコア」を、もう少し計算しやすい不等式で挟むテクニック。AI 訓練の目標になる。\n- **score matching** … 「データ分布の傾き（どっち方向に動けば、よりありそうなデータに近づくか）」を AI に学ばせる方法。\n- **Langevin dynamics** … 傾きに沿って少しずつ動きつつ、ランダムでも揺らす物理由来の動き方。\n- **U-Net** … 画像を入れて同じサイズの画像を返す、お絵描き用の AI 構造。途中で情報を圧縮 → 復元する形が U の字。\n- **group normalization** … AI の途中の数値をいい感じに揃えて、学習を安定させる仕掛けの一つ。\n- **self-attention（自己注意）** … 画像のあちこちを「お互いに見比べる」仕掛け。離れたピクセル同士の関係も拾える。\n- **sinusoidal position embedding（正弦波位置埋め込み）** … 「今は $t$ 番目のステップだよ」という時刻情報を、sin と cos の波で AI に伝える方法。\n- **FID（Fréchet Inception Distance）** … 生成画像と本物画像の「特徴の散らばり」を比べて、似てるほど小さくなる指標。\n- **IS（Inception Score）** … 生成画像のクオリティと多様性を一緒に測る指標。大きいほど良い。\n- **NLL（Negative Log Likelihood）** … モデルがデータをどれくらい上手く説明できるかの指標。小さいほど良い。bits/dim は 1 ピクセルを表すのに何ビット必要かの単位。\n- **CIFAR10 / LSUN / CelebA-HQ** … よく使われる画像データセット。順に「32×32 小画像」「256×256 ジャンル別大画像」「256×256 顔画像」。\n- **ablation（アブレーション）** … 「この工夫を抜いたらどれくらい悪くなる？」を一個ずつ調べる実験。\n- **rate-distortion（レート・歪み）** … 圧縮でビット数を減らすほど画質が落ちる、というトレードオフの分析。\n- **EMA（Exponential Moving Average、指数移動平均）** … 学習の途中の AI のパラメータを少しずつ滑らかに平均して、本番ではその平均版を使う技。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **なぜ「ノイズ予測 $\\bepsilon$-pred」が「平均予測 $\\tilde\\bmu$-pred」より良かったのか**: 数学的にはどちらも同じ枠組み内のパラメータ化に過ぎないが、$\\bepsilon$ を当てる形にすると、損失が「ただの引き算の二乗」になり、しかも score matching と等価になる。結果として、各タイムステップでの学習の重み付けが自然と「画像の見た目に効くステップを強調」する方向にシフトする。\n- **なぜ重み付きの正しい ELBO より $L_\\mathrm{simple}$ が良いのか**: 本来の重みは「小さい $t$（ノイズがほとんど無いステップ）」を強調してしまうが、そこは AI にとって簡単すぎて学習資源の無駄になる。重みを 1 にすると、難しい「大きい $t$」のノイズ除去に学習が集中する。\n- **$T=1000$ と $\\beta$ スケジュール**: $\\beta_1=10^{-4}$ から $\\beta_T=0.02$ まで線形。$T$ は sweep（最適値の探索）せず固定。結果として $L_T = D_\\mathrm{KL}(q(\\bx_T|\\bx_0) \\| \\mathcal{N}(\\bzero,\\bI)) \\approx 10^{-5}$ bits/dim と非常に小さくなり、無視できる。\n- **rate-distortion 解釈**: CIFAR10 で全 codelength 3.75 bits/dim のうち、rate（$L_1+\\dots+L_T$） = 1.78、distortion（$L_0$） = 1.97。distortion 側を RMSE に直すと 0.95/255 という人間にはほぼ知覚不可能な誤差。つまり「lossless でビット数を払っている部分の半分以上は、目には見えない細部」。これが「NLL は他モデルに劣るのに見た目はきれい」の説明。\n- **autoregressive との関係**: 変分下界を書き直すと、ステップ数 $T$ を「データの次元（ピクセル数）」と等しく取り、forward を「1 ピクセルずつマスクしていく」と定義した場合、ふつうの autoregressive model に一致する。Gaussian diffusion はその一般化で、$T$ をピクセル数より小さく取れるため速い。\n- **interpolation の限界**: 顔画像で 2 枚を混ぜると、表情・髪型・肌の色は滑らかに変わるが、**メガネ（eyewear）は滑らかに変わらない**と著者自身が報告（§4.2）。離散的な属性は latent 空間の補間に乗りにくい。\n- **限界**: ① NLL は Sparse Transformer（2.80）等の他系統に劣る、② サンプリングは $T=1000$ ステップ × NN 評価で重い（CIFAR で 256 枚作るのに 17 秒、256² で 128 枚 300 秒）、③ learned $\\bSigma$ は不安定、④ progressive compression は proof of concept どまり（minimal random coding が高次元で実用にならない）、と著者自身が認めている。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2006.11239v2/`\n- 正規ノート: `notes/arXiv-2006.11239v2.md`\n";
+const MACROS = {"\\vardbtilde": "\\tilde{\\raisebox{0pt}[0.85\\height]{$\\tilde{#1}$}}", "\\defeq": "\\coloneqq", "\\grad": "\\nabla", "\\E": "\\mathbb{E}", "\\Var": "\\mathrm{Var}", "\\Cov": "\\mathrm{Cov}", "\\Ea": "\\E\\left[#1\\right]", "\\Eb": "\\E_{#1}\\!\\left[#2\\right]", "\\Vara": "\\Var\\left[#1\\right]", "\\Varb": "\\Var_{#1}\\left[#2\\right]", "\\kl": "D_{\\mathrm{KL}}\\!\\left(#1 ~ \\| ~ #2\\right)", "\\pdata": "{p_\\mathrm{data}}", "\\bA": "\\mathbf{A}", "\\bI": "\\mathbf{I}", "\\bJ": "\\mathbf{J}", "\\bH": "\\mathbf{H}", "\\bL": "\\mathbf{L}", "\\bM": "\\mathbf{M}", "\\bQ": "\\mathbf{Q}", "\\bR": "\\mathbf{R}", "\\bzero": "\\mathbf{0}", "\\bone": "\\mathbf{1}", "\\bb": "\\mathbf{b}", "\\bu": "\\mathbf{u}", "\\bv": "\\mathbf{v}", "\\bw": "\\mathbf{w}", "\\bx": "\\mathbf{x}", "\\by": "\\mathbf{y}", "\\bz": "\\mathbf{z}", "\\bxh": "\\hat{\\mathbf{x}}", "\\btheta": "{\\boldsymbol{\\theta}}", "\\bphi": "{\\boldsymbol{\\phi}}", "\\bepsilon": "{\\boldsymbol{\\epsilon}}", "\\bmu": "{\\boldsymbol{\\mu}}", "\\bnu": "{\\boldsymbol{\\nu}}", "\\bSigma": "{\\boldsymbol{\\Sigma}}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

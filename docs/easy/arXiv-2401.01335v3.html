@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Self-Play Fine-Tuning Converts Weak Language Models to Strong Language Models（自分との対戦で、弱いことばのAIを強いことばのAIに育てる）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2401.01335v3.md</code>
+  &nbsp;|&nbsp; macros: <code>8</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Self-Play Fine-Tuning Converts Weak Language Models to Strong Language Models（自分との対戦で、弱いことばのAIを強いことばのAIに育てる）\n\n- arXiv: https://arxiv.org/abs/2401.01335\n- 一次ソース: ../papers/arXiv-2401.01335v3/\n- 正規ノート: ../notes/arXiv-2401.01335v3.md\n\n---\n\n## 一言で言うと\n\n新しいデータを集めなくても、AI が「自分が前に書いた答え」と「お手本の答え」を見分ける練習を繰り返すと、どんどん賢くなるよ、という話。\n\n## どんな問題を解こうとしてるの？\n\nことばを書くAI（LLM＝Large Language Model、大量の文章を読んで人間みたいな文を返すAI）を賢くしたいとする。\n普通は次の 2 ステップを踏むよ:\n\n- **SFT**（Supervised Fine-Tuning。「お手本そっくりに書く練習」のこと）。人間が書いた良い答えをたくさん集めて、AI にマネさせる。\n- **RLHF**（Reinforcement Learning from Human Feedback。「人に良し悪しをジャッジしてもらいながら直す練習」のこと）。AI が出した複数の答えに人間が「こっちが好き」と点をつけて、好かれる方を出すように直す。\n\n困りごとはこう:\n\n- **SFT だけだと頭打ち**。同じお手本データで何回も練習しても、すぐに伸びなくなる（むしろ点が下がることすらある）。実際この論文の実験では、SFT 済みモデルにもう1回 SFT すると平均点が **58.14 → 57.23 と下がった**。\n- **RLHF は高い**。「こっちの答えが好き」というデータ（preference データ。「どちらの答えが好きか」というラベル付きデータのこと）を人間か GPT-4（OpenAI の強いことばAI）に作ってもらう必要があって、お金も時間もかかる。\n\n著者の問い: **「新しい人間データを足さずに、弱い AI を自分の力だけで強くできる？」**\n\n身近な例えで言うと、参考書（SFT データ）を一通り解き終わった中学生が、新しい問題集（preference データ）を買わずに、**自分が昔書いた答案と模範解答を見比べて勉強し直す**ことで、もう一段賢くなれるか？という問い。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n**自分と自分で対戦させる**。これを self-play（セルフプレイ。自分のコピーと対戦すること。囲碁AIの AlphaGo Zero が有名）と呼ぶよ。\n\n具体的にはこう:\n\n- 古い自分 = 「**にせもの作り役**」: 過去バージョンの AI が、お題（プロンプト）に対して答えを書く。これを「AI が書いた答え」とする。\n- 新しい自分 = 「**にせもの見破り役**」: 「人間が書いたお手本の答え」と「古い自分が書いた答え」を見比べて、「これは人間の方だ」と当てられるように練習する。\n- 当てられるようになったら、その新しい自分が次の「にせもの作り役」になる。これを繰り返す。\n\nこれを毎回繰り返すと、「にせもの作り役」がどんどん上手くなって、最終的には人間の答えと区別がつかなくなる ＝ 人間レベルに近づく、という仕組み。\n\nたとえると、**ニセ札を作る人とニセ札を見破る警察が同じ人**で、毎日「今日の自分が昨日の自分を見破る練習」をするイメージ。昨日の自分のニセ札は今日の自分には見破られちゃうから、明日の自分はもっと上手にニセ札を作らなきゃいけない。これを繰り返すと、最後には本物そっくりのお札（＝人間そっくりの答え）が作れるようになる。\n\n### 仕組み\n\n- **step1（出発点）**: すでに SFT が済んだ AI を用意する。論文では `zephyr-7b-sft-full`（Mistral-7B というベース AI に Ultrachat200k というデータでお手本練習を済ませたモデル）を使う。\n- **step2（合成データ作り）**: 古い AI に、お題（プロンプト）を入れて答えを書かせる。これが「ニセ答え」になる。\n- **step3（見破る練習）**: 新しい AI を、「人間の答えには高い点を、ニセ答えには低い点を出す」ように訓練する。論文の損失関数（後述）を最小化する。\n- **step4（バトンタッチ）**: 訓練が終わった新しい AI を、次の回の「古い AI」として step2 に戻る。\n- **step5（繰り返し）**: これを 0 → 1 → 2 → 3 回と回す。論文では合計 4 回（iteration 0〜3）まで回している。\n- **データ量**: 50k（5 万件）のお題を Ultrachat200k から取り出して使う。これだけ。新しい人間データは1個も足してない。\n\n### 主要な数式\n\n#### 数式 1: 練習の目標（損失関数）\n\n$$ L_{\\text{SPIN}} = \\mathbb{E}\\Big[\\,\\ell\\Big(\\lambda \\log \\tfrac{p_{\\theta}(y|x)}{p_{\\theta_t}(y|x)} - \\lambda \\log \\tfrac{p_{\\theta}(y'|x)}{p_{\\theta_t}(y'|x)}\\Big)\\,\\Big] $$\n\n**この式が言ってること**: 新しい AI は、「人間の答え $y$ には自分が出しやすくし、ニセ答え $y'$ には出しにくくする」方向に動く。$y$ にハイスコアを出して $y'$ にローを出すほど、この値（罰点）が小さくなる。\n\n**記号の意味**:\n- $L_{\\text{SPIN}}$ … 「罰点」のこと。これを小さくするように練習する。学校のテストで言うと「減点の合計」。\n- $\\mathbb{E}[\\cdots]$ … 「いろんなお題で平均すると」という意味。$\\mathbb{E}$ は「平均」と読んでいい。\n- $\\ell(\\cdot)$ … 損失関数（ロス関数。「ハズレ具合の点数」を返すルール）。論文ではロジスティック損失 $\\ell(t)=\\log(1+e^{-t})$ を使う。中身は気にせず「右辺がプラスに大きいほど罰点が小さくなる」と覚えれば OK。\n- $\\log$ … ログ。「数が大きいほどゆっくり大きくなる関数」。割り算した結果が 1 より大きければプラス、1 より小さければマイナスになる目印。\n- $p_\\theta(y|x)$ … 新しい AI が、お題 $x$ に対して答え $y$ を出す確率（出やすさ）。\n- $p_{\\theta_t}(y|x)$ … 古い AI が、同じお題 $x$ に対して答え $y$ を出す確率。\n- $y$ … 人間が書いた本物のお手本の答え。\n- $y'$ … 古い AI が作ったニセ答え。\n- $x$ … お題（プロンプト）。「次のことについて説明して」みたいな問いかけ。\n- $\\lambda$ … ラムダ。「どれくらい古い自分から離れて変わっていいか」を決めるツマミ。論文では 0.1 で、最後の回だけ 5.0 に上げる。\n- $\\log \\tfrac{p_{\\theta}(y|x)}{p_{\\theta_t}(y|x)}$ … 「新しい自分は、お手本 $y$ を、古い自分より何倍出しやすくなったか」を測る目盛り。プラスなら「より出しやすくなった」。\n\n**身近な例え**: テストの自己採点に似てる。「お手本の答え（$y$）には今までより◎をつけやすく、自分が前に書いた間違い答案（$y'$）にはバツをつけやすく」なるように、自分の採点基準を少しずつ書き換える練習。$\\lambda$ は「採点基準をどれくらい大きく書き換えていいか」のブレーキで、大きいほど慎重、小さいほど大胆に変える。\n\n#### 数式 2: 1回分の更新で AI がどう変わるか（理論結果）\n\n$$ p_{\\theta_{t+1}}(y|x) \\;\\propto\\; p_{\\theta_t}(y|x)\\,\\Big(\\tfrac{p_{\\text{data}}(y|x)}{p_{\\theta_t}(y|x)}\\Big)^{1/\\lambda} $$\n\n**この式が言ってること**: 新しい AI が答え $y$ を出す確率は、古い AI のそれに「お手本がどれくらい好む答えか／古い自分がどれくらい好む答えか」のかけ算で決まる。お手本がよく出す答えなら確率が上がり、古い自分が出しすぎていた答えなら確率が下がる。\n\n**記号の意味**:\n- $p_{\\theta_{t+1}}(y|x)$ … 1 回練習したあとの新しい AI が、お題 $x$ に答え $y$ を出す確率。\n- $p_{\\theta_t}(y|x)$ … 練習前の古い AI が、同じく $y$ を出す確率。\n- $p_{\\text{data}}(y|x)$ … 人間（お手本）が $y$ を書く確率。「お手本データの傾向」のこと。\n- $\\propto$ … 「比例する」というしるし。「ぴったり等しい」ではなく「全体を足して 1 になるように調整したら等しい」という意味。\n- $1/\\lambda$ … ラムダの逆数。$\\lambda$ が小さいと指数が大きくなって、変化が激しくなる。\n- $\\big(\\,\\cdots\\,\\big)^{1/\\lambda}$ … カッコの中身を $1/\\lambda$ 回かけ算するということ。1 より大きい数なら大きく、1 より小さい数なら小さくなる。\n\n**身近な例え**: 料理のレシピを直すのに似てる。古いレシピ（古い自分）を出発点にして、「お手本のレシピが砂糖を多めに使うなら、自分も砂糖を増やす」「お手本が塩を控えめなら、自分も塩を減らす」と、お手本との差分の方向にちょっとずつ味付けを寄せていく感じ。$\\lambda$ が小さいほど「えいや」と大きく寄せる、$\\lambda$ が大きいほど慎重に少しずつ寄せる。\n\n## 何がすごいの？\n\nベースモデル `zephyr-7b-sft-full`（平均 58.14 点）から始めて、Ultrachat200k から 5 万件のお題だけ使って SPIN を 4 回まわした結果（HuggingFace Open LLM Leaderboard。代表的なAI実力テスト6種類の平均で評価される）:\n\n- **平均点**: 58.14 → 60.80（iter 0, +2.66）→ 62.12（iter 1, +1.32）→ 62.97（iter 2, +0.85）→ **63.16（iter 3）**\n- **特に伸びたテスト**:\n  - TruthfulQA（「ウソをつかずに答えるテスト」。デマや迷信に流されないか測る）: 43.73 → 54.90 で **+11pt 超**\n  - GSM8k（小学校〜中学校レベルの算数文章題テスト）: 26.76 → 38.97 で **+12pt 超**\n  - Arc（理科の選択肢問題テスト）: 60.41 → 65.87\n  - HellaSwag（常識的な文の続きを当てるテスト）: 82.85 → 85.54\n- **DPO**（Direct Preference Optimization。「どっちの答えが好き」データを使う、RLHF を簡単にしたやり方）**と比較**: 62k 件もの preference データ（GPT-4 に評価してもらった）で訓練した `zephyr-7b-dpo-full`（平均 61.31）を、SPIN は iter 1 時点（62.12）で **追加の好み付けデータなしで上回った**。\n- **MT-Bench**（対話の質を見る別のテスト）: 5.94 → 6.46 → 6.65 → **6.78**。iter 1 の時点で vicuna-13b-v1.5（6.57）を上回る。\n- **SPIN + DPO のスタッキング**: SPIN で 3 回まわした後にさらに DPO を載せると、平均 64.05（+0.89）まで上がる。SPIN は DPO の代わりじゃなくて「SFT と DPO の間に挟む工程」として使える。\n\n著者が論文で挙げている「貢献（contribution）」は次のとおり:\n\n1. preference データも reward model（報酬モデル。AI の答えに点をつける別のAIのこと）も新しい人間データも要らずに、SFT モデルを更に伸ばせる手法を提案した。\n2. 理論的に、SPIN の練習が止まる点が「AI の答え方 = お手本の答え方」と一致する瞬間だけだ、と証明した（Theorem 1, 2）。\n3. 5 万件のお題だけで、6.2 万件の preference 付き DPO に勝てることを実験で示した。\n4. SPIN のあとに DPO を載せられる（積み重ねできる）ことも示した。\n\n## キーワード辞典\n\n- **LLM**（Large Language Model）… 大量の文章を学んで人間っぽい文を書くAI。ChatGPT などの中身。\n- **SFT**（Supervised Fine-Tuning）… 人間が書いた正解をマネさせる練習。「お手本そっくり練習」。\n- **RLHF**（Reinforcement Learning from Human Feedback）… 人間に「こっちの答えが好き」と点をつけてもらいながら、AI を直していくやり方。\n- **DPO**（Direct Preference Optimization）… RLHF のうち、難しい強化学習を使わず、「好き／嫌い」データから直接 AI を直すやり方。\n- **SPIN**（Self-Play fIne-tuNing）… この論文の手法。自分と自分で対戦して育てるファインチューニング。\n- **fine-tuning**（ファインチューニング）… すでに学んだ AI に追加で練習させて、特定の用途に合わせること。\n- **preference データ** … 「2 つの答えのうちどっちが好き？」を集めたデータ。RLHF や DPO の材料。\n- **prompt**（プロンプト）… AI に与えるお題・指示文。「次の話題について説明して」みたいな入力。\n- **token**（トークン）… AI が読み書きする最小単位。だいたい「単語の一部」くらいの大きさ。\n- **iteration**（イテレーション）… 「練習1回分」のこと。SPIN では何回も繰り返す。\n- **self-play**（セルフプレイ）… 自分のコピーと対戦して上達する学習法。AlphaGo Zero で有名。\n- **GAN**（Generative Adversarial Network、敵対的生成ネットワーク）… 「ニセ画像を作るAI」と「ニセを見破るAI」を競わせて画像生成を学ぶ仕組み。SPIN は「両方とも同じ LLM の別バージョン」という違いがある。\n- **IPM**（Integral Probability Metric）… 2 つの確率分布がどれくらい違うかを測るモノサシの一種。SPIN の損失の出発点。\n- **KL（Kullback-Leibler）regularization** … 「新しい AI が古い AI から離れすぎないように引き戻す力」。\n- **logistic loss**（ロジスティック損失）… 「正解なら 0 に近づき、間違えるほど大きくなる」よく使う罰点の式。$\\ell(t)=\\log(1+e^{-t})$。\n- **HuggingFace Open LLM Leaderboard** … 世界中の人がAIをテストして点数を比べるランキング表。Arc・HellaSwag・MMLU・TruthfulQA・Winogrande・GSM8k の 6 種類のテストの平均点。\n- **MT-Bench** … 8 ジャンルのチャット問題で AI 同士を競わせて、強い AI に審判させるテスト。\n- **Mistral-7B** … 70 億パラメータ（パラメータ＝AIの中の調整つまみの数）のオープンソース LLM。\n- **Zephyr-7b-sft-full** … Mistral-7B に Ultrachat200k で SFT したモデル。論文のスタート地点。\n- **Ultrachat200k** … 20 万件のチャット対話データ（GPT-3.5 で作られた）。SFT 用のデータ。\n- **Theorem**（定理）… 数学的に証明された主張。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **なぜ「人間 vs 自分の出力」の見分け練習で賢くなるのか**: SPIN の損失は、形を整えると「自分の出力 $y'$ を **嫌い側**、人間の出力 $y$ を **好き側**」と決め打ちした DPO とほとんど同じになる。つまり「自分が出したもの＝悪い例」「人間が出したもの＝良い例」と仮定することで、好き嫌いラベルを集めなくて済む、というのが核。\n- **収束点の保証（Theorem 1）**: 損失関数 $\\ell$ が「単調に減る凸関数」なら、SPIN の損失が最小になるのは「$p_\\theta = p_{\\text{data}}$ のとき**だけ**」（必要十分）。つまり練習が止まる場所は「AI が人間そっくりになった瞬間」しかない。\n- **1 ステップの更新の式（Theorem 2）**: ロジスティック損失だと、$p_{\\theta_{t+1}} \\propto p_{\\theta_t} \\cdot (p_{\\text{data}}/p_{\\theta_t})^{1/\\lambda}$。$\\lambda$ が小さいほど 1 回で大きく動き、大きいほど小さく動く。著者は「収束に近づくほど $\\lambda$ を大きくして安定させる」発想で、最終 iter だけ $\\lambda=5.0$ に上げている（普段は $0.1$）。\n- **iterative であること自体が本質**（Fig. ablation_epoch）: iter 0 の epoch（エポック。データを最初から最後まで通して読む 1 周）数を伸ばしても iter 1 の点数には届かない。「データの分布を更新しながら学ぶ」ことに意味がある。これは難易度を段階的に上げるカリキュラム学習に似ている。\n- **ハイパーパラメータ**（Appendix）: RMSProp（最適化アルゴリズムの一種）、global batch size 64、学習率 5e-7（iter 0,1）→ 1e-7（iter 2,3）、各 iter で 2 epoch、最大系列長 2048、$\\lambda=\\beta=0.1$（最後だけ 5.0）。8×A100 80G GPU で 1 iter につき生成 1.45h・訓練 4.32〜8.64h。\n- **限界**（著者自身が Conclusion で明記）: 「お手本のデータ分布」が天井になる。SPIN だけでは super-human にはなれない。動的に変わる目標分布の扱いと、合成データの量を減らす工夫が将来課題。\n- **TeX に書かれていない注意点**: 「自分の出力を必ず loser として扱う」運用が、長期的に多様性を削ったり mode collapse（モード崩壊。出力が同じパターンばかりになってしまうこと）を招く可能性は、論文中では議論されていない。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2401.01335v3/`\n- 正規ノート: `notes/arXiv-2401.01335v3.md`\n";
+const MACROS = {"\\todoq": "\\todo[size=\\scriptsize,color=orange!20!white,#1]{Quanquan: #2}", "\\todoz": "\\todo[size=\\scriptsize,color=blue!20!white,#1]{Zixiang: #2}", "\\todoy": "\\todo[size=\\scriptsize,color=green!20!white,#1]{Yihe: #2}", "\\todoh": "\\todo[size=\\scriptsize,color=red!20!white,#1]{HZ: #2}", "\\method": "\\texttt{SPIN}", "\\la": "\\langle", "\\ra": "\\rangle", "\\cIs": "\\cI_{\\hat{s}}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

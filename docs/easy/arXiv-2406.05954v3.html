@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Aligning Large Language Models with Representation Editing: A Control Perspective（表現の書き換えで AI チャットボットを「やさしく・正直に」する方法 — 制御工学の視点から）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2406.05954v3.md</code>
+  &nbsp;|&nbsp; macros: <code>54</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Aligning Large Language Models with Representation Editing: A Control Perspective（表現の書き換えで AI チャットボットを「やさしく・正直に」する方法 — 制御工学の視点から）\n\n- arXiv: https://arxiv.org/abs/2406.05954\n- 一次ソース: ../papers/arXiv-2406.05954v3/\n- 正規ノート: ../notes/arXiv-2406.05954v3.md\n\n---\n\n## 一言で言うと\n\nAI（大規模言語モデル ＝ ChatGPT のようなもの）の頭の中を、しゃべりながら**少しずつ押して**「やさしい・無害な答え」へ誘導する仕組みを作ったよ、というお話。\n\n## どんな問題を解こうとしてるの？\n\n- AI チャットボット（ChatGPT みたいな、文字を打つと返事してくれるソフト）は、大量の文章を読んで作られているけど、その中には嘘や悪い情報も混じっている。だからそのまま使うと、たまに人を傷つけたり、デマを答えたりしてしまう。\n- これを直す方法は、これまで大きく 2 つあった。けれどどちらも欠点がある:\n  - **方法 1: AI を「再教育」する（fine-tuning ＝ 部分的に作り直す）**。たとえば RLHF（人間の好みを使って強化学習で AI を直す方法。RL は Reinforcement Learning ＝「ごほうびがもらえる行動を覚える学習」、HF は Human Feedback ＝「人間の好み」のこと）や DPO（人間の好みデータから直接学習する方法）など。\n    → でも、これは **超大量の計算が必要** で、しかも訓練が不安定。何かを直したくなる度に作り直しになって大変。\n  - **方法 2: AI 本体はそのまま、聞き方や出し方だけ工夫する**（プロンプトを丁寧に書く、出力時に「いい単語」を選ばせるなど）。\n    → こちらは軽いけど、**AI 本体の能力を超えられない**。元のモデルがダメだとダメなまま。\n- もう 1 つ最近出てきた「**表現の書き換え（representation editing）**」という方法もある。これは、AI の頭の中の「考えを表す数値の塊（＝ 隠れ状態、hidden state）」に、固定の数字を足してこっそり方向を変えるやり方。けれど **常に同じ数字** を足すだけなので、しゃべる単語ごとに変わる状況に対応できていない。\n\nこの論文は、3 つめの「表現の書き換え」を、もっと**しゃべりながら毎ステップ動く**ように進化させたい、という話。\n\n## どうやって解いたの？\n\n### コアアイデア\n\nAI が文章を作るときの様子を、**「ボールが地形の上を転がる物理現象」** だと考えるよ。\n\n- AI は単語を 1 個ずつ順番に作るとき、内部に「いまの考えを表す数値の塊」を持っている。これを「状態」と呼ぶ（地図上のボールの位置みたいなもの）。\n- 何もしないと、AI はそのまま転がって、ときどき変な方向（嘘・有害）へ落ちる。\n- だから著者は、毎ステップ、ボールを **「いい方角（やさしい・正直)」へほんの少し押す力（＝ 制御信号、control signal）** を加える。\n- ただし強く押しすぎると、AI が壊れて意味不明な文章になる。だから「ほんのちょっとだけ押す」のがコツ。\n\nこれを制御工学（クルマやロボットを思った通りに動かす数学）の言葉で書き直したのがこの論文。\n\n### 仕組み\n\n- **step1**: AI（ここでは Vicuna-7B / Falcon-7B-Instruct / Llama3-8B-Instruct という公開モデルを使用）を「時間とともに変化するシステム」だと見なす。\n  - LLM（Large Language Model ＝ 大規模言語モデル ＝ 大きな AI チャットボット）が単語をひとつ作るたびに、内部の状態が更新される。\n- **step2**: 「価値関数（value function）」というスコア表を別に用意する。これは「いまの AI の頭の中の状態だと、最終的にどのくらい良い文章になりそうか？」を予測する小さな関数（中身は 2〜3 層のニューラルネットワーク ＝ 数字を入れると数字が出てくる小さな計算機）。\n  - 報酬（reward ＝ ごほうび点）は、出来上がった文の良さを別の「報酬モデル（reward model）」が採点する（人間の好みデータで前もって作られたもの）。文の途中では点はもらえず、文の最後（EOS ＝ End-Of-Sentence ＝ 文の終わりを表す合図）で初めて点がつく。\n- **step3**: AI に文章を作らせて、毎ステップの状態と最終の点を集める。それを使って「価値関数」を訓練する（Bellman 方程式 ＝ 「いまの価値 ＝ 次の瞬間の価値の予想」という形でつないでいく方程式）。\n- **step4**: 実際にしゃべらせるとき、AI の頭の中の状態を、価値関数が高くなる方向にちょっとだけずらす（**勾配上昇 ＝ スコアが上がる坂を少しだけ登る**）。何回くらいずらすか（$n$ 回）と、1 回でどのくらいの強さでずらすか（$\\alpha$）を、文の質と点のバランスを見ながら決める。\n- **step5**: 状態をずらしたあと、AI に次の単語を出させる。これを文末まで繰り返す。\n\nここで重要なのは、AI 本体（Vicuna-7B などの数十億個の数字の塊）は**いっさい書き換えない**こと。あくまで一時的に頭の中の数字をちょっと押すだけ。だから AI を作り直す方法（RLHF とか）に比べて、ものすごく軽い。\n\n### 主要な数式\n\n#### 式 1: AI が文章を作る仕組み（言語の動力学系）\n\n$$ y_t \\sim \\text{Softmax}(W o_t), \\quad h_{t+1}, o_{t+1} = f_{\\text{LM}}(h_t, y_t) $$\n\n**この式が言ってること**: AI は毎ステップ、内部の数字 $o_t$ から「次にどの単語を出すか」をくじびきで決めて、それから内部の状態を 1 ステップ進めている、という流れを書いている。Softmax は「いくつかの数のうち、大きいものを選ばれやすくする変換」のことで、たくさんの単語候補から 1 つを選ぶ「重み付きくじびき」だと思えば OK。\n\n**記号の意味**:\n- $t$ … 何ステップ目か（1 単語目、2 単語目、… の番号）\n- $y_t$ … $t$ 番目に出す単語\n- $o_t$ … 「次の単語の出やすさ」を決める内部の数字の塊（ロジット）\n- $W$ … $o_t$ を単語ごとの確率に変える掛け算用の表\n- $h_t$ … いままで作った単語の記憶（隠れ状態）\n- $f_{\\text{LM}}$ … 「いまの記憶＋出た単語 → 次の記憶」を計算する大きな関数（これが AI 本体）\n\n**身近な例え**: しりとりに似ているよ。「いま手元にある記憶（$h_t$）＋ いま言った単語（$y_t$）」 → 「次の手元の記憶」へ進む。次の単語は手元の記憶から「出やすい単語くじ」をひいて決める。AI はこの「くじびきしりとり」を文末まで続けている。\n\n---\n\n#### 式 2: 制御信号を入れて押す（やさしい方向へ）\n\n$$ y_t \\sim \\text{Softmax}\\bigl(W(o_t + u^o_t)\\bigr), \\quad h_{t+1}, o_{t+1} = f_{\\text{LM}}(h_t + u^h_t, y_t) $$\n\n**この式が言ってること**: 元の数字 $o_t$ や $h_t$ に、ちょっとした「押す力」$u_t$ を毎ステップ足してから、単語を選んだり次のステップに進んだりするよ、という意味。これだけで AI のしゃべる内容を「やさしく・正直」な方向へ寄せられる。\n\n**記号の意味**:\n- $u^o_t$ … ロジット $o_t$ を押す力（外から加える追加の数字）\n- $u^h_t$ … 隠れ状態 $h_t$ を押す力\n- ほかは式 1 と同じ\n\n**身近な例え**: ボウリングで、ボールが少しガターに寄りそうなとき、軽くレーンの傾きを変えてピン側に戻す、みたいな感じ。ボウリングのボール（AI の状態）はそのまま転がるけど、レーンに小さな傾き（$u_t$）を足すことで、ピンに当たりやすい方向へ自然に進む。\n\n---\n\n#### 式 3: 「いまの状態の良さ」を表す価値関数（Bellman 方程式）\n\n$$ V(s_t) = \\begin{cases} \\mathbb{E}_{s_{t+1}}[V(s_{t+1})], & y_t \\neq \\text{EOS} \\\\ r([\\mathbf{x}, \\mathbf{y}_t]), & y_t = \\text{EOS} \\end{cases} $$\n\n**この式が言ってること**: 「いま自分がいる状態の良さ $V(s_t)$」は、文の途中なら「次の瞬間の状態の良さの平均」と等しい、と決める。そして文末まで来たら、出来上がった文の点 $r$ がそのまま「良さ」になる。要するに「最終的にもらえる点の見込み」をずっと前から予想しておく仕組みだよ。\n\n**記号の意味**:\n- $V(s_t)$ … 「いまの状態 $s_t$ から最後までしゃべったら、平均で何点もらえそうか」を予測する関数（価値関数）\n- $s_t$ … いまの AI の頭の中の状態（$h_t$ と $o_t$ の組）\n- $\\mathbb{E}_{s_{t+1}}[\\cdot]$ … 「次の瞬間の状態」がいろいろあり得るので、その平均をとる、という意味（期待値 ＝ サイコロをたくさん振った平均みたいなもの）\n- $y_t$ … $t$ 番目の単語\n- EOS … 文の終わりの合図\n- $r([\\mathbf{x},\\mathbf{y}_t])$ … 出来上がった文 $\\mathbf{x}$（質問）＋ $\\mathbf{y}_t$（答え）への採点\n\n**身近な例え**: 双六（すごろく）のマスごとに「ゴールまで行ったら平均で何点もらえそう？」と予想を書き込むのに似ている。途中マスの予想は「次のマスの予想の平均」と等しい、というルール。ゴールマスにだけ本当の点数が書いてある。\n\n---\n\n#### 式 4: テスト時に状態をちょっとだけ押す（勾配上昇）\n\n$$ u_t \\leftarrow u_t + \\alpha \\nabla_{s_t} V_\\phi(s_t + u_t) $$\n\n**この式が言ってること**: いまの状態を「価値関数が大きくなる方向」に、$\\alpha$ ぶんだけ進める。これを $n$ 回くりかえして、「ちょっとだけ良くなった状態」へ AI を移してから次の単語を出す。push する量を小さく保つことで、AI が暴走しないようにしている。\n\n**記号の意味**:\n- $u_t$ … 押す力（最初はゼロ）\n- $\\alpha$ … 1 回でどのくらい強く押すか（ステップサイズ。論文では 0.2〜1.0 くらい）\n- $n$ … 押す回数（論文では 30〜200 回）\n- $\\nabla_{s_t} V_\\phi(\\cdot)$ … 「状態を少しだけ変えたら $V$ がどっち向きにどれくらい増えるか」を表す向き（勾配 ＝ 坂の傾き）。$\\phi$ は価値関数の中身のパラメータ\n- $V_\\phi$ … 学習済みの価値関数（さっきの「すごろくマスの予想表」を実物にしたもの）\n\n**身近な例え**: 暗い丘の上で、足元の傾きだけを頼りに頂上を目指す感じ。一気に走ると崖から落ちるので、ほんの 1 歩ずつ慎重に登る（$\\alpha$ を小さく、$n$ を少なく抑える）。これで「元の場所から離れすぎず、でも少しだけ高い場所」へ移れる。\n\n## 何がすごいの？\n\n- **使ったテストデータ**: HH-RLHF（Anthropic 社が出した「親切で害のない返事」を集めたデータ）、Stanford SHP（人間が良い返事を選んだデータ）、OOD 用に HarmfulQA（わざと意地悪な質問を集めたデータ）。\n- **使った AI 本体**: Vicuna-7B、Falcon-7B-Instruct、Llama3-8B-Instruct（どれも公開済みのチャット用 LLM）。\n- **採点指標**: Diversity（同じ言い回しを繰り返さないか）、Coherence（質問とちゃんと噛み合った答えか）、Average Reward（報酬モデルの平均点）、Win Rate（GPT-4 に審判をやらせて「どっちの返事がいい？」と聞いた勝率。300 問で実施）、Inference Time（しゃべるのにかかった時間）。\n- **数字での結果**（HH-RLHF・Vicuna-7B のとき）:\n  - Base（何もしない）: 勝率 **57.6%**、平均報酬 5.894、時間 0.60h\n  - 提案手法 Re-Control: 勝率 **75.6%**、平均報酬 6.214、時間 0.85h\n  - Re-Control ＋ プロンプト工夫: 勝率 **80.3%**、平均報酬 6.267\n- **他の手法との比較**:\n  - 一番強いライバル「Controlled Decoding (CD)」と比べて、Re-Control は **約 20 倍速い**（47.43h → 0.85h）。CD は同時に複数文を作る並列処理ができない欠点もある。\n  - 固定ベクトルを足すだけの「Static RE（静的な表現の書き換え）」より勝率が **+10〜+25 ポイント** 改善。\n  - LoRA（小さな追加部品で AI を直す方法）を使った PPO・DPO ともほぼ互角（Fig.fig:ppo）。つまり「再教育」と「軽量な制御」がほぼ同じ結果まで来ている。\n- **OOD（学習していない種類のデータ）でも有効**: HarmfulQA でも Re-Control＋Prompting が一番高い勝率（Fig.fig:ood）。\n- **著者が「貢献」として挙げていること**:\n  1. AI を「時間で変わる確率的なシステム」とみなして、表現の書き換えを**最適制御問題**として定式化した。\n  2. 価値関数を AI の頭の中の数字（隠れ状態）の上に学習して、テスト時に勾配で動的な押し方を決める枠組み Re-Control を提案した。\n  3. 既存の test-time 手法より良く、しかも超高速（CD の 1/20）、再教育（LoRA PPO/DPO）にも見劣りしない、と実験で示した。\n\n## キーワード辞典\n\n- **LLM（Large Language Model）** … 大量の文章を読んで覚えた、巨大な「次の単語を予想する機械」。ChatGPT もこれ。\n- **alignment（アラインメント）** … AI を「人間が望む方向」に揃えること（やさしい・正直など）。\n- **autoregressive（自己回帰）** … 「いま出した単語を入力にして、次の単語を出す」を文末まで繰り返す作り方。\n- **hidden state（隠れ状態）** … AI の頭の中にある、考えを表す数字の塊。読めないけど計算には大事な「メモ」。\n- **fine-tuning（ファインチューニング）** … 既存の AI を、別のデータでちょっとだけ作り直すこと。\n- **RLHF** … Reinforcement Learning from Human Feedback ＝ 「人間の好み」を報酬にして強化学習で AI を直す方法。\n- **PPO** … Proximal Policy Optimization ＝ 強化学習でよく使われる安定したアルゴリズム。\n- **DPO** … Direct Preference Optimization ＝ 強化学習を使わずに、人間の好みデータから直接 AI を直す方法。\n- **LoRA** … 大きな AI 全部を直さず、小さな「貼り紙」みたいな追加部品を学習する軽量化テクニック。\n- **prompt engineering** … 質問文の書き方を工夫して、AI に良い返事をさせる手法。\n- **guided decoding / controlled decoding (CD)** … 単語を選ぶときに「報酬モデル」のスコアを使って良さそうな単語を選ぶ手法。\n- **reward model（報酬モデル）** … 出来上がった文章を採点する別の小さな AI。\n- **representation editing（表現の書き換え）** … AI の頭の中の数字を、外からこっそり書き換えて方向を変えるテクニック。\n- **value function（価値関数）** … 「いまの状態から最終的に何点もらえそうか」を予想する小さな関数。\n- **Bellman 方程式** … 「いまの価値 ＝ 次の瞬間の価値の見込み」というふうに価値をつなぐ式。\n- **policy iteration（方策反復）** … 「いまのやり方の良さを測る → やり方を更新する」を交互に繰り返して最適に近づける手順。この論文は **1 回だけ** やる。\n- **gradient ascent（勾配上昇）** … 関数の値が大きくなる方向に少しずつ動いて高い場所を目指す方法。\n- **EOS（End-Of-Sentence）** … 「ここで文が終わり」を表す特別な記号。\n- **OOD（Out-Of-Distribution）** … 学習データに無かった種類のデータ。\n- **GPT-4 as judge** … 「どっちの返事がいい？」を GPT-4 に判定させる評価方法。\n- **diversity / coherence** … 文の多様さ・話のつじつまの合い具合（生成文の質を測る指標）。\n- **reward hacking（報酬ハッキング）** … 採点ルールの抜け穴を突いて、見かけ上だけ高得点を取る現象。意味不明だけど報酬モデルが好きそうな文を出すなど。\n- **implicit regularization（暗黙の正則化）** … 損失関数に罰金項を書かなくても、ステップサイズや更新回数を小さく抑えるだけで「やりすぎ防止」が自然に効くこと。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **「1 回だけの方策反復」の意味**: 本来の policy iteration は「価値の評価 → 行動の改善」を何度もくり返して最適に近づく。この論文は最初の行動を「何もしない（$u_t=0$）」に固定し、その下で価値関数だけ学習する。**つまり「元のモデルの分布の下での価値」を 1 回学んで終わり**。これだけで test-time にちょっと押すだけで効くのが面白いところ。\n- **介入は最終層の $o_t$ だけ**: $h_t$（過去すべての key-value）に手を入れると次元が膨大になるので、論文では出力直前の $o_t$ にだけ押す力を入れる。価値関数は隠れ次元 4096 の 2〜3 層 MLP。これで充分強いという報告。\n- **報酬ハッキングの観察**: 押す回数 $n$ を増やしたり、$\\alpha$ を大きくすると、平均報酬は上がるけど Diversity・Coherence がほぼ 0 まで落ちる領域がある（Fig.fig:parameter）。validation set で「3 指標の和」を最大化する $\\alpha, n$ を選ぶヒューリスティクス。\n  - HH-RLHF: Vicuna $\\alpha=0.5, n=30$、Falcon $\\alpha=0.2, n=200$\n  - SHP: Vicuna $\\alpha=1.0, n=50$、Llama3 $\\alpha=1.0, n=30$\n- **学習設定**: Adam（よく使われる最適化アルゴリズム）, 学習率 $10^{-4}$, バッチ 512, fp16, 100 エポック、NVIDIA A100 80GB。\n- **著者自身が認める限界（appendix A）**:\n  1. 最終層のみへの介入で、複数層 / 低ランク部分空間への一般化は未着手\n  2. 単一の報酬による単目的最適化（helpful × harmless の多目的化はまだ）\n  3. 1 反復の policy iteration なので最適性の理論保証はない\n- **GPT-4 を審判にした評価のバイアス**: 報酬モデルも GPT-4 も同じ「人間の好み」ベースなので、両者が相関して数字が良く見えやすい。人手評価は今回入っていない、という点は読み手としては要注意。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2406.05954v3/`\n- 正規ノート: `notes/arXiv-2406.05954v3.md`\n";
+const MACROS = {"\\ours": "\\textsc{Re-Control}\\xspace", "\\yq": "\\textcolor{red}{[\\textbf{Yuanqi}: #1]}", "\\yue": "\\textcolor{cyan}{[\\textbf{Yue}: #1]}", "\\lk": "\\textcolor{red}{[\\textbf{Lingkai}: #1]}", "\\figleft": "{\\em (Left)}", "\\figcenter": "{\\em (Center)}", "\\figright": "{\\em (Right)}", "\\figtop": "{\\em (Top)}", "\\figbottom": "{\\em (Bottom)}", "\\captiona": "{\\em (a)}", "\\captionb": "{\\em (b)}", "\\captionc": "{\\em (c)}", "\\captiond": "{\\em (d)}", "\\newterm": "{\\bf #1}", "\\train": "\\mathcal{D}", "\\valid": "\\mathcal{D_{\\mathrm{valid}}}", "\\test": "\\mathcal{D_{\\mathrm{test}}}", "\\tens": "\\bm{\\mathsfit{#1}}", "\\etens": "\\mathsfit{#1}", "\\pdata": "p_{\\rm{data}}", "\\ptrain": "\\hat{p}_{\\rm{data}}", "\\Ptrain": "\\hat{P}_{\\rm{data}}", "\\pmodel": "p_{\\rm{model}}", "\\Pmodel": "P_{\\rm{model}}", "\\ptildemodel": "\\tilde{p}_{\\rm{model}}", "\\pencode": "p_{\\rm{encoder}}", "\\pdecode": "p_{\\rm{decoder}}", "\\precons": "p_{\\rm{reconstruct}}", "\\laplace": "\\mathrm{Laplace}", "\\E": "\\mathbb{E}", "\\Ls": "\\mathcal{L}", "\\R": "\\mathbb{R}", "\\emp": "\\tilde{p}", "\\lr": "\\alpha", "\\reg": "\\lambda", "\\rect": "\\mathrm{rectifier}", "\\softmax": "\\mathrm{softmax}", "\\sigmoid": "\\sigma", "\\softplus": "\\zeta", "\\KL": "D_{\\mathrm{KL}}", "\\Var": "\\mathrm{Var}", "\\standarderror": "\\mathrm{SE}", "\\Cov": "\\mathrm{Cov}", "\\normlzero": "L^0", "\\normlone": "L^1", "\\normltwo": "L^2", "\\normlp": "L^p", "\\normmax": "L^\\infty", "\\parents": "Pa", "\\transpose": "{\\mathrm{T}}", "\\argmax": "\\operatorname{arg\\,max}", "\\argmin": "\\operatorname{arg\\,min}", "\\sign": "\\operatorname{sign}", "\\Tr": "\\operatorname{Tr}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

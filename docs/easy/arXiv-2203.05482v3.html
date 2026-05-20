@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Model soups: averaging weights of multiple fine-tuned models improves accuracy without increasing inference time（モデル・スープ：たくさんの微調整モデルの「中身の数字」を平均するだけで賢くなる）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2203.05482v3.md</code>
+  &nbsp;|&nbsp; macros: <code>27</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Model soups: averaging weights of multiple fine-tuned models improves accuracy without increasing inference time（モデル・スープ：たくさんの微調整モデルの「中身の数字」を平均するだけで賢くなる）\n\n- arXiv: https://arxiv.org/abs/2203.05482\n- 一次ソース: ../papers/arXiv-2203.05482v3/\n- 正規ノート: ../notes/arXiv-2203.05482v3.md\n\n---\n\n## 一言で言うと\n\n捨てていた「ハズレ調整モデル」たちの中身の数字を平均するだけで、画像分類のチャンピオン（90.94%）になれた、という話。\n\n## どんな問題を解こうとしてるの？\n\n- AI（ここでは画像を見て「犬」「猫」とか答えるニューラルネットワーク。← これは「写真をたくさん見せて答え方を覚えこませた巨大な計算機」のこと）を作るとき、研究者はふつう「設定をちょっとずつ変えて何十回も学習し直し、いちばん成績の良かった 1 個だけを採用して残りは捨てる」というやり方をします。\n- でも捨てた“ハズレ”の中にも、テストには出なかったけど他の問題なら得意、というモデルが混じっているはず。これを再利用したい。\n- ふつうに使う方法は **アンサンブル**（← 複数モデルにそれぞれ答えさせて多数決する方法）ですが、これだと答えるたびに 10 個・20 個の AI を全部動かすので、本番運用のコスト（時間・電気代）が 10 倍・20 倍に膨らみます。\n- さらに、CLIP のような巨大事前学習モデル（← ネットの画像と文章のペアを大量に見せて、画像の意味をざっくり理解させた“素の AI”）は、特定のデータで微調整（fine-tuning ← 素の AI に特定の仕事を覚えさせるための追加練習）すると、見たことのない種類の画像（OOD ← out-of-distribution、訓練中に出てこなかった様子の画像）にかえって弱くなる、という困った副作用もある。\n- つまり「答えを出すコストはそのまま」「ハズレも活かす」「未知の画像にも強い」をぜんぶ満たす方法が欲しい。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n複数のモデルの **重み**（← AI の中身にぎっしり詰まっている何百万〜何十億個の数字。AI の「記憶」そのもの）を、ふつうの算数の平均でならしてしまう、というアイデアです。出来上がった 1 個の AI を「モデル・スープ」と呼びます。スープ＝いろんな具を 1 つの鍋に入れて混ぜる、という比喩。\n\n例え話：同じレシピで料理を作る 10 人のシェフがいて、塩の量や火加減を少しずつ変えて 10 皿のスープを作ったとします。ふつうは「いちばん美味しかった 1 皿」だけを採用しますが、この論文がやるのは「10 皿を全部混ぜて 1 つの大鍋にする」。すると、たまたまどれか 1 皿の偏った味が打ち消されて、結果としていちばん美味しいスープになることがある、という発想です。\n\nなぜそれでうまくいくかというと、同じ “素の AI”（事前学習モデル）から出発して微調整したモデルたちは、似た場所（同じ「谷」）の中に着地している、ということが先行研究で分かっていたから。同じ谷の底にいるモデル同士なら、中身の数字を直線的に混ぜても変なところに飛び出さない、というのがこの方法の土台です。\n\n### 仕組み\n\n- step1: 1 個の事前学習モデル（素の AI）を用意する。例：CLIP、ALIGN、ViT-G。\n- step2: 学習率（← 1 歩でどれくらい大きく中身を書き換えるかの設定）・学習回数・データ加工の仕方などを少しずつ変えて、何十回も微調整を実行する。たとえば 72 個・58 個など。\n- step3: 出来上がった重み $\\theta_1, \\theta_2, \\dots, \\theta_k$ を集める。\n- step4: 以下のどれかで 1 個のスープを作る。\n  - **Uniform soup（均一スープ）**: 全部を単純平均。簡単だけど、ハズレが 1 個でも混ざると味が崩れる。\n  - **Greedy soup（よくばりスープ）**: ← 本命。検証用データ（← 訓練にも本番テストにも使っていない、味見専用の問題セット）での点数が高い順にモデルを並べ、上から 1 個ずつスープに足すか試す。足してみて検証点が下がるなら入れない、上がる/変わらないなら入れる。\n  - **Learned soup（学習スープ）**: 付録で紹介。混ぜる比率を計算で最適化する版。全モデルをメモリに同時に置く必要があり、大きいモデルでは現実的に使いにくい。\n- step5: 出来上がった 1 個のスープを、いつもの 1 モデルと同じ速さで動かして本番テスト。\n\n### 主要な数式\n\n#### 1) スープの作り方そのもの\n\n$$ \\theta_{\\mathcal{S}} = \\frac{1}{|\\mathcal{S}|}\\sum_{i \\in \\mathcal{S}} \\theta_i $$\n\n**この式が言ってること**: 選ばれたモデルたちの「中身の数字」を全部足して、選ばれた個数で割るよ。要するに算数の平均。\n\n**記号の意味**:\n- $\\theta_i$ … i 番目に微調整した AI の中身の数字ぜんぶ。何百万個もの数字がギューッとまとまった束だと思えば OK。\n- $\\mathcal{S}$ … スープに入れるモデルの番号の集まり（たとえば「1 番と 3 番と 5 番」みたいな選抜リスト）。\n- $|\\mathcal{S}|$ … その選抜リストに入っているモデルの個数。\n- $\\theta_{\\mathcal{S}}$ … 平均してできた「スープ AI」の中身の数字。\n\n**身近な例え**: テストの平均点を出すのと同じ。3 人がそれぞれ 70 点・80 点・90 点なら平均は (70+80+90)/3 = 80 点。これを「中身の何百万個の数字すべてに対して同時にやる」のがこの式。\n\n#### 2) よくばりスープの判定ルール（Recipe 1 の中身）\n\n$$ \\mathsf{ValAcc}\\!\\left(\\mathsf{avg}(\\mathsf{ingredients} \\cup \\{\\theta_i\\})\\right) \\;\\ge\\; \\mathsf{ValAcc}\\!\\left(\\mathsf{avg}(\\mathsf{ingredients})\\right) $$\n\n**この式が言ってること**: 「今までに鍋に入れた具で作ったスープの味」と「そこに新しい具 $\\theta_i$ を足して作り直したスープの味」を比べて、新しい方が同じ以上に美味しいなら採用、落ちるなら捨てるよ、というルール。\n\n**記号の意味**:\n- $\\mathsf{ingredients}$ … いままで鍋に入れたモデルの集まり（途中経過の選抜リスト）。\n- $\\theta_i$ … 今から「足してみようか？」と試している候補のモデル。\n- $\\mathsf{avg}(\\cdot)$ … 中身の数字の平均（さっきの式 1 と同じこと）。\n- $\\mathsf{ValAcc}(\\cdot)$ … 検証用データでの正解率。味見テストの点数。\n\n**身近な例え**: お味噌汁を作っている途中で、新しい具材（豆腐）を入れるかどうか味見で決める感じ。入れて美味しくなる/変わらないなら採用、まずくなるなら鍋に入れず捨てる。最初に「美味しそうな具から順に」並べてあるので、最低でも「1 番美味しかった具 1 個だけのスープ」よりまずくはならない、というのがこの方法のミソ。\n\n#### 3) スープ vs アンサンブルの差を説明する近似式（論文の理論パート, Eq. 1）\n\n$$ \\mathcal{L}^{\\text{soup}}_\\alpha - \\mathcal{L}^{\\text{ens}}_\\alpha \\;\\approx\\; \\frac{\\alpha(1-\\alpha)}{2}\\left(-\\,\\partial^2_\\alpha \\mathcal{L}^{\\text{soup}} \\;+\\; \\beta^2 \\,\\mathbb{E}_x\\,\\mathrm{Var}_{Y \\sim p_{\\text{sftmx}}}[\\Delta f_Y]\\right) $$\n\n**この式が言ってること**: 「重みを平均するスープ」と「答えを多数決するアンサンブル」では、間違える割合（損失 ← AI がどれくらい間違えたかを数値化したもの。0 に近いほど良い）が少しズレるんだけど、そのズレは大まかに、(1) スープが谷底のどれくらい平らな場所にいるか、と (2) 予測がどれくらい自信を持っているか、の 2 つで決まるよ、ということを言っている近似式。\n\n**記号の意味**:\n- $\\mathcal{L}^{\\text{soup}}_\\alpha$ … スープの損失（=どれだけ間違えるかの値）。$\\alpha$ は 2 つのモデルをどんな比率で混ぜたかを表すツマミ（$\\alpha=0$ なら 1 個目だけ、$\\alpha=1$ なら 2 個目だけ、$\\alpha=0.5$ なら半々）。\n- $\\mathcal{L}^{\\text{ens}}_\\alpha$ … 同じ比率でアンサンブル（答えを混ぜる）したときの損失。\n- $\\alpha(1-\\alpha)$ … 混ぜ具合の項。ちょうど真ん中（0.5）で最大、端っこ（0 や 1）で 0 になる、山形の数。\n- $\\partial^2_\\alpha \\mathcal{L}^{\\text{soup}}$ … スープの損失を $\\alpha$ で「2 回曲がり方を見る」もの（← 中学生は「グラフがどれくらい曲がっているか」と思えば OK。平らなら 0 に近い、すごく谷ぐねぐねなら大きい）。マイナスがついているのは「平らなほどスープが有利」を意味する。\n- $\\beta^2$ … 予測の自信のスケールを表す係数。\n- $\\mathbb{E}_x[\\cdots]$ … 「いろんな画像 $x$ に対する平均」を表す記号。\n- $\\mathrm{Var}_{Y}[\\Delta f_Y]$ … 答え（クラス）のばらつき具合。AI が「これは犬！」と自信満々ならばらつきが小さく、「犬かも猫かも…」と迷っているとばらつきが大きい。\n\n**身近な例え**: 2 人の友だちがクラスの全員の身長を予想する場面を想像してね。「2 人の予想値を平均する」（＝スープ）と「2 人がそれぞれ予想して多数決っぽくまとめる」（＝アンサンブル）のは、ふつう違う結果になる。でも、(1) 2 人の予想がもともと近い（谷底が平ら）、(2) 2 人とも「これは絶対 160 cm！」と自信たっぷり、のどちらかなら、平均しても多数決してもほぼ同じ答えになる、というのと同じ理屈。\n\n> 注：この近似はモデル間のズレが小さい範囲で成り立つ式で、論文中でも「学習率がすごく大きくて初期値から遠く飛んだモデルでは近似が外れるので除外している」と明記されている（`fig:theory-eval`）。\n\n## 何がすごいの？\n\n### ImageNet 画像分類のチャンピオンを更新\n\n- **ViT-G/14（JFT-3B で事前学習した巨大モデル）** を ImageNet（← 100 万枚以上の画像に「これは犬」「これは飛行機」のラベルが付いた定番ベンチマーク）で 58 通りに微調整した結果（`tab:vit_g_finetuned_result`, `tab:jft`）:\n  - 検証で 1 位だった単体: **90.78%**、Avg shifts（5 種類の見たことない画像セット平均）: **84.68%**\n  - 全部混ぜた Uniform soup: ふつうは崩れることがある\n  - **Greedy soup（58 個から 14 個を選抜）: 90.94% / 85.02%** ← ID（同じ分布の本番）も OOD（未知分布）も両方勝った\n- 当時のチャンピオン CoAtNet-7（90.88%）を超え、しかも **本番の計算量（FLOPs）は 25% 少ない**。\n- 後で BASIC-L でも **90.98%** を達成し、CoCa と並ぶ（`tab:basic_finetuned_result`）。\n\n### CLIP・ALIGN でも改善\n\n- **CLIP ViT-B/32 を 72 個微調整**（`tab:results`）: 単体最良 80.38 / 47.83（ImageNet / 分布シフト平均） → Greedy soup **81.03 / 50.75**。アンサンブル（81.19 / 50.77）に肉薄。\n- **ALIGN EfficientNet-L2 を 12 個**: 単体最良比で +0.5 ポイント。\n\n### 画像じゃない問題でも効く\n\n- **NLP（自然言語処理 ← 文章を扱う AI の研究分野）** の T5 や BERT（← 文章を理解する有名モデル）でも、GLUE という英語の文章分類セットで多くのタスクが改善（`tab:nlp`）: たとえば T5 で MRPC 91.8→92.4、RTE 78.3→79.1、CoLA 58.8→60.2、SST-2 94.6→94.7。改善幅は画像より控えめ。\n\n### 別タスクの寄せ集めもアリ（cross-dataset soup）\n\n- CLIP の zero-shot 初期値 + CIFAR-10 / DTD / Food-101 / SUN397 / Cars / ImageNet の 6 種類で個別に微調整したモデルを混ぜると、**CIFAR-100（一度も見せていないデータセット）で +6.4 ポイント** 改善（`sec:zsperf`）。\n\n### 著者が「貢献」として挙げている主な点\n\n- (1) ハズレを含む微調整モデル群を「重み平均」だけで使い切る簡潔な手順（特に greedy soup）。\n- (2) ImageNet 90.94% という当時の最高記録。\n- (3) ID / OOD / 別タスク転移 / NLP / zero-shot にわたって有効と実証。\n- (4) スープとアンサンブルの差を「谷底の平らさ × 予測の自信」で説明する解析。\n- (5) WiSE-FT（zero-shot 初期値方向に少し戻すロバスト微調整法）と組み合わせ可能。\n\n## キーワード辞典\n\n- **重み**（weights）… ニューラルネットの「中身の数字」全部。何百万〜何十億個の数字の束。これがその AI の記憶そのもの。\n- **事前学習モデル**（pre-trained model）… ネットの大量データで先に「世界の様子」をざっくり覚えさせた“素の AI”。CLIP / ALIGN / ViT-G / BASIC などが本論文の登場人物。\n- **微調整 / fine-tuning** … 素の AI に、特定の仕事（例：ImageNet を当てる）を覚えさせる追加練習。\n- **ハイパーパラメータ**（hyperparameter, hp）… 学習中に AI が自分で動かす数字ではなく、「人間が手で決める設定値」。学習率・学習回数・データ加工の種類など。\n- **学習率**（learning rate, lr）… 1 歩で中身の数字をどれくらい大きく書き換えるかのツマミ。大きすぎると暴れる、小さすぎると進まない。\n- **検証セット**（validation set）… 訓練にも本番テストにも使わない「味見専用」のデータ。スープに入れるか決めるのに使う。\n- **アンサンブル**（ensemble）… 複数モデルにそれぞれ答えさせて結果をまとめる方法。賢いけど本番の計算コストがモデル数倍に増える。\n- **logit**（ロジット）… AI が最後に出す「クラスごとのスコア」生の数値。これを混ぜるのが logit ensemble。\n- **OOD / 分布シフト**（out-of-distribution）… 訓練で見せた画像とは様子が違うデータ。例：写真で訓練した AI にスケッチを見せる。\n- **ImageNet** … 1000 クラス・100 万枚以上の画像分類ベンチマーク。AI 画像認識の定番テスト。\n- **ImageNetV2 / -R / -Sketch / ObjectNet / ImageNet-A** … 元の ImageNet と同じカテゴリだけど画像の様子が違う、OOD 評価用の 5 セット。\n- **CLIP / ALIGN** … 画像と文章のペアで事前学習した有名モデル。文章だけで「これは犬の写真」と判定できる（zero-shot）。\n- **ViT**（Vision Transformer）… 画像を小さなパッチに切って Transformer（文章理解で有名な仕組み）に入れる画像 AI。\n- **ViT-G/14** … ViT のとても大きい版。JFT-3B（Google の超巨大画像データセット）で事前学習されている。\n- **JFT-3B** … Google 内部で使われる 30 億枚規模の画像データセット。\n- **BASIC / CoAtNet / CoCa** … 当時の SOTA を競った大規模画像モデル。\n- **GLUE** … 英語の文章分類タスクの詰め合わせ（MRPC、RTE、CoLA、SST-2 など）。NLP の定番。\n- **T5 / BERT** … 文章理解の代表的な事前学習済みモデル。\n- **basin**（バシン、谷）… 損失（間違え具合）を山と谷で描いたときの「同じ谷の底」。同じ谷の中なら直線で混ぜても落ちにくい、というのが土台。\n- **損失**（loss）… 「どれくらい間違えたか」を数値化したもの。小さいほど良い。\n- **zero-shot** … 練習なしでいきなり別の仕事に答えること。CLIP は文章で説明されたカテゴリにそのまま答えられる。\n- **SOTA**（State Of The Art）… 「いまの世界一」の意味。\n- **FLOPs** … 「答えを 1 回出すのに必要な計算回数」のおおざっぱな指標。\n- **SWA**（Stochastic Weight Averaging）… 1 回の学習の途中で重みを平均する古い手法。本論文は「別々の学習の重みを平均する」点で違う。\n- **EMA**（Exponential Moving Average）… 学習中の重みを少しずつ平均し続けるテクニック。論文では運用ノウハウとして言及。\n- **WiSE-FT** … 微調整後モデルと素の AI（zero-shot 初期値）を線形に混ぜる頑健化テクニック。soup と組み合わせ可。\n- **calibration**（キャリブレーション）… AI が「90% 自信ある」と言ったとき、本当に 9 割当たるかという正直さの指標。\n- **ECE**（Expected Calibration Error）… キャリブレーションのズレ具合の指標。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **なぜ「同じ谷」と言えるのか**：同じ事前学習重み $\\theta_0$ から出発した微調整モデルたちは、線形に補間しても性能が落ちないことが先行研究 (Neyshabur+ 2020) で観察されている。これが「重みの平均で大丈夫」の理論的支柱。逆に違う初期値から始めたモデル同士を平均すると壊れる（Frankle+ 2020 の Linear Mode Connectivity の話と対照的）。\n- **多様性のソース**：論文 `fig:angles` によると、ハイパーパラメータを大きく散らすほど、$\\theta_1-\\theta_0$ と $\\theta_2-\\theta_0$ の角度 $\\phi$ が大きくなり、平均することのメリットも上がる。seed（乱数の種）だけを変えても角度はあまり広がらず、効果は限定的。lr・データ加工・正則化を散らすのが効く。\n- **Uniform soup が壊れる理由**：lr が大きすぎたモデルは谷から飛び出していて、平均に入れると全体が引っ張られる。Greedy soup なら検証点が下がる時点で弾けるので大丈夫。\n- **理論パート（§4）の意味**：スープとアンサンブルの差は「谷の平らさ（2 階微分 = 曲がり具合）」と「予測の自信（softmax の分散）」の 2 項で書ける。だから (a) フラットな谷にいる + (b) 自信のある予測、のときは両者が一致。逆に高 lr 領域で近似は外れる、と論文も明示。\n- **限界**（`sec:lim`）:\n  - ImageNet-22k 事前学習だと改善幅は小さい（事前学習の規模と多様性が soup の効きを決める）。\n  - **キャリブレーション（自信の正直さ）は改善しない**。安全性が要る応用では soup だけだと足りない。\n  - greedy soup は「検証セットで k 回評価する」ので、巨大モデル + 大量候補ではこの味見コスト自体も無視できない。\n- **運用ノウハウ**：ViT-G の実験では 2 種類の EMA（decay 0.999 と 0.9999999）を保存し、「単体最良は high-EMA、soup/ensemble は low-EMA」が良かったと書かれている。\n- **WiSE-FT との重ね技**（`sec:robustft`）：soup でまとめたあと、さらに zero-shot 初期値方向に少し戻すと OOD がより改善する。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2203.05482v3/`\n- 正規ノート: `notes/arXiv-2203.05482v3.md`\n";
+const MACROS = {"\\ones": "\\mathbf{1}", "\\sbv": "e^{(#1)}", "\\theHalgorithm": "\\arabic{algorithm}", "\\citeg": "\\citep[e.g.,][]{#1}", "\\ALG@name": "Recipe", "\\yair": "\\todo{Yair: #1}", "\\hong": "\\todo{Hong: #1}", "\\rapha": "\\todo{Rapha: #1}", "\\mitchell": "\\todo{Mitchell: #1}", "\\floatpagefraction": ".9", "\\arraystretch": "1.15", "\\grad": "\\nabla", "\\hess": "\\nabla^{2}", "\\R": "\\mathbb{R}", "\\E": "\\mathbb{E}", "\\err": "\\mathrm{err}", "\\errens": "\\mathrm{err}^{\\mathrm{ens}}", "\\fose": "f_\\alpha^{\\mathrm{ens}}", "\\fwse": "f_\\alpha^{\\mathrm{soup}}", "\\defeq": "\\coloneqq", "\\indic": "1{\\{#1\\}}", "\\exloss": "\\mathcal{L}^{\\mathrm{soup}}", "\\exlossens": "\\mathcal{L}^{\\mathrm{ens}}", "\\d": "\\mathrm{d}", "\\softmax": "p_\\mathrm{sftmx}", "\\argmin": "\\operatorname{arg\\,min}", "\\argmax": "\\operatorname{arg\\,max}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

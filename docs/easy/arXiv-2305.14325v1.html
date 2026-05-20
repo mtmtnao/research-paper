@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Improving Factuality and Reasoning in Language Models through Multiagent Debate（複数の AI に「会議」させて、答えの正しさと事実の正確さを上げる方法）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2305.14325v1.md</code>
+  &nbsp;|&nbsp; macros: <code>9</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Improving Factuality and Reasoning in Language Models through Multiagent Debate（複数の AI に「会議」させて、答えの正しさと事実の正確さを上げる方法）\n\n- arXiv: https://arxiv.org/abs/2305.14325\n- 一次ソース: ../papers/arXiv-2305.14325v1/\n- 正規ノート: ../notes/arXiv-2305.14325v1.md\n\n---\n\n## 一言で言うと\n\n同じ AI を 3 人くらい用意して、お互いの答えを見せ合いながら何回か「会議」させると、1 人で答えるより正解率が上がるよ、という話。\n\n## どんな問題を解こうとしてるの？\n\n- **現実の困りごと**: ChatGPT のような AI（大規模言語モデル、LLM = Large Language Model。たくさんの文章を読んで学習した、文章を作る AI のこと）は、自信たっぷりに **間違いを言う** ことがある。\n  - たとえば「有名な研究者の経歴を書いて」と頼むと、ありそうな所属や年号を堂々とでっちあげる。これを「hallucination（ハルシネーション、幻覚）」と呼ぶ。\n  - 算数の問題でも、途中で計算をミスっても自信満々に答える。\n- **これまでのやり方の何が足りなかったか**:\n  - 「もう一回見直してね」と言うだけ（**self-reflection** = 自分の答えを自分で批判して書き直すこと）でも、1 人で考えている以上、間違ったままの思い込みが直らないことが多い。\n  - 「同じ AI に何回も答えさせて多数決を取る」（**majority voting** = 多数決）も、みんなが同じ思い込みをしていたら間違いが量産されるだけ。\n  - つまり、これまでの工夫はぜんぶ **「1 人の AI の頭の中」** をいじる話だった。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n学校のテスト勉強で、自分 1 人で答え合わせするより、3 人の友達と「いや、こっちじゃない？」「待って、その式おかしくない？」と話し合った方が、最終的にみんなで正しい答えにたどり着くことがあるよね。\n\nこれを AI でやる、というのがこの論文のアイデア。同じ ChatGPT を 3 人 ぶん用意して、それぞれに同じ問題を解かせる → お互いの答えを見せて「他の人の答えを参考にして、もう一回答え直して」と頼む → これを 2 回繰り返す。これだけ。\n\nこの発想は、認知科学者ミンスキーの本『**Society of Mind**（心の社会）』から来ていて、「賢さは 1 つの大きな頭脳ではなく、たくさんの小さなエージェント（働き手）の話し合いから生まれる」という考え方を AI に持ち込んだもの。\n\n### 仕組み\n\n- **step1**: AI を N 人（論文では基本 3 人）用意する。みんな中身は同じ ChatGPT。\n- **step2**: 全員に同じ問題を出して、それぞれ別々に答えを書かせる。最初なので答えはバラバラになりがち。\n- **step3**: 「他の人の答えはこうでした」と全員の答えをくっつけて、各 AI に渡す。そして「他の人の答えも見て、自分の答えを更新して」と頼む。これが「**consensus prompt**（合意うながしプロンプト。prompt = AI への指示文）」。\n- **step4**: step3 を 2 回（=2 round）くりかえす。\n- **step5**: 最終的に全員が同じ答えに落ち着いたら、それを最終回答とする。\n\nポイント:\n- 「**black-box**（中身が見えない箱）」のままで使える。AI の内部の数字（確率や勾配）には一切アクセスしなくて OK。普通の API（外から話しかける窓口）越しで動く。\n- 全タスクで **同じプロンプト** を使う。問題ごとに調整しなくていい。\n- **CoT**（Chain-of-Thought = 「順を追って考えて」と指示するテクニック）など、他のプロンプト工夫と **同時に併用できる**。\n- プロンプトを「他の人の意見を尊重しろ」風にすると早く合意するけど精度は下がり、「自分の根拠は曲げるな」風（**stubborn** = 頑固）にすると合意までは長くなるけど精度は上がる、と論文は報告している。\n\n### 主要な数式\n\nこの論文はほぼ「やり方のレシピ」を書いた論文で、新しい数式というものは出てこない。method 章にあるのは導入のための「直角三角形の面積」の話くらい。\n\n論文の method §2.1 にある「**面積の出し方を 2 通り試してみる**」というたとえ話を、そのまま 1 つの式として味わってみよう。これは AI ではなく、私たち人間がテストで検算するときの話だ。\n\n$$\n\\text{面積} = \\tfrac{1}{2} \\times 3 \\times 4\n$$\n\n**この式が言ってること**: 辺の長さが 3, 4, 5 の直角三角形の面積を、「底辺 × 高さ ÷ 2」で出している。答えは 6。\n\n**記号の意味**:\n- $3$ … 直角をはさむ片方の辺の長さ\n- $4$ … 直角をはさむもう片方の辺の長さ\n- $\\tfrac{1}{2}$ … 「÷ 2」のこと。三角形は同じ大きさの長方形の半分だから 2 で割る\n\n**身近な例え**: 折り紙で作った長方形を斜めにハサミで半分に切ると、できる三角形 1 枚は長方形 1 枚の半分の大きさになる。だから「タテ × ヨコ ÷ 2」。\n\n論文ではこのあと「同じ三角形を、こんどはサイン（三角形の角度から辺の比を出す関数）を使った別の式でも計算してみて、両方の答えが合えば自信が出る。違ったら考え直す」という話に進む。これがそのまま **複数 AI に同じ問題を別々に解かせて答えを突き合わせる** という研究のたとえになっている、という導入。\n\n（※ method §2.1 の本文中には「$0.5 \\times 3 \\times 4 = 64$」と書かれているが、正しくは 6。本文のタイポと思われる。TeX のそのままの記述として残しておく。）\n\n## 何がすごいの？\n\n論文は **6 つのタスク** で実験している。すべて ChatGPT を使い、3 agent × 2 round の debate 設定。\n\n**推論タスク**（Table 1, reasoning）。Single Agent = 1 人で答えるベースライン、Reflection = 自分の答えを自分で見直す、Majority = 多数決、Debate = 提案手法。\n\n- **Arithmetic**（2 桁の数を 6 個つなげた計算問題、例: `12+15*21+0-3*27` を解く）: 67.0% → **81.8%**\n- **GSM8K**（小学生レベルの文章題ベンチマーク）: 77.0% → **85.0%**\n- **Chess Move Prediction**（チェスの次の一手をどれだけ良い手にできるか。$\\Delta$PS = pawn score の差 = ポーン何個ぶん有利か、を Stockfish という強いチェス AI に評価させた値）: 91.4 → **122.9**\n\n**事実タスク**（Table 2, factuality）。Majority は答えの形が比較しづらいので除外。\n\n- **Biographies**（著者らが新しく作った、有名計算機科学者 **524 人** の経歴ベンチマーク）: 66.0% → **73.8%**\n- **MMLU**（57 教科のクイズ集ベンチマーク。Massive Multitask Language Understanding の略）: 63.9% → **71.1%**\n- **Chess Move Validity**（チェスのルール上「そもそも動かせる手」を出せるか。BIG-Bench Chess-State Tracking から）: 29.3% → **45.2%**\n\n特に注目ポイント:\n- **Reflection が逆効果のことがある**: MMLU では Reflection は 63.9 → **57.7** と下げてしまう。一方 Debate は上げる。1 人で見直すと逆に間違いを増やす場面でも、複数で話すなら効くということ。\n- **agent 数・round 数を増やすほど精度が上がる**（Arithmetic では round 4 で頭打ち）。\n- **異なる AI 同士でも効く**: GSM8K 20 問で ChatGPT 単独 14 問正解、Bard（Google の AI）単独 11 問、両者で議論させたら **17 問** 正解。\n- **persona（役割設定）を変えると伸びる**: MMLU で「あなたは数学者」「あなたは医者」「あなたは教授」と AI ごとに違う役を与えると、71.1 → **74.2%**。\n- **要約してから渡すと効率も精度も上がる**: agent が増えると他人の答えを全部つなげると長くなりすぎるので、いったん要約してから渡す。これは速くなるだけでなく精度も上がった。\n\n著者が「貢献（contribution）」として挙げている 3 点:\n1. 黒箱 LLM だけで使える multi-agent debate という新手法を提案した。\n2. 事実性ベンチマーク（計算機科学者 524 人の経歴）を新規に作った。\n3. agent 数・round 数・プロンプトの「頑固さ」・要約・persona 設定・異種モデル混合について、網羅的に効果を調べた。\n\n## キーワード辞典\n\n- **LLM**（Large Language Model、大規模言語モデル） … 大量の文章を読んで「次の単語」を当てる練習をしたことで、文章を書けるようになった AI。ChatGPT や Bard が代表例。\n- **agent**（エージェント） … この論文では「1 人ぶんの LLM」のこと。全員中身は同じ ChatGPT でも、別々の答えを出すので別エージェントとして扱う。\n- **hallucination**（ハルシネーション、幻覚） … AI が、もっともらしいけど事実ではない情報を自信満々で言ってしまう現象。\n- **prompt**（プロンプト） … AI への指示文。「次の問題を解いて」「他の人の答えも見て答え直して」など。\n- **debate**（ディベート、議論） … この論文の中心アイデア。複数の AI に互いの答えを見せ合って答えを更新させること。\n- **consensus prompt**（合意うながしプロンプト） … 「他の人の答えを参考に、自分の答えを更新してください」と頼む指示文。\n- **round**（ラウンド） … debate を 1 周することを 1 round と数える。論文の基本は 2 round。\n- **black-box**（ブラックボックス） … 中が見えない箱。AI の内部数値にアクセスできず、外から問いかけて返事を読むだけの状態。\n- **CoT / Chain-of-Thought**（思考連鎖） … 「順を追って考えて」と頼むテクニック。途中の計算プロセスも書かせると正解率が上がる。\n- **zero-shot**（ゼロショット） … お手本を 1 つも見せずに「この問題を解いて」と頼むこと。\n- **self-reflection / reflection**（自己反省） … 1 人の AI に「自分の答えを批判してから書き直して」と頼む手法。\n- **majority voting**（多数決） … 同じ問題を複数回解かせて、一番多い答えを採用する手法。\n- **self-consistency**（自己一貫性） … 多数決に似た既存手法。同じ AI に何通りも答えを出させて多い答えを採用する。\n- **baseline**（ベースライン、比較基準） … 「新手法はこれより強い」と示すために並べる、既存・既知のシンプルな手法。\n- **GSM8K** … 小学生レベルの算数文章題を集めたベンチマーク（評価用問題集）。\n- **MMLU**（Massive Multitask Language Understanding） … 57 教科のクイズ集ベンチマーク。\n- **BIG-Bench** … 大規模な AI 評価ベンチマーク集。Chess-State Tracking はその中のチェス課題。\n- **Stockfish** … 世界最強クラスのチェスソフト。チェスの手の良さを点数化するのに使った。\n- **$\\Delta$PS / pawn score** … チェスでどれだけ有利かをポーン何個ぶん相当かで表した点数。\n- **stubbornness**（頑固さ） … この論文では、AI に「自分の答えを曲げにくくさせる」プロンプトのチューニング度合いのこと。\n- **persona**（ペルソナ） … 「あなたは数学者です」のように、AI に役割を与えるプロンプト。\n- **RLHF**（Reinforcement Learning from Human Feedback、人間のフィードバックによる強化学習） … 人間が「こっちの答えが好き」と教えて AI を矯正する学習方法。ChatGPT はこれで「人当たり良く」なっているせいで、debate でも譲りやすい、と論文は指摘。\n- **Society of Mind**（心の社会） … ミンスキーの本のタイトル。「賢さは多数の小さな働き手の協調から生まれる」という思想。\n- **distillation**（蒸留） … 強いモデルの出力を教師データにして、別の（または同じ）モデルを再学習させる手法。debate の出力を使えば自己改善ループになる、と discussion で示唆。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **debate は「正解を増幅する多数決」ではない**。論文の qualitative 例には、最初は **3 人とも間違えていた** のに、議論の途中で 1 人が他人のミスを指摘し、最終的に全員が正解にたどり着くケースが載っている（Figure: math_overview, chatgpt_bard）。これは多数決では絶対に起きない動き。\n- **「説得されやすさ」が confidence の代理指標になりうる**。論文の experiments 章で著者が観察したこと: 不確実な事実だと debate 中に意見をすぐ変えるが、確信のある事実は説得しても曲げない。一方で「自信ありますか？」と直接聞くと AI はいつも「あります」と答える。だから「**ease of persuasion**（説得されやすさ）」のほうが本当の自信度をよく表しているかもしれない、というのが面白い洞察。\n- **agent 数が増えると context（AI に渡せる文字数の窓）がパンクする**。そのため要約を挟む。論文では 5 人以上の実験では他人の発言を ChatGPT で要約してから渡している。\n- **限界**（discussion 章で著者自身が認めている）:\n  - debate が長くなると、AI が直近の発言しか見なくなる傾向がある。\n  - debate が誤答に収束しても、AI は「正しいと思います」と自信満々で言ってしまう。安全性が大事な場面では危ない。\n  - 計算コストが「agent 数 × round 数」で増える。1 人で答えるより明らかに重い。\n- **token 量を揃えた比較は論文中にない**。同じ計算予算を self-consistency や Tree-of-Thoughts などに振った場合との fair comparison（公平な比較）は今回の論文ではされていない、という注意点（これは正規ノートの指摘）。\n- **Biographies が計算機科学者 524 人に偏っている**。LLM の学習データに含まれやすい層なので、もっと無名な人物だと結果がどう変わるかは未検証（正規ノートの指摘）。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2305.14325v1/`\n- 正規ノート: `notes/arXiv-2305.14325v1.md`\n";
+const MACROS = {"\\model": "Ours\\xspace", "\\sect": "Section~\\ref{#1}", "\\ssect": "\\S~\\ref{#1}", "\\eqn": "Eqn~(\\ref{#1})", "\\fig": "Figure~\\ref{#1}", "\\tbl": "Table~\\ref{#1}", "\\myparagraph": "\\vspace{-8pt}\\paragraph{#1}", "\\myitem": "\\vspace{-3pt}\\item", "\\im": "\\emph{\\textcolor{blue}{Igor: #1}}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

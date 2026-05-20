@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>LoRA: 巨大な言語モデルを「ちょい足し」で覚え直させる方法（日本語パラフレーズ）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2106.09685v2.md</code>
+  &nbsp;|&nbsp; macros: <code>55</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# LoRA: 巨大な言語モデルを「ちょい足し」で覚え直させる方法（日本語パラフレーズ）\n\n- arXiv: https://arxiv.org/abs/2106.09685\n- 一次ソース: ../papers/arXiv-2106.09685v2/\n- 正規ノート: ../notes/arXiv-2106.09685v2.md\n\n---\n\n## 一言で言うと\n\n巨大な AI 本体は凍らせたまま、小さな「差分メモ」だけを学習することで、ほぼ同じ性能を 1 万分の 1 のサイズで実現する技。\n\n## どんな問題を解こうとしてるの？\n\n- **現実の困りごと**: GPT-3 という巨大な AI には、設定値（パラメータ）が 1,750 億個もある。これを新しい仕事（たとえば「英語を SQL という命令文に直す」「文章を要約する」）ごとに丸ごと覚え直させると、仕事の数だけ 1,750 億個のコピーが必要になる。ファイル 1 個で 350 GB。100 個のタスクをこなしたいだけで 35 TB（テラバイト）。家庭のパソコンどころか普通のサーバでも置く場所がない。\n  - 例えるなら、辞書を 1 冊ぜんぶ書き写してから、たった 1 ページだけ書き加える、を 100 回繰り返すようなもの。ムダすぎる。\n- **これまでのやり方の弱点**:\n  - **アダプター方式**（モデルの中に小さな部品を挟む）→ 部品を通る分だけ計算が遅くなる。論文の実験では、バッチ 1・文長 128 の条件で最大 +30.3%（Adapter$^H$）の遅延（Table 1）。\n  - **プロンプト方式 / プレフィックス方式**（入力の頭に学習用の合言葉を付ける）→ 合言葉が入力枠を食ってしまうし、調整が不安定。\n  - どちらも、本気でフルに覚え直したとき（full fine-tuning）の性能にはなかなか届かない。\n\n> 補足:\n> - **AI / ニューラルネットワーク**: 数を入れたら数が出てくる、巨大な計算機。入力に対して「次にくる単語は何か」を予測するように、たくさんの掛け算と足し算をする。\n> - **パラメータ**: その計算機の中にある「ツマミ」。1,750 億個もある。学習とは、このツマミを少しずつ回して答えを正しくしていくこと。\n> - **fine-tuning（ファインチューニング）**: あらかじめ大量の文章で訓練した AI を、特定の仕事用に追加で訓練すること。「ぜんぶのツマミを回し直す」のが full fine-tuning。\n> - **Transformer（トランスフォーマー）**: いまの言語 AI のほぼ全てが採用している土台の設計。「自己注意」という仕組みで、文の中の単語同士の関係をうまく拾える。GPT-3 もこの仲間。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n著者たちの直感は「**新しい仕事を覚えるときの変化は、見た目ほど複雑じゃない。実は薄っぺらい**」というもの。\nたとえばあなたが「英語ペラペラの友人」だったとして、新しいゲームのルールを覚えるのに頭の中身を全部書き換える必要はないですよね。「このゲームでは \"run\" は走るじゃなくて \"実行する\" の意味」みたいな、**ちょっとした補正メモ**さえあれば足りる。\n\nLoRA は、AI の本体（巨大な数の表）をそのまま凍らせて、その**横に小さなメモ用紙を 2 枚だけ用意**する。新しい仕事を覚えるときは、この 2 枚のメモにだけ書き込む。本体は一切いじらない。仕事を切り替えたいときは、メモ用紙を別のものに差し替えるだけ。\n\n### 仕組み\n\n- **step 1**: 元の重み行列 $W_0$（巨大な数の表。$d$ 行 × $k$ 列）を**凍結する**。一切いじらない。\n- **step 2**: その隣に「差分メモ」 $\\Delta W$ を用意する。これを 2 つの薄い表 $B$（$d$ 行 × $r$ 列）と $A$（$r$ 行 × $k$ 列）の掛け算 $BA$ で作る。$r$ は 1 や 2 みたいなとても小さい数。\n- **step 3**: 入力 $x$ に対し、本来の出力 $W_0 x$ に、差分メモを通した出力 $BA x$ を**足す**だけ。\n- **step 4**: 学習中は $W_0$ には触らず、$A$ と $B$ だけを更新する。$A$ は乱数で初期化、$B$ はゼロで初期化。だから最初は $BA = 0$（差分なし）から始まる。\n- **step 5**: 出力を $\\alpha/r$ という倍率で薄めて足す（$r$ を変えても再調整が不要になる工夫）。\n- **step 6**: AI を実際に使う本番のときは $W = W_0 + BA$ と**事前に足し合わせて 1 つの表にまとめる**ことができる。だから推論（AI を動かす）時に余計な計算が 0 で、まったく遅くならない。\n- **step 7**: 仕事を切り替えたければ、$BA$ を引き算で取り除き、別の $B'A'$ を足し直すだけ。\n\n> 補足:\n> - **行列**: 数を縦横に並べた表。中学生はベクトル（数を順番に並べたもの。住所の数字みたいに、複数の数で 1 つの物を表す道具）も行列もまだ習っていない。ここではただの「数の表」だと思って OK。\n> - **行列の掛け算**: 表 A と表 B を「決まったルール」で混ぜて、別の表を作る計算。AI の中では、これを大量に繰り返している。\n> - **ランク（rank）**: その表が「実はどれだけ薄い情報か」を測る指標。1,000 行 1,000 列の大きな表でも、中身が「掛け算で 1 列ぶんに分解できる」なら、本当の情報量は 1 列ぶんしかない。これを「ランクが低い（low-rank）」という。LoRA の \"LR\" がこれ。\n\n### 主要な数式\n\n#### 数式 1: LoRA の本体（順方向の計算）\n\n$$ h = W_0 x + \\Delta W x = W_0 x + BA x $$\n\n**この式が言ってること**: 入力 $x$ に対して、AI が出す答え $h$ は「元の AI が出す答え $W_0 x$」と「差分メモが付け足す答え $BAx$」の足し算でできているよ。元の AI は何も変わらず、差分メモぶんだけ答えが補正される。\n\n**記号の意味**:\n- $x$ … AI に入れる数の並び（たとえば単語 1 個ぶんを表す数たち）\n- $W_0$ … 元から訓練済みの巨大な数の表。一切変えない（凍結）\n- $\\Delta W$ … 新しい仕事を覚えるための「差分」の表。$BA$ で作る\n- $B$ … 縦に細長い表（$d$ 行 × $r$ 列）。最初は全部 0\n- $A$ … 横に細長い表（$r$ 行 × $k$ 列）。最初は乱数で軽くバラつかせる\n- $r$ … メモの「薄さ」を決める数。1 とか 2 とか 4 みたいに小さい\n- $h$ … AI が出す答え（数の並び）\n\n**身近な例え**: 数学の教科書（$W_0 x$）と、自分でその上に貼った付箋（$BAx$）を一緒に読んでテストに答えるイメージ。教科書は一切書き換えない。新しい単元用に新しい付箋を貼るだけ。前の単元に戻りたければ付箋をはがすだけ。\n\n#### 数式 2: もともと AI が「学ぶ」とはどういう計算か（fine-tuning の目的）\n\n$$ \\max_{\\Phi} \\sum_{(x,y)\\in\\mathcal{Z}} \\sum_{t=1}^{|y|}  \\log \\left(  P_{\\Phi}(y_{t} | x, y_{<t}) \\right) $$\n\n**この式が言ってること**: AI のツマミ全部（$\\Phi$）を、「与えられた問題 $x$ と、これまでに自分が出した答え $y_{<t}$ を見て、次の単語 $y_t$ を正しく当てられる確率」がなるべく大きくなるように調整するよ、ということ。これが「ぜんぶのツマミを回し直す」full fine-tuning のやり方。\n\n**記号の意味**:\n- $\\Phi$ … AI のすべてのツマミの集まり。GPT-3 なら 1,750 億個\n- $\\mathcal{Z}$ … 教材（問題と答えのペアの集まり）\n- $(x, y)$ … 1 組の問題と正解\n- $|y|$ … 正解の長さ（単語の数）\n- $y_t$ … 正解の $t$ 番目の単語\n- $y_{<t}$ … $t$ 番目より前にすでに出てきた単語たち\n- $P_\\Phi(y_t \\mid x, y_{<t})$ … 今のツマミ設定 $\\Phi$ で「問題 $x$ と既出 $y_{<t}$ を見たときに、次の単語が $y_t$ になる確率」\n- $\\log$ … 「対数」と読む。0〜1 の確率を扱いやすい数に変換するための関数。中学では未習。「確率がちゃんと正解に近いほどスコアが大きくなる、ペナルティ翻訳器」だと思って OK。確率が 1 なら $\\log 1 = 0$、確率が 0 に近いとどんどんマイナスに大きくなる\n- $\\max$ … この後ろの式が最大になるよう $\\Phi$ を選ぶ\n- $\\sum$ … 後ろの式の合計を取る\n\n**身近な例え**: 連想ゲームを練習するとき、「『犬』『散歩』『公園』と来たら次は『ボール』」みたいに、前に出た言葉から次の言葉を当てる練習を、辞書まるごと書き換えながらやるイメージ。LoRA は逆に、辞書には触らず、ノートの端っこにメモを足すだけ。\n\n> 補足:\n> - **確率**: 「ありそう度」を 0〜1 の数で表したもの（中学未習）。サイコロで 1 が出る確率は 1/6 ≒ 0.17。\n> - **$\\log$（対数）**: 0 に近いほどマイナスに大きく、1 に近いほど 0 に近い。AI 学習では「答えが当たれば罰小、外せば罰大」を表すのに使う。\n\n#### 数式 3: LoRA の最適化対象（少ないツマミで同じことをやる）\n\n$$ \\max_{\\Theta} \\sum_{(x,y)\\in\\mathcal{Z}}  \\sum_{t=1}^{|y|}  \\log\\left( P_{\\Phi_0+\\Delta\\Phi(\\Theta)}(y_{t} | x, y_{<t}) \\right) $$\n\n**この式が言ってること**: 巨大な $\\Phi_0$（凍結された元のツマミ）はそのままにして、ぐっと少ない**新しい小さなツマミ $\\Theta$**（LoRA の $A, B$ のこと）だけを動かして、答えが当たる確率を最大にしよう、ということ。GPT-3 だと $\\Theta$ は元の **0.01%** にできる。\n\n**記号の意味**:\n- $\\Theta$ … LoRA の小さなツマミの集まり（$A$ と $B$ の中身）。元の **1 万分の 1** くらいの個数\n- $\\Phi_0$ … 元の AI のツマミ。凍結（変えない）\n- $\\Delta\\Phi(\\Theta)$ … 小さなツマミ $\\Theta$ から作り出した、元 AI への差分（LoRA だと $BA$ がこれにあたる）\n- 他の記号は数式 2 と同じ\n\n**身近な例え**: クラスの 30 人全員に指示を出し直す（数式 2）のではなく、リーダー 1 人にだけ指示を出して、リーダーが全員に伝言する（数式 3）イメージ。動かすツマミがずっと少なくて済む。\n\n## 何がすごいの？\n\n論文 TeX 中で実際に報告されている数値です:\n\n- **GPT-3 175B（1,750 億パラメータ）で、学習するツマミを 1 万分の 1 に圧縮**\n  - チェックポイント（モデルの保存ファイル）: 350 GB → **35 MB**（$r=4$、$W_q$ と $W_v$ にだけ LoRA を当てた場合）\n  - 学習時の GPU メモリ: 1.2 TB → 350 GB（**約 3 分の 1**）\n  - 学習スループット: 32.5 → 43.1 tokens/秒/V100（**25% 速い**）\n\n- **性能はフル fine-tuning と同等以上**（TeX の Table 2〜4 より）:\n  - **RoBERTa base**（GLUE 平均）: LoRA 0.3M 個のツマミで 87.2、フル FT は 125M 個で 86.4\n  - **RoBERTa large**: LoRA 0.8M で 89.0、フル FT 355M で 88.9\n  - **DeBERTa XXL**: LoRA 4.7M で 91.3、フル FT 1.5B で 91.1\n  - **GPT-2 M（E2E NLG タスク）**: LoRA 0.35M で BLEU 70.4 / NIST 8.85 / METEOR 46.8 / ROUGE-L 71.8 / CIDEr 2.53。フル FT 354.92M（68.2 / 8.62 / 46.2 / 71.0 / 2.47）を全項目で上回る\n  - **GPT-3 175B**（WikiSQL/MNLI-m/SAMSum）: LoRA 4.7M で 73.4 / 91.7 / 53.8・29.8・45.9。フル FT 175,255.8M で 73.8 / 89.5 / 52.0・28.0・44.5\n\n- **推論レイテンシ（AI を動かす遅延）が増えない**: $W_0 + BA$ を事前に合体させてしまえば、形は元と同じ。Adapter 系が +20.7%〜+30.3% 遅くなったのに対し、LoRA は **0%**（Table 1）。\n\n- **ランクは驚くほど小さくて足りる**: $W_q$ と $W_v$ の両方に LoRA を当てれば、$r=1$（メモが 1 列ぶん）でもほぼ最大性能（WikiSQL 73.4、MNLI 91.3）。Table 6。\n\n- **どの行列に当てるか**: 同じ 18M ツマミ予算なら、「$W_q$ だけに $r=8$」より「$W_q$ と $W_v$ に $r=4$」や「$W_q, W_k, W_v, W_o$ 全部に $r=2$」の方が良い（Table 5）。つまり**広く薄く当てる**のが正解。\n\n- **著者が論文で挙げている貢献**（Introduction より）:\n  1. 事前学習モデルを共有し、タスクごとに小さな LoRA だけ差し替えられる（ストレージ・切替コストが激減）\n  2. 学習がメモリ的にも速度的にも軽くなる（最大 3 倍）\n  3. 単純な足し算設計なので、本番時の追加レイテンシがゼロ\n  4. プレフィックス調整など他手法と組み合わせ可能\n\n## キーワード辞典\n\n- **LoRA**: Low-Rank Adaptation の略。「低ランクな差分による調整」。本論文の手法。\n- **事前学習（pre-training）**: 大量の文章で AI に基礎力をつけさせる工程。\n- **fine-tuning（ファインチューニング）**: 事前学習済み AI を特定タスク用に追加訓練すること。\n- **full fine-tuning**: AI の全ツマミを回し直す重いやり方。\n- **パラメータ / ツマミ**: AI の中の調整可能な数。GPT-3 で 1,750 億個。\n- **GPT-3 / GPT-2 / RoBERTa / DeBERTa**: 巨大言語 AI の名前。\n- **Transformer**: いまの言語 AI の標準設計。「自己注意」が核。\n- **自己注意（self-attention）**: 文の中の単語同士で「どれとどれが関係しているか」を計算する仕組み。\n- **$W_q, W_k, W_v, W_o$**: 自己注意の中にある 4 つの数の表。query / key / value / output と呼ぶ。LoRA は主に $W_q$ と $W_v$ に当てる。\n- **MLP**: Transformer の中にある「もう 1 個の大きな数の表のかたまり」。本論文では凍結し触っていない。\n- **rank（ランク）**: 数の表の「本当の情報の薄さ」。LoRA はこれを小さい $r$ に絞る。\n- **行列（matrix）**: 数を縦横に並べた表。\n- **ベクトル**: 数を 1 列に並べたもの。\n- **adapter（アダプター）**: モデルの間に挟む小さな追加部品。LoRA の比較対象。推論を遅くする欠点あり。\n- **prefix tuning / prompt tuning**: 入力の頭に学習可能な「合言葉」を付ける別の節約手法。LoRA の比較対象。\n- **PEFT（Parameter-Efficient Fine-Tuning）**: 少ないツマミで AI を仕事に合わせる手法群の総称。LoRA はその代表。\n- **推論レイテンシ**: AI が答えを返すまでの時間。\n- **チェックポイント**: 学習途中・学習後の AI の状態を保存したファイル。\n- **VRAM**: GPU のメモリ。学習を回すのに必要。\n- **Adam**: AI 学習で広く使われる「ツマミの回し方」のレシピ（最適化アルゴリズム）。\n- **GLUE / WikiSQL / MNLI / SAMSum / E2E / WebNLG / DART**: AI の力試しに使う公開データセット・ベンチマーク。\n- **BLEU / NIST / METEOR / ROUGE-L / CIDEr**: AI が出した文章が「正解にどれだけ似ているか」を測るスコア。大きいほど良い。\n- **intrinsic rank（固有ランク）**: 「本当はそんなに複雑じゃない、薄い情報で済む」という性質。LoRA の出発点となる仮説。\n- **Grassmann 類似度**: 2 つの「方向の集まり」がどれだけ似ているかを測るモノサシ（深掘り節で使う）。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **なぜ低ランク差分でうまくいくのか（経験的な答え）**:\n  - 論文 Sec. 7.2 では、ランク $r=8$ で学習した $A$ と、$r=64$ で学習した $A$ の「上位の特異方向」（情報が濃い部分）を比較し、Grassmann 類似度というモノサシで重なりを計算している。結果は、**top-1 の方向はどちらも 0.5 以上の高い重なり**を持つが、残りはノイズに近い。要するに「本当に効いているのは数本の方向だけ」。\n  - だから $r=1$ や $r=2$ でも性能が落ちにくい。\n\n- **$\\Delta W$ と $W$ の関係（amplification factor ≈ 21.5×, Sec. 7.3）**:\n  - 訓練済み $W_q$ のフロベニウスノルム（行列の「大きさ」みたいなもの）は $61.95$、LoRA で学んだ $\\Delta W_q$ は $6.91$（$r=4$）。\n  - $W_q$ を $\\Delta W_q$ の方向に射影すると $0.32$ しかない（ランダム射影だと $0.02$）。一方 $W_q$ の上位 $r$ 方向の大きさは $21.67$。\n  - つまり $\\Delta W$ は「**元の $W$ では弱く眠っていた方向**」を約 21.5 倍に増幅して、下流タスクに有用な特徴として持ち上げている、と解釈できる。\n  - これは LoRA が「ゼロから新しい能力を作る」のではなく「**元 AI の中にあった眠れる才能を呼び起こす**」やり方だ、ということを示唆する。\n\n- **メモリが 3 分の 1 に減るのは Adam のおかげ**: Adam という学習レシピは、各ツマミについて「過去の動き」を 2 種類記憶している（モーメント）。LoRA だと**動かさないツマミの記憶は要らない**ので、ここが消えてメモリが軽くなる。LoRA の本質というより副次効果。\n\n- **既知の制限**（論文 Sec. 8）:\n  1. $A, B$ を $W$ にマージしてしまうと、**同じバッチの中で別タスクを混ぜて処理することが難しい**。\n  2. どの重み行列に LoRA を当てるかは現状ヒューリスティック（経験則）。\n  3. MLP / LayerNorm / バイアス への適用は未検証。\n  4. ランク 1 で十分という主張は GLUE / WikiSQL / MNLI 中心のもの。事前学習と全然違う言語のタスクではもっと大きい $r$ が必要だろう、と著者も注意している。\n\n- **公開実装**: https://github.com/microsoft/LoRA に PyTorch 実装と RoBERTa / DeBERTa / GPT-2 のチェックポイントあり。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2106.09685v2/`\n- 正規ノート: `notes/arXiv-2106.09685v2.md`\n";
+const MACROS = {"\\cmark": "\\text{\\ding{51}}", "\\xmark": "\\text{\\ding{55}}", "\\parhead": "\\medskip \\noindent {\\bfseries\\boldmath\\ignorespaces #1.}\\hskip 0.9em plus 0.3em minus 0.3em", "\\parheadno": "\\medskip \\noindent {\\bfseries\\boldmath\\ignorespaces #1}\\hskip 0.9em plus 0.3em minus 0.3em", "\\parheadsc": "\\medskip \\noindent {\\boldmath\\ignorespaces \\textsc{#1}.}\\hskip 0.9em plus 0.3em minus 0.3em", "\\cZ": "\\mathcal{Z}", "\\figleft": "{\\em (Left)}", "\\figcenter": "{\\em (Center)}", "\\figright": "{\\em (Right)}", "\\figtop": "{\\em (Top)}", "\\figbottom": "{\\em (Bottom)}", "\\captiona": "{\\em (a)}", "\\captionb": "{\\em (b)}", "\\captionc": "{\\em (c)}", "\\captiond": "{\\em (d)}", "\\newterm": "{\\bf #1}", "\\train": "\\mathcal{D}", "\\valid": "\\mathcal{D_{\\mathrm{valid}}}", "\\test": "\\mathcal{D_{\\mathrm{test}}}", "\\tens": "\\bm{\\mathsfit{#1}}", "\\etens": "\\mathsfit{#1}", "\\pdata": "p_{\\rm{data}}", "\\ptrain": "\\hat{p}_{\\rm{data}}", "\\Ptrain": "\\hat{P}_{\\rm{data}}", "\\pmodel": "p_{\\rm{model}}", "\\Pmodel": "P_{\\rm{model}}", "\\ptildemodel": "\\tilde{p}_{\\rm{model}}", "\\pencode": "p_{\\rm{encoder}}", "\\pdecode": "p_{\\rm{decoder}}", "\\precons": "p_{\\rm{reconstruct}}", "\\laplace": "\\mathrm{Laplace}", "\\E": "\\mathbb{E}", "\\Ls": "\\mathcal{L}", "\\R": "\\mathbb{R}", "\\emp": "\\tilde{p}", "\\lr": "\\alpha", "\\reg": "\\lambda", "\\rect": "\\mathrm{rectifier}", "\\softmax": "\\mathrm{softmax}", "\\sigmoid": "\\sigma", "\\softplus": "\\zeta", "\\KL": "D_{\\mathrm{KL}}", "\\Var": "\\mathrm{Var}", "\\standarderror": "\\mathrm{SE}", "\\Cov": "\\mathrm{Cov}", "\\normlzero": "L^0", "\\normlone": "L^1", "\\normltwo": "L^2", "\\normlp": "L^p", "\\normmax": "L^\\infty", "\\parents": "Pa", "\\argmax": "\\operatorname{arg\\,max}", "\\argmin": "\\operatorname{arg\\,min}", "\\sign": "\\operatorname{sign}", "\\Tr": "\\operatorname{Tr}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

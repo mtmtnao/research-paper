@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Self-Consistency Improves Chain of Thought Reasoning in Language Models（自己一致でAIの推論を強くする）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2203.11171v4.md</code>
+  &nbsp;|&nbsp; macros: <code>51</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Self-Consistency Improves Chain of Thought Reasoning in Language Models（自己一致でAIの推論を強くする）\n\n- arXiv: https://arxiv.org/abs/2203.11171\n- 一次ソース: ../papers/arXiv-2203.11171v4/\n- 正規ノート: ../notes/arXiv-2203.11171v4.md\n\n---\n\n## 一言で言うと\n\nAI に答えを 1 回だけ出させるのではなく、いろんな考え方で何回も答えさせて「いちばん多かった答え」を選ぶと正答率がぐっと上がる、という発見。\n\n## どんな問題を解こうとしてるの？\n\n- 「言語モデル（言葉を扱うAI、文章の続きを予測するすごく大きなプログラム）」は、文章を作るのは得意でも、算数の文章題みたいに **何段階か考えてから答えるタスク** が苦手だった。\n- 既存の改善策に **Chain-of-Thought prompting（チェイン・オブ・ソート、略して CoT）** がある。これは「いきなり答えだけ言って」ではなく「考えた手順を順番に書いてから答えて」とお願いするやり方。日本語にすると「途中式を書かせる」イメージ。これで成績は上がるけれど、まだ間違える。\n- これまでの CoT は **greedy decoding（グリーディ・デコーディング、毎回いちばんありそうな単語だけを選び続けるやり方）** を使っていた。地図で言うと「分かれ道のたびに、いちばん人気の道だけを選んで進む」感じ。途中で 1 回ミスると、そのまま間違った道を進んでしまう。\n- もう一つの既存案は **verifier（バリファイア、答えが正しいか判定する別の AI）** や **re-ranker（リランカー、候補の中から良いものを選び直す別のモデル）** を追加で学習する方法。これらは「先生役の AI を追加で育てる」必要があり、人手のラベル付けや追加学習がコストになる。\n- 著者たちが解きたかったのは「追加で何も学習せず、CoT のまま、もっと賢くできないか？」という問い。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n人間も難しい問題は「いろんな解き方を試してみて、複数の解き方で同じ答えにたどり着いたら、その答えはたぶん合ってる」と考える。たとえばクラスで算数の難問を解いたとき、5 人がそれぞれ違うやり方で解いて、4 人が「18 円」と答えて 1 人が「14 円」と答えたら、たいてい「18 円」が正解だよね。\n\n著者たちはこれを AI でやった。AI に **わざと毎回ちょっと違う考え方** をさせて、たくさんの答えを集め、**いちばん多く出た答え** を最終回答にする。この「多くの解き方からひとつに絞る」操作を著者は **self-consistency（セルフ・コンシステンシー、自分の中での一致度を使う）** と呼んでいる。\n\n### 仕組み\n\n- step1: 質問に対して、いつも通り CoT のプロンプト（お手本となる「途中式付きの例」をいくつか見せる指示文）を AI に与える。\n- step2: greedy decoding をやめて、**サンプリング**（後で説明）で考え方の違う答えを 1 個だけじゃなく $m$ 個（論文では 40 個）作らせる。同じ問題でも違う筋道で違う答えが出る。\n- step3: 各回答の最後に書かれた「最終的な答えの部分」だけを取り出す（例: 「答えは 18 円」の \"18\"）。途中の考え方は捨てる。\n- step4: 取り出した答えを多数決して、いちばん票が多かったものを最終回答とする。\n\nサンプリングって何？ AI が次の単語を選ぶとき、「いちばん確率が高い単語だけ」を選ぶのが greedy。サンプリングは「サイコロのように、確率が高い単語ほど出やすいけど、他のもときどき出る」やり方。これで毎回ちょっと違う文章が出る。論文では **temperature（テンパチャー、サイコロの偏りを調整するつまみ）** を 0.5〜0.7 に設定。温度を上げるほどバラバラの答えが出やすい。\n\n### 主要な数式\n\n#### 数式①：多数決（majority vote）\n\n$$ a_{\\text{best}} = \\arg\\max_{a}\\sum_{i=1}^{m}\\mathbb{1}(\\mathbf{a}_i = a) $$\n\n**この式が言ってること**: $m$ 個出てきた答えのうち、同じ答えになっている個数を数えて、いちばん多かった答えを最終回答にするよ、と言っているだけ。要するに多数決。\n\n**記号の意味**:\n- $a_{\\text{best}}$ … 最終的に選ぶ答え\n- $m$ … AI に作らせた答えの個数（論文では 40 個）\n- $\\mathbf{a}_i$ … $i$ 番目に AI が出した答え\n- $a$ … 候補のひとつ（「18 円」とか「14 円」とか）\n- $\\mathbb{1}(\\cdot)$ … カッコの中身が正しければ 1、間違っていれば 0 を返す目印（インジケータ関数。出席をとる先生が「いる人は 1、いない人は 0」と数えるのと同じ）\n- $\\arg\\max$ … 「合計がいちばん大きくなる $a$ を選ぶ」という意味（max の中身を最大にする入力を返す）\n- $\\sum$ … 「全部足す」記号（$i=1$ から $m$ まで順番に足す）\n\n**身近な例え**: クラスで「今日の給食、何が一番おいしかった？」と聞いて、40 人の回答をホワイトボードに正の字で書いていく。カレーが 25 票、ハンバーグが 10 票、サラダが 5 票なら、「クラスの答え＝カレー」。それだけのこと。\n\n---\n\n#### 数式②：周辺化（marginalization）でなぜ多数決が正しいのか\n\n$$ p(\\mathbf{a}\\mid x) = \\sum_{\\mathbf{r}} p(\\mathbf{r}, \\mathbf{a}\\mid x) $$\n\n**この式が言ってること**: 「質問 $x$ に対して答えが $\\mathbf{a}$ になる確率」は、「途中の考え方 $\\mathbf{r}$ がどんなものでも、$\\mathbf{r}$ と $\\mathbf{a}$ が一緒に出てくる確率を全部の $\\mathbf{r}$ について足し合わせたもの」と等しい。途中の考え方を全部足してならすイメージ。\n\n**記号の意味**:\n- $x$ … 質問（例：「車が 3 台あって 2 台来た。何台？」）\n- $\\mathbf{a}$ … 最終的な答え（例：「5」）\n- $\\mathbf{r}$ … 途中の考え方（例：「3 + 2 = 5 だから」）。論文では reasoning path と呼ぶ\n- $p(\\cdot \\mid x)$ … 質問 $x$ が与えられたときに、続きがそうなる起こりやすさ。確率。\n- $\\sum_{\\mathbf{r}}$ … 考えられる全部の「途中の考え方」について足し合わせる\n\n確率って何？ 「サイコロで 1 が出る起こりやすさは 1/6」みたいに、ある出来事の起こりやすさを 0〜1 の数で表したもの。\n\n**身近な例え**: 学校から家までの帰り道がたくさんあるとき、「家にたどり着く確率」は「道 A を通って家に着く確率」+「道 B を通って家に着く確率」+「道 C を通って…」と、すべての道の到着確率を足したものに等しい。途中の道がどれでも、最後に家に着けば OK、というのと同じ発想。**「途中の道（考え方）はどうでもいい、ゴール（答え）だけ見る」** が周辺化のキモ。\n\n---\n\n#### 数式③（参考）：重み付き多数決のための確率の出し方\n\n$$ P(\\mathbf{r}_i, \\mathbf{a}_i \\mid \\text{prompt}, \\text{question}) = \\exp\\!\\Bigl(\\tfrac{1}{K}\\sum_{k=1}^{K}\\log P(t_k \\mid \\text{prompt}, \\text{question}, t_1, \\ldots, t_{k-1})\\Bigr) $$\n\n**この式が言ってること**: AI がある回答文（途中の考え方 + 答え）を出す自信度を、文の長さで平均してならした値。長い文ほど不利にならないよう「文の長さ $K$ で割って」いる。これを多数決のときの「票の重み」に使うこともできる、と論文は紹介している。\n\n**記号の意味**:\n- $P(\\cdots)$ … 起こりやすさ（確率）\n- $\\mathbf{r}_i, \\mathbf{a}_i$ … $i$ 番目の「考え方」と「答え」\n- $\\text{prompt}$ … 最初に AI に見せる指示文\n- $\\text{question}$ … 質問\n- $t_k$ … 回答文の $k$ 番目の単語（トークン）\n- $K$ … 回答文に含まれる単語の総数\n- $\\log$ … 対数。**0〜1 の確率を「マイナスの大きい数 〜 0」に変換する道具**。確率が小さいほど大きなマイナスになる（罰ゲーム）。AI の世界では掛け算が足し算になって計算しやすいので使う。\n- $\\exp$ … $\\log$ の反対の操作。マイナスの数を元の確率（0〜1）に戻す\n- $\\frac{1}{K}\\sum$ … $K$ 個の値を足して $K$ で割る、つまり平均\n\n**身近な例え**: テストで「自信度」を申告するとき、答えごとに自信を点数化して、長い答え（途中式が多い）には不利にならないよう「1 単語あたりの自信度」に換算する、みたいなもの。\n**実は重要なオチ**: 論文の Table 1 によると、この自信度で重み付けして多数決しても（74.1 点）、ただの多数決（74.4 点）とほとんど変わらなかった。つまり「重み付けはしなくていい、単純な多数決で十分」という結論。これは AI の自信度がそもそも当てにならない（calibration が悪い、と論文は言う）からだと著者は説明している。\n\n## 何がすごいの？\n\n- **追加学習がいらない**。すでにある AI を、使い方を変えるだけで賢くできる（unsupervised, off-the-shelf）。実装はほぼ「サンプリング設定を変えて 40 回ぶん実行 + 多数決」。\n- **正答率が大きく上がる**。論文の Table 2 / Table 3 から、PaLM-540B（パラメータ 5400 億個の超大型 AI）での主な改善：\n  - GSM8K（小学校〜中学レベルの算数文章題、英語）: 56.5% → **74.4%**（+17.9 ポイント）\n  - SVAMP（算数文章題）: 79.0% → **86.6%**（+7.6）\n  - AQuA（高校レベル算数）: 35.8% → **48.3%**（+12.5）\n  - MultiArith（複数ステップの算数）: 94.7% → **99.3%**（+4.6）\n  - StrategyQA（常識を使った質問応答）: 75.3% → **81.6%**（+6.3）\n  - ARC-challenge（理科の難問選択肢式）: 85.2% → **88.7%**（+3.5）\n- **当時の最高記録（SoTA）を多くのタスクで更新**。verifier を別途学習した GPT-3 の GSM8K 記録（55%）を、何の学習もせず PaLM-540B + 自己一致で 74.4% に押し上げた。\n- **他のやり方より強い**:\n  - **sample-and-rank**（たくさんサンプリングして自信度トップを採用）より上（Figure 4）\n  - **beam search（ビームサーチ、複数の候補を並行して残しながら探索する方法）** より上（Table 6）。むしろ UL2-20B + AQuA では beam を増やすほどスコアが落ちる（23.6 → 10.2）。\n  - **prompt の順番を入れ替えてアンサンブル**（多数のプロンプトで多数決）よりも大きく上回る（LaMDA-137B GSM8K で 19.2 → 27.7）。\n- **CoT が逆効果なタスクでも効く**: ANLI（含意関係を判定するタスク）、e-SNLI、RTE では CoT を入れると素のプロンプトより悪化することがあったが、自己一致を入れると素のプロンプトも CoT も両方上回った（例: RTE で標準 84.8 → CoT 79.1 → SC **86.3**）。\n- **プロンプトが下手でも回復する**: わざと途中の数字をデタラメに変えた壊れたお手本でも、greedy だと 17.1 → 14.9 に下がるが、自己一致を入れると **23.4** に回復（LaMDA-137B GSM8K）。\n- **zero-shot CoT との合わせ技も強力**: お手本ゼロで「ステップ・バイ・ステップで考えて」と言うだけの方法（Kojima+ 2022）に自己一致を足すと、PaLM-540B の GSM8K で 43.0 → **69.2**（+26.2）。\n- **「自信が無いとき」を AI 自身が気付ける**: 40 個の答えのうち何割が一致しているか（consistency）と正答率が強く相関する（Figure 7）。多数決でバラけたら「この AI は分かってない」のサインに使える。\n- 著者が論文内で挙げている **貢献（contribution）**: (1)「サンプリングして周辺化する」だけの単純な decoding 戦略を提案、(2) 多数の reasoning ベンチマークで当時の SoTA を更新、(3) サンプリングの多様性が beam search よりも reasoning に効くことを実証、(4) consistency が不確実性の指標として使えることを示唆。\n\n## キーワード辞典\n\n- **言語モデル (language model)** … 大量の文章を読んで「次にどの単語が来そうか」を予測するように作られたすごく大きなプログラム。AI の一種。\n- **CoT（Chain-of-Thought prompting）** … 「答えだけじゃなく、考えた手順を書いてから答えて」とお願いする使い方。\n- **prompt（プロンプト）** … AI に渡す指示文。例題やお願いの文を含む。\n- **few-shot（フューショット）** … 「お手本を数個だけ見せて解かせる」やり方。再学習はしない。\n- **zero-shot（ゼロショット）** … お手本ゼロで「考えて」とだけお願いするやり方。\n- **decoding（デコーディング）** … AI が次の単語を選んで文章を組み立てていく作業。\n- **greedy decoding** … 毎回いちばん確率が高い単語を選び続けるデコーディング。\n- **sampling（サンプリング）** … サイコロのように確率に従ってランダムに単語を選ぶデコーディング。\n- **temperature（温度 $T$）** … サイコロのバラつき具合のつまみ。高いほどランダム性が増す。論文では 0.5 〜 0.7。\n- **top-$k$ sampling** … 確率上位 $k$ 個の単語の中だけからサンプリング。論文では $k=40$。\n- **nucleus / top-$p$ sampling** … 確率の合計が $p$ になる上位の単語からサンプリング。\n- **beam search（ビームサーチ）** … 複数候補（ビーム）を並行して残しながら最尤の文を探す方法。\n- **majority vote（多数決）** … 答えごとの票数を数えて最多のを選ぶこと。\n- **marginalization（周辺化）** … 途中の変数を全部足し合わせて消す確率の操作。「途中はどうあれ最終結果だけ気にする」。\n- **reasoning path（推論経路 $\\mathbf{r}$）** … 答えにたどり着くまでの考えの道筋。\n- **self-consistency** … 本論文の提案。同じ AI に複数回考えさせて、答えがどれだけ一致しているかで決める。\n- **self-ensemble（セルフ・アンサンブル）** … 1 つの AI を使ってアンサンブル（多数決の集合知）を作ること。普通のアンサンブルは複数の別 AI を使うが、これは 1 つの AI で完結。\n- **calibration（キャリブレーション）** … 「自信度」と「実際の正解率」がちゃんと合っているかどうか。AI は自信過剰で当てにならないことが多い。\n- **verifier（バリファイア）** … 答えが正しいかを判定するために別途学習する補助 AI。\n- **re-ranker（リランカー）** … 候補の順位を付け直す補助モデル。\n- **SoTA（State-of-the-Art）** … その時点での最高成績。\n- **GSM8K, SVAMP, AQuA, MultiArith, AddSub, ASDiv** … 算数の文章題ベンチマーク（成績比較用のテスト問題集）。\n- **CSQA（CommonsenseQA）, StrategyQA, ARC** … 常識・知識の質問応答ベンチマーク。\n- **ANLI, e-SNLI, RTE** … 「A という文が与えられたら B は言えるか？」を判定する含意関係タスク。\n- **UL2-20B, LaMDA-137B, PaLM-540B, GPT-3 (code-davinci-001/002)** … 実験に使った 4 つの大型言語モデル。末尾の B は十億パラメータ（重みの数）。\n- **token（トークン）** … AI が扱う単語のかけら。「running」が「run」+「ning」のように分けられることもある。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **なぜ多数決が「最尤の 1 経路を磨く」より強いのか**: 推論には「同じ正解に至るいろんな道」がたくさんある（GSM8K の例題のように 16 個の卵から朝食 3 つと焼き菓子 4 つを引いて 9 個、$9 \\times 2 = 18$ ドル、でも引く順番は色々）。間違った経路は **バラバラに違う答え** に行きやすく、正しい経路は **収束して同じ答え** に集まりやすい。だから票が割れずに正解に重みが集中する。\n- **beam search が逆に効かない理由**: ビームは「最尤に近い文を残す」ので、文同士が似通って多様性が低い。reasoning では「異なる道を見て一致を取る」のがキモなので、多様性こそが武器。論文では UL2-20B AQuA で beam を 1→5→10→20→40 と増やすとトップビームのスコアが 23.6 → 19.3 → 16.1 → 15.0 → 10.2 と単調に落ちる（Table 6）。\n- **重み付き多数決と単純多数決がほぼ同じ理由**: 論文の Table 1（PaLM-540B）で、多数決 74.4 と長さで正規化した重み付き和 74.1 がほぼ同等。著者は「言語モデルは生成ごとの尤度を区別できるほどキャリブレーションされていない」と注で説明している。逆に「重みなしの平均」(unnormalized weighted avg) は 56.3、「重みありの平均」(normalized weighted avg) は 22.1 に崩壊する（正規化平均だけは票数で割ってしまうので、1 票でも入った稀な誤答が高得点で勝ってしまう）。\n- **設定の詳細**: 標準偏差を抑えるため 10 runs × 40 samples の平均で報告（標準偏差 ≤ 0.5）。UL2-20B / LaMDA-137B は $T=0.5, k=40$、PaLM-540B は $T=0.7, k=40$、GPT-3 は $T=0.7$ で top-$k$ なし。\n- **スケール効果**: 大きいモデルほどゲインが大きい。UL2-20B では +3〜6 ポイントだが、LaMDA-137B / GPT-3 / PaLM-540B では +9〜23 ポイント。小さいモデルではそもそも算数能力が「出現していない」（emergent ability）ため。\n- **限界として著者が認めていること**:\n  - 計算コストが path 数倍になる（40 倍）。\n  - 答えが固定の集合に属するタスク（数値、選択肢、はい/いいえ）に限られる。自由生成タスクには「2 つの回答が一致しているか」を測る尺度が別途必要。\n  - AI が **架空の数値や事実をでっち上げる reasoning path** が混ざることがある（StrategyQA で人口数値が架空だが最終回答は当たっている例）。最終答えが当たっても rationale が信用できるとは限らない（Ethics Statement にも記載）。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2203.11171v4/`\n- 正規ノート: `notes/arXiv-2203.11171v4.md`\n";
+const MACROS = {"\\fix": "\\marginpar{FIX}", "\\new": "\\marginpar{NEW}", "\\figleft": "{\\em (Left)}", "\\figcenter": "{\\em (Center)}", "\\figright": "{\\em (Right)}", "\\figtop": "{\\em (Top)}", "\\figbottom": "{\\em (Bottom)}", "\\captiona": "{\\em (a)}", "\\captionb": "{\\em (b)}", "\\captionc": "{\\em (c)}", "\\captiond": "{\\em (d)}", "\\newterm": "{\\bf #1}", "\\train": "\\mathcal{D}", "\\valid": "\\mathcal{D_{\\mathrm{valid}}}", "\\test": "\\mathcal{D_{\\mathrm{test}}}", "\\tens": "\\bm{\\mathsfit{#1}}", "\\etens": "\\mathsfit{#1}", "\\pdata": "p_{\\rm{data}}", "\\ptrain": "\\hat{p}_{\\rm{data}}", "\\Ptrain": "\\hat{P}_{\\rm{data}}", "\\pmodel": "p_{\\rm{model}}", "\\Pmodel": "P_{\\rm{model}}", "\\ptildemodel": "\\tilde{p}_{\\rm{model}}", "\\pencode": "p_{\\rm{encoder}}", "\\pdecode": "p_{\\rm{decoder}}", "\\precons": "p_{\\rm{reconstruct}}", "\\laplace": "\\mathrm{Laplace}", "\\E": "\\mathbb{E}", "\\Ls": "\\mathcal{L}", "\\R": "\\mathbb{R}", "\\emp": "\\tilde{p}", "\\lr": "\\alpha", "\\reg": "\\lambda", "\\rect": "\\mathrm{rectifier}", "\\softmax": "\\mathrm{softmax}", "\\sigmoid": "\\sigma", "\\softplus": "\\zeta", "\\KL": "D_{\\mathrm{KL}}", "\\Var": "\\mathrm{Var}", "\\standarderror": "\\mathrm{SE}", "\\Cov": "\\mathrm{Cov}", "\\normlzero": "L^0", "\\normlone": "L^1", "\\normltwo": "L^2", "\\normlp": "L^p", "\\normmax": "L^\\infty", "\\parents": "Pa", "\\argmax": "\\operatorname{arg\\,max}", "\\argmin": "\\operatorname{arg\\,min}", "\\sign": "\\operatorname{sign}", "\\Tr": "\\operatorname{Tr}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

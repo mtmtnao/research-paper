@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Reflexion: Language Agents with Verbal Reinforcement Learning（言葉でふり返って賢くなるAIエージェント）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2303.11366v4.md</code>
+  &nbsp;|&nbsp; macros: <code>5</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Reflexion: Language Agents with Verbal Reinforcement Learning（言葉でふり返って賢くなるAIエージェント）\n\n- arXiv: https://arxiv.org/abs/2303.11366\n- 一次ソース: ../papers/arXiv-2303.11366v4/\n- 正規ノート: ../notes/arXiv-2303.11366v4.md\n\n---\n\n## 一言で言うと\n\nAI に「自分の失敗を日本語みたいな言葉で反省させてメモに残す」だけで、勉強し直さなくても次のチャレンジが上手くなる、という仕組みを作った話。\n\n## どんな問題を解こうとしてるの？\n\n- 今は ChatGPT みたいな大きな AI（LLM = 大規模言語モデル。たくさんの文章を読んで、続きの言葉を予想できるようになった巨大なプログラム）に、ゲームをやらせたり、コードを書かせたり、調べものをさせたりすることが増えてきた。\n- でもこの AI、**1 回失敗してももう一度やり直したとき、同じところでまた失敗する**ことがすごく多い。人間なら「あ、さっきはここでミスったから今度は気をつけよう」と思えるのに、AI はそれができない。\n- 昔ながらの「強化学習（RL = Reinforcement Learning。ご褒美と罰でAIに少しずつ正解の行動を覚えさせる勉強方法）」を使えば直せるかもしれないけど、巨大な AI を勉強し直させるのは、お金と時間がとてもかかって現実的じゃない。\n- もう 1 つの方法は「お手本を例として何個か見せて真似させる（in-context example）」ことだけど、長い手順のうち**どこでつまずいたか**を AI に分からせる仕組みがない（これを credit assignment problem = 「どの行動が悪かったのか分担して責任を割り当てる問題」と言う）。\n- だから、**お金をかけずに、長い失敗からピンポイントで学ばせる**新しい方法が必要だった。\n\n身近な例えで言うと、テストで間違えた問題があったとき、答えだけ眺めても次は解けるようにならなくて、「自分はどこで読み間違えたか」を日本語でノートに書いておくと次は気をつけられる、という当たり前のことを AI にやらせたかった、という話。\n\n## どうやって解いたの？\n\n### コアアイデア\n\nサッカーの試合を思い浮かべてほしい。試合に負けたあと、コーチが「お前は今日、何回も右サイドからのパスを取られていた。次は右サイドに近づきすぎないようにしよう」と**言葉で**選手にアドバイスする。選手の体や脳ミソを作り変えるわけじゃなく、**作戦メモを 1 行渡すだけ**。それでも次の試合ではちゃんと右サイドを警戒できる。\n\nReflexion はこれを AI でやる。AI 本体（重み = AI の中のたくさんの数字のかたまり。普通の「勉強」とはこの数字を少しずつ書き換えること）はいっさいいじらない。代わりに、失敗のあとで AI 自身に「何が悪かったか」を文章で書かせて、**メモ帳に貼り付けて**次の挑戦時に読ませる。著者はこれを「言葉によるご褒美と罰（verbal reinforcement learning）」と呼んでいる。\n\n### 仕組み\n\n3 人の登場人物（全部 AI で作られている）がチームを組んで動く:\n\n- **Actor（アクター, $M_a$）**: 実際に行動する AI。「次は冷蔵庫を開けてみる」とか「この Python のコードを書く」とか、手を動かす担当。\n- **Evaluator（エヴァリュエータ, $M_e$）**: 採点係の AI。Actor のやった結果を見て「合格」「不合格」を出す。\n  - 文章で答える問題なら「正解の文字列と完全に一致するか」（EM = Exact Match。1 字でも違ったらバツ）\n  - ゲームみたいなタスクなら「同じ動きを 3 回繰り返したらアウト」「30 手以内に終わらなかったらアウト」のような、人間が手で書いたヒューリスティック（簡単なルール）\n  - コードを書く問題なら、AI 自身に「テストプログラム」を書かせて、それを通れば合格とする\n- **Self-Reflection（セルフリフレクション, $M_{sr}$）**: 反省文を書く AI。「合格／不合格」だけ受け取って、「今回ダメだったのはたぶん、最初に冷蔵庫を開けるべきだったのに棚を先に開けてしまったから」みたいな、**人間の日記みたいな反省文**を書く。\n\nそして全体の流れは次のとおり:\n\n- step1: Actor が 1 回タスクをやってみる。やった行動の記録（trajectory = 軌跡。「右に動いた → 棚を開けた → 何も無かった」みたいな手順の記録）ができる。\n- step2: Evaluator がその軌跡に点数をつける（多くの場合「成功」か「失敗」の 2 択）。\n- step3: 失敗していたら、Self-Reflection が「どこがダメで、次はこう変えるべき」という反省文を 1 本書く。\n- step4: その反省文を **memory（メモ帳。容量はだいたい 1〜3 個まで）** に追加する。\n- step5: もう一度 step1 に戻る。Actor は今度、メモ帳に書かれた反省文も読んでから動く。\n- step6: Evaluator が「合格」と言うか、あらかじめ決めた最大試行回数（max trials）に達するまで繰り返す。\n\nポイントは、**AI 本体の中身（重み）は一文字も書き換わっていない**こと。書き換わるのは外付けのメモ帳の中身だけ。だから「ご褒美と罰で AI を作り変える」普通の強化学習に比べてものすごく軽い。\n\n### 主要な数式\n\n#### 1. 「方針」をどう作るか\n\n$$ \\pi_{\\theta}(a_i \\mid s_i), \\quad \\theta = \\{M_a, \\, mem\\} $$\n\n**この式が言ってること**: AI が次にどう動くかを決めるルール（方針）は、「Actor の中身」と「メモ帳の中身」の 2 つで決まる、と言っている。普通の強化学習だと AI の中身（重み）だけで決まるけれど、ここに **メモ帳** も足して、メモを書き換えることで方針を変える、というアイデア。\n\n**記号の意味**:\n- $\\pi$ … 方針（policy。状態を見て「次にどの行動を取るか」を決める関数）のこと。今回は「Actor の AI と、メモ帳と、今までの状況をぜんぶ見て、次の行動を選ぶ仕組み」のことだと思えばいい。\n- $\\theta$ … パラメータ。日本語で言えば「方針を決めるのに使う設定の中身」。普通は AI の重み（数字の集まり）だけ。\n- $a_i$ … action（アクション）。$i$ 回目に取る行動。\n- $s_i$ … state（ステート、状態）。$i$ 回目の時点で見えている状況。\n- $M_a$ … Actor の AI 本体。\n- $mem$ … メモ帳。過去の反省文がいくつか書いてあるテキスト。\n\n**身近な例え**: サッカーの試合中に、選手が「自分の体と頭脳」だけじゃなく、「コーチからもらった作戦メモ」も一緒に見ながらプレーを選んでいる感じ。普通は体と頭脳しか変わらないけれど、Reflexion は「作戦メモを書き換える」ことで動き方を変える。\n\n#### 2. 採点係 Evaluator のやってること\n\n$$ r_t = M_e(\\tau_t) $$\n\n**この式が言ってること**: $t$ 回目の挑戦で、Actor がやった手順全部を Evaluator に渡すと、点数が 1 つ返ってくる、というだけのこと。点数といっても多くの場合は「合格 = 1 / 不合格 = 0」の 2 種類しかない。\n\n**記号の意味**:\n- $r_t$ … reward（リワード、ご褒美）。$t$ 回目に Evaluator が出す点数。\n- $M_e$ … Evaluator の AI（採点係）。\n- $\\tau_t$ … trajectory（トラジェクトリ、軌跡）。$t$ 回目のチャレンジで Actor が取った行動と、その結果を全部つなげた記録。\n\n**身近な例え**: 学校のテストで先生（$M_e$）に答案用紙（$\\tau_t$）を出すと、丸かバツか（$r_t$）が返ってくるだけの仕組み。\n\n#### 3. 反省文の書き方とメモ帳への追加\n\n$$ sr_t = M_{sr}(\\tau_t, r_t, mem), \\quad mem \\gets mem + [sr_t] $$\n\n**この式が言ってること**: 反省文を書く AI に「今回の手順」「今回の点数」「今までのメモ帳の中身」の 3 つを渡すと、新しい反省文が 1 本作られる。それをメモ帳の末尾にくっつけてしまう、という意味。これを論文では「言葉でできた『意味のこもった矢印』(semantic gradient)」と呼んでいる。Gradient（勾配）は本当は「どっち方向に進めば良くなるか」を表す数学の道具だけど、ここではそれを**言葉で代わりに表している**という比喩。\n\n**記号の意味**:\n- $sr_t$ … self-reflection（セルフリフレクション）。$t$ 回目の反省文。\n- $M_{sr}$ … 反省文を書く AI。\n- $\\tau_t$ … 今回の手順。\n- $r_t$ … 今回の点数。\n- $mem$ … 過去の反省がいくつか書いてあるメモ帳。論文では普通 1〜3 個までしか溜めない（$\\Omega$ = 1〜3）。\n- $\\gets$ … 「左の物に右の物を入れる」という意味の矢印（= に近いけど「上書き」のニュアンス）。\n\n**身近な例え**: 日記帳に「今日のテスト、社会で年号を取り違えたのが原因で点を落とした。次は前後の出来事を必ず一緒に覚えよう」と書いて、明日の朝にもう一度読んでからテストに向かう感じ。日記は最新 3 ページしか保管しない。\n\n## 何がすごいの？\n\n論文に書いてある具体的な数字をそのまま並べる:\n\n- **AlfWorld（家の中を言葉で操作するパズルゲーム。134 タスク, 12 試行まで）**: ReAct というベースラインに Reflexion をつけると、**134 タスク中 130 タスク**を解いた。ベースラインより**絶対値で 22% も多く**解けた。ベースラインは 6〜7 回目で頭打ちだったのに対し、Reflexion はずっと伸び続けた。\n- **HotPotQA（Wikipedia を読んで質問に答える, 100 問）**: ベースラインは何度やり直しても改善しないのに、Reflexion は **約 20% 改善**。正解の文章を最初から渡してあげる設定（CoT(GT)）でも、Reflexion は **+14%** 上乗せ。\n- **HumanEval (Python) というコードを書かせるベンチマーク**: Reflexion は **pass@1 = 91.0%**（pass@1 とは「1 回目に出した答えが正解だった割合」のこと）。これは当時の最強 GPT-4 の 80.1% を超えて、**新しい世界記録（SOTA = State Of The Art）**になった。\n- **HumanEval (Rust)**: 60.0% → **68.0%**\n- **MBPP (Rust)**: 70.9% → **75.4%**\n- **LeetcodeHard (Python)**: 7.5% → **15.0%**\n- **ただし MBPP (Python) は 77.1% で、GPT-4 ベースラインの 80.1% に負けた**。著者自身も正直に書いている。原因は MBPP Python では「AI が自分で書いたテスト」が間違える割合（false positive = 「テストはOKだけど本当は間違い」と判定してしまう率）が **16.3%** もあったから。HumanEval Python ではこれが 1.4% しかなかった。\n- **Ablation（部品をわざと取り外して効果を確かめる実験, HumanEval Rust の難しい 50 問）**: フル Reflexion = 0.68 / テスト生成だけ抜く = 0.52 / 反省だけ抜く = 0.60 / 何もしないベースライン = 0.60。**テストと反省、両方そろって初めて効く**ことが分かる。\n- **モデルの大きさを変えた実験**: GPT-4 や GPT-3.5 など強い AI ではちゃんと改善するのに、starchat-beta という比較的小さな AI では **0.26 → 0.26 と全く変わらなかった**。著者は「自分で反省する能力は、AI がある程度大きくならないと出てこない『創発（emergent）能力』だ」と主張している。\n\n著者が「我々の貢献（contributions）」として論文中で挙げているもの:\n\n1. AI を「言葉でご褒美を与える新しい強化学習」の枠組みとして定式化した（方針 = AI の重み + メモ帳、と再定義したこと）。\n2. AI が自分で反省できることが、難しいタスクを少ない試行回数で解くのにすごく役立つことを実験で示した。\n3. **LeetcodeHardGym** という、Leetcode のハード難易度 40 問 × 19 種類のプログラミング言語からなる新しいベンチマークを公開した。GPT-4 が訓練に使った時期（2022 年 10 月 8 日）より後に出題された問題だけを集めて、AI がカンニングできないようにしてある点が偉い。\n4. 失敗ジャッジを誰がやるか（環境 / 手作りルール / LLM / 自動生成テスト）、メモ帳の形、AI の大きさなどを変えた網羅的な ablation 実験。\n\n## キーワード辞典\n\n- **LLM**（Large Language Model, 大規模言語モデル）… インターネット上のたくさんの文章を読んで、続きの言葉を予想できるようになった巨大な AI。ChatGPT の中身。\n- **エージェント（agent）**… 目的を達成するために行動する AI。たんに文章を返すだけじゃなく、「コードを実行する」「ウェブ検索する」「ゲームを操作する」みたいに能動的に動く AI のこと。\n- **強化学習（RL, Reinforcement Learning）**… ご褒美と罰で AI に少しずつ良い行動を覚えさせる勉強方法。普通は AI の中身（重み）を書き換える。\n- **方針（policy）**… AI が「状況を見て、次に何をするか」を決めるルール。\n- **重み（weights）**… AI の中にあるたくさんの数字。これを書き換えるのが普通の「勉強」だけど、Reflexion はこれを触らない。\n- **勾配（gradient）**… 本来は数学の道具で「どっち方向に進めば良くなるか」を表す矢印。Reflexion はこれを文章で代わりに表すから「semantic gradient（意味の勾配）」と呼ぶ。\n- **trajectory（軌跡）**… AI が取った行動と結果の記録の連なり。「右に行った → 何も無かった → 棚を開けた …」みたいな履歴。\n- **credit assignment problem**… 長い手順のうち、どの行動が悪かったのかを正しく見抜く問題。\n- **ReAct**… 行動と「考えていること」を交互に出力する既存の AI エージェント。Reflexion はこれを Actor として使う。\n- **Chain-of-Thought (CoT, 連鎖的思考)**… AI に「答えを出す前に考える過程も書け」と頼むテクニック。難しい問題で正解率が上がる。\n- **few-shot prompting**… AI に「こうやって解いてね」というお手本を数個見せてから本番をやらせる方法。\n- **pass@1**… 「1 回目に出した答えが正解だった確率」。コード生成の評価指標。\n- **EM (Exact Match)**… 答えが正解の文字列とぴったり一致したら正解、1 文字でも違ったら不正解、という採点方法。\n- **ベンチマーク**… AI の腕前を比べるための問題セット。学校でいう「全国共通テスト」のようなもの。\n- **HumanEval / MBPP / HotPotQA / AlfWorld / LeetcodeHardGym**… 本論文で使ったベンチマークの名前。コード書き、質問応答、家の中でのタスクなど。\n- **ablation（アブレーション実験）**… AI の部品をわざと取り外して、その部品が本当に効いていたかを確かめる実験。\n- **false positive / false negative**… 「ハズレなのに当たりと判定してしまう」のが false positive（FP）、「当たりなのにハズレと判定してしまう」のが false negative（FN）。\n- **SOTA (State Of The Art)**… 「今までで一番強い記録」。\n- **emergent（創発）**… AI を大きくしていくと、ある大きさを超えた途端に急に新しい能力が出てくる現象。\n- **GPT-4 / GPT-3.5 / text-davinci-003 / starchat-beta**… 実験に使った具体的な AI モデルの名前。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **なぜ「言葉でのフィードバック」が強いか**: 普通の強化学習だと、長い手順の最後に「合格 / 不合格」の 1 ビットしか情報が来ない。これを「どの行動が悪かったのか」に分配するのが credit assignment problem で、これがめちゃくちゃ難しい。一方、自然言語の反省文は「3 手目で冷蔵庫を開ける前に棚を見るべきだった」のように**ピンポイントで原因を指せる**ので、情報量が一気に増える。\n- **メモ帳の容量 $\\Omega$ が小さいのはなぜ**: AI の入力には「コンテキスト長」という上限（だいたい何千〜何万文字）があるので、過去の反省文を全部入れるわけにはいかない。だから論文では 1〜3 個に絞っている。著者自身、本当はもっと長期的に覚えておきたいと書いていて、将来はベクトル DB（文章を数値の配列に変えて検索できるようにした特殊なデータベース）や SQL DB に置き換えるべきと述べている。\n- **コード生成で false positive が嫌われる理由**: AI が自分でテストを書く。テストが「合格」を返したら AI は「もう提出していい」と思い込んで止まってしまう。だから「本当は間違いなのにテストが合格と言う」ような false positive が出ると、間違ったコードがそのまま提出されてしまう。逆に false negative（本当は正しいのにテストが不合格と言う）なら、反省フェーズで「テストの方が間違っているかも」と AI が気づいて戻せる可能性がある。MBPP Python では FP が 16.3% もあって、ここが伸び悩みの原因と分析されている。\n- **自己反省は emergent（創発）か**: 著者は starchat-beta（比較的小さなオープンソース AI）で実験して 0.26 → 0.26 と全く改善しなかったことから、「自分を批判して立て直す能力は AI がある程度大きくならないと出てこない」と結論づけている。ただし、検証は 1 つのモデルだけなので、「サイズなのか、訓練データの量なのか、指示を聞く能力なのか」までは切り分けられていない。\n- **限界として著者自身が認めていること**: (a) 言葉で行う強化学習も「局所最適解（non-optimal local minima。そこそこ良い場所で止まってしまって、本当の最高地点にたどり着けない状態）」に陥る。(b) メモが sliding window（最新の数個だけ覚える方式）なので長期記憶にならない。(c) コード生成のテスト駆動評価は、結果が毎回ランダムで変わる関数や、ネットを叩く関数や、並行処理する関数には使えない。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2303.11366v4/`\n- 正規ノート: `notes/arXiv-2303.11366v4.md`\n";
+const MACROS = {"\\greencheck": "\\textcolor{green}{\\ding{51}}", "\\redcross": "\\textcolor{red}{\\ding{55}}", "\\ns": "\\textcolor{MyDarkOrange}{[Noah: #1]}", "\\sy": "\\textcolor{MyDarkBlue}{[Shunyu: #1]}", "\\kn": "\\textcolor{MyPurple}{[Karthik: #1]}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

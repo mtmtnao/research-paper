@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Mamba: Linear-Time Sequence Modeling with Selective State Spaces（選んで覚える「マンバ」: 文の長さに比例した時間で動く新しい言語モデル）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2312.00752v2.md</code>
+  &nbsp;|&nbsp; macros: <code>28</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Mamba: Linear-Time Sequence Modeling with Selective State Spaces（選んで覚える「マンバ」: 文の長さに比例した時間で動く新しい言語モデル）\n\n- arXiv: https://arxiv.org/abs/2312.00752\n- 一次ソース: ../papers/arXiv-2312.00752v2/\n- 正規ノート: ../notes/arXiv-2312.00752v2.md\n\n---\n\n## 一言で言うと\n\n「いま入ってきた言葉に合わせて、覚えるか忘れるかを切り替えられる」新しいタイプのニューラルネットワークで、Transformer 並みの賢さを文の長さに比例した速さで実現した話。\n\n## どんな問題を解こうとしてるの？\n\n- 今の AI（ChatGPT みたいなやつ）は **Transformer**（← 文を理解するための AI の設計図のこと。今ほとんどの言語 AI がこれを使ってる）でできている。これは「文中の全部の単語どうしを総当たりで見比べる」仕組みなので、すごく賢いけど **文が長くなると計算量が二次関数的に増える**。\n  - たとえば文が 10 倍長くなると、計算は 100 倍になる。1000 文字の小説を読ませるのと、100 万文字の本一冊を読ませるのとでは、必要な計算がとんでもないことになる。\n- 一方、もっと軽い方法として **SSM（State Space Model、状態空間モデル）** という仲間がいる。これは「直前までの内容を 1 つの小さな『メモ帳』にまとめておく」やり方で、文の長さに **比例** した時間で済む。\n- でも従来の SSM には致命的な弱点があった: **メモ帳の更新ルールが、入ってくる単語によらず常に同じだった**（これを LTI = Linear Time Invariant、「いつでも同じ動き方をする」性質と呼ぶ）。\n  - これだと「あ、いまの単語は大事だから覚えておこう」「これは『えーっと』みたいなどうでもいい単語だから無視しよう」みたいな **内容に応じた判断ができない**。\n  - 結果、音声や画像のような「ずっと連続的に流れる」データには強いけど、言葉や DNA のような「重要度がバラバラな」データに弱かった。\n\n身近な例えで言うと、授業中にノートを取るときに「先生がいま言ったことを全部そのまま写す」ロボットみたいなもの。重要な公式と「えーっと」みたいな口癖を区別できない。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n**「メモ帳の更新ルール自体を、いま入ってきた単語に合わせて毎回切り替える」** という発想。これが論文のキーワード **selectivity（選択性）** だ。\n\n例え話: 普通の SSM のメモ帳ロボットは「3 秒ごとに今聞こえた言葉を必ずノートに書く」と決まっているロボット。Mamba のロボットは「いま聞こえたのが大事そうな言葉なら大きく書き、どうでもいい言葉ならスキップする」と毎回判断できるロボットになった。判断のしかた自体も学習で覚える。\n\n### 仕組み\n\n- step1: 普通の SSM では「メモ帳をどれくらい更新するか」を決めるツマミ（$\\Delta, B, C$ という 3 つのパラメータ）が **固定** だった。Mamba ではこのツマミを **そのとき入ってきた単語の値から毎回作り直す**（入力依存にする）。\n- step2: ツマミが毎ステップ変わるので、昔の SSM みたいに「掛け算の表をあらかじめ作っておいて一発で計算」（convolution、畳み込み）ができなくなる。その代わり **parallel scan（並列スキャン）** という、足し算を並列で順次計算できる賢い計算法を使う。\n- step3: GPU（計算用の半導体）の中には「速いけど狭いメモリ（SRAM）」と「遅いけど広いメモリ（HBM）」がある。Mamba はメモ帳の中身を「速い狭いメモリ」だけで完結させて、「遅い広いメモリ」に書き出さない。これで FlashAttention というテクニックと同じ発想で **桁違いに速く** なる（標準実装より 20〜40 倍速い）。\n- step4: ネットワーク全体の設計図もシンプルにする。普通の Transformer は「注意機構 (attention) のブロック」と「MLP（多層パーセプトロン、つまり普通の計算層）のブロック」を交互に積み重ねる。Mamba は両方を 1 つにまとめた **同じ形のブロック** を縦に積むだけ。\n\n### 主要な数式\n\n#### ① SSM の基本ルール（メモ帳の更新）\n\n$$ h_t = \\overline{A}\\, h_{t-1} + \\overline{B}\\, x_t, \\qquad y_t = C\\, h_t $$\n\n**この式が言ってること**: 「いまのメモ帳 $h_t$ は、ひとつ前のメモ帳 $h_{t-1}$ をちょっと変化させたものに、新しく入ってきた言葉 $x_t$ を混ぜたもの」。出力 $y_t$ はそのメモ帳から取り出した答え。これを 1 単語ずつ繰り返していく。\n\n**記号の意味**:\n- $x_t$ … 時刻 $t$ に入ってきた言葉（数字に直したもの）\n- $h_t$ … 時刻 $t$ でのメモ帳の中身（複数の数の組）\n- $y_t$ … 時刻 $t$ にモデルが出す答え（数字）\n- $\\overline{A}$ … 「前のメモ帳をどう古くしていくか」を決める係数（古い記憶をどれくらい残すか）\n- $\\overline{B}$ … 「新しい言葉をどれくらいメモ帳に書き込むか」を決める係数\n- $C$ … 「メモ帳のどの部分を答えとして読み出すか」を決める係数\n\n**身近な例え**: 連絡帳に毎日メモを足していくのと同じ。$\\overline{A}$ は「昨日までのメモを 0.9 倍に薄める」みたいな割合、$\\overline{B}$ は「今日の出来事をどれくらいの濃さで書くか」、$C$ は「明日テストで聞かれそうな部分を抜き出す」マーカーペン。\n\n---\n\n#### ② Mamba の肝: ツマミ $\\Delta, B, C$ を入力で作り直す\n\n$$ B_t = \\mathrm{Linear}(x_t), \\qquad C_t = \\mathrm{Linear}(x_t), \\qquad \\Delta_t = \\mathrm{softplus}(\\mathrm{Linear}(x_t)) $$\n\n**この式が言ってること**: ①の式に出てきた $B, C, \\Delta$ の 3 つのツマミを、**「いま入ってきた単語 $x_t$ から計算して毎回作り直す」**。つまりツマミが時刻ごとに違う値になる。\n\n**記号の意味**:\n- $x_t$ … いま入ってきた単語\n- $\\mathrm{Linear}(\\cdot)$ … 「入った数に何かをかけて足す」だけのシンプルな変換器（学習で覚える）。中学校で習う $y = ax + b$ みたいなやつを、複数の数についてまとめてやるもの\n- $B_t, C_t, \\Delta_t$ … 時刻 $t$ のときのツマミ（時刻ごとに変わる）\n- $\\mathrm{softplus}$ … 入った値がマイナスでも必ずプラスに変える関数（$\\Delta$ は「どれくらい時間を進めるか」だから負だと困る）\n\n**身近な例え**: コーヒーを淹れる人が、お客さんごとに「この人は甘党だから砂糖多め」「この人は苦いの好きだから濃いめ」と毎回レシピを変えるのと同じ。普通の SSM は「全員に同じレシピ」だった。Mamba は「お客さんの注文を聞いてからレシピを決める」。\n\n---\n\n#### ③ ゲート（門）との関係 — Theorem 3.1\n\n$$ g_t = \\sigma(\\mathrm{Linear}(x_t)), \\qquad h_t = (1 - g_t)\\, h_{t-1} + g_t\\, x_t $$\n\n**この式が言ってること**: 特別な設定（メモ帳のサイズが 1 のとき）では、Mamba の更新式は「**今の単語をどれくらい採用するか**」を決めるツマミ $g_t$ を使った「混ぜ算」になる。$g_t$ が 1 に近ければ「新しい単語をそのまま採用」、0 に近ければ「前のメモ帳をそのまま残す」。\n\n**記号の意味**:\n- $g_t$ … 「ゲート」と呼ばれる 0〜1 の数（門の開き具合）\n- $\\sigma$ … シグモイド関数。どんな数を入れても 0〜1 の間に押し込めてくれる関数。要するに「割合」に変える道具\n- $h_{t-1}$ … ひとつ前のメモ帳\n- $x_t$ … 今の単語\n\n**身近な例え**: 水道の蛇口の混合栓。$g_t$ が「お湯の割合」だと思えばいい。$g_t = 1$ なら全部お湯（新しい単語そのまま）、$g_t = 0$ なら全部水（古いメモ帳そのまま）、$g_t = 0.3$ なら 3 割お湯・7 割水を混ぜる。お客さんごとに（=単語ごとに）この蛇口の開き具合を変えられるようになった、というのが Mamba の本質。\n\n> 補足: 「Theorem 3.1（定理 3.1）」は論文中の証明付きの主張で、「昔から RNN（リカレントニューラルネットワーク、過去の入力を覚えながら処理するタイプの古典的なネットワーク）で使われてきた『ゲート』という仕組みは、実は SSM を離散化したときに自然に出てくるものなんだ」と理論的につないでいる。つまり「マンバの選択性 = 古き良き LSTM/GRU のゲートを SSM の言葉で再発明したもの」と読める。\n\n## 何がすごいの？\n\n数値は全部 TeX から拾った数字だよ。\n\n- **合成タスク Selective Copying**（決まった文字を選んで覚えてオウム返しするテスト）: 旧来の S4 は 18.3%（ほぼ偶然） → Mamba は **99.8%** で完全に解けた。\n- **合成タスク Induction Heads**（パターンを覚えてもう一度出てきたときに次を予測するテスト）: 長さ 256 で学習させただけなのに、長さ $2^{20}$ = **約 100 万トークンまで完璧に外挿** できた（学習時の 4000 倍の長さ！）。他の手法はせいぜい 2 倍までしか伸びない。\n- **言語モデルの性能（Pile というデータセット、6 つの常識タスク平均）**:\n  - Mamba-1.4B: **平均 59.7** vs Pythia-1.4B: 55.2 / RWKV-1.5B: 54.3\n  - Mamba-2.8B: **平均 63.3** vs Pythia-2.8B: 59.1 / RWKV-3B: 59.6\n  - Mamba-2.8B は **2 倍以上大きい GPT-J-6B（63.0）と並ぶ**。Pile の perplexity（言語モデルの予測の苦しさ指標、低いほどよい）も Mamba-2.8B が 6.22 で Pythia-2.8B の 6.73 を上回る。\n- **DNA モデリング**（HG38 という人ゲノムデータセット）: Transformer や HyenaDNA と **同じ精度を 3〜4 倍少ないパラメータで** 出せる。さらに「文脈を長くするほど精度が単調に良くなる」性質を実証（HyenaDNA は逆に悪くなる）。\n- **音声生成（SC09 という 0〜9 の数字音声データセット）**: たった 6.1M パラメータの Mamba で FID（生成品質指標、低いほどよい）= **0.94**。これは比較対象の SaShiMi (5.8M) の **1.99 を半分以下に**。24.3M モデルでは FID = **0.67** で SOTA（state-of-the-art、その時点の最高記録）。\n- **速度**: 学習時の selective scan は標準 PyTorch 実装より **20〜40 倍速い**。推論（文の生成）スループットは同サイズ Transformer の **5 倍**。Mamba-6.9B のほうが Transformer-1.3B より生成が速いというくらい有利。\n\n**著者が論文で主張している貢献**:\n1. SSM のパラメータを入力依存にする「選択メカニズム」を提案\n2. ハードウェアを意識した並列スキャンで、選択性を入れても実用速度を保つ実装を提案\n3. attention も MLP もない、シンプルで均質な単一ブロック構造 **Mamba** を提案\n4. 言語・DNA・音声の 3 つの異なる種類のデータで Transformer 同等以上を線形時間で達成\n\n## キーワード辞典\n\n- **Transformer** … 今の主流 AI（ChatGPT など）の中身に使われている設計図。文中の全単語どうしを総当たりで見比べる「attention」が中核。文が長くなると計算量が二次で増える。\n- **attention（注意機構）** … 文中の「どの単語に注目するか」を計算する仕組み。Transformer の心臓部。\n- **SSM（State Space Model、状態空間モデル）** … 入力を 1 つの小さなメモ帳（隠れ状態 $h$）にまとめながら順番に処理する仕組み。文の長さに比例した時間で動く。\n- **S4** … SSM の代表格の 1 つ。Mamba の元になった研究。\n- **S6** … S4 に Mamba 流の選択メカニズムを足したもの。S4 + selection + scan の頭文字。\n- **LTI（Linear Time Invariant）** … 「いつでも同じ動き方をする」性質。従来 SSM の弱点。\n- **recurrence（リカレンス／再帰）** … 「ひとつ前の状態から今の状態を作る」式 1 行ずつの計算。\n- **convolution（畳み込み）** … 1 つの「型紙」を端から端まで掛け算して足し合わせる計算。画像処理でもおなじみ。\n- **RNN** … Recurrent Neural Network。過去の情報をメモしながら順に処理する古典的ネットワーク。LSTM/GRU はこの仲間。\n- **gate（ゲート）** … 「新情報をどれくらい採用するか」を 0〜1 で決める門。LSTM/GRU の心臓部。\n- **HBM / SRAM** … GPU の中のメモリ。HBM は広いけど遅い、SRAM は狭いけど速い。\n- **FlashAttention** … attention を SRAM 内で完結させて速くするテクニック。Mamba の scan 実装もこの発想をマネしている。\n- **parallel scan（並列スキャン）** … 「足し算を順番にやる」処理を、賢く並列化するアルゴリズム。\n- **Pile** … 800GB 級の英語コーパス。言語モデルの標準的な事前学習データセット。\n- **perplexity（ppl）** … 言語モデルが次の単語を予測するときの「迷い具合」。低いほど良い。\n- **zero-shot** … 追加学習なしで、新しいタスクをいきなり解かせる評価方式。\n- **HellaSwag / PIQA / Arc-E / Arc-C / WinoGrande / LAMBADA** … 言語モデルの常識・推論能力を測る標準ベンチマーク 6 種。\n- **Pythia / RWKV / GPT-J / OPT** … 比較対象になっているオープンソース言語モデルたち。\n- **FID / IS** … 音声や画像の生成品質指標。FID は低いほど良く、IS は高いほど良い。\n- **SaShiMi / HyenaDNA / Hyena / RetNet** … 比較対象の系列モデルたち。SaShiMi は音声、HyenaDNA は DNA、Hyena は畳み込み系、RetNet は recurrent 系。\n- **foundation model** … 大量データで事前学習した「土台」モデル。下流タスクに使い回せる。\n- **softplus** … マイナスの数も含めて、なめらかにプラスに変える関数。\n- **sigmoid（$\\sigma$）** … どんな数も 0〜1 に押し込める関数。割合を表すのに便利。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **なぜ $\\Delta$（時間刻み）が一番大事なのか**: 離散化の式 $\\overline{A} = \\exp(\\Delta A)$ から、$A$ への入力依存性は $\\Delta$ 経由でも作れる。だから「$A$ も入力依存にする」必要はなく、$\\Delta, B, C$ だけ入力依存にすれば十分、というのが著者の判断。Ablation でも選択 $\\Delta$ 単独で perplexity が 10.93→9.81 まで改善し、$B, C$ も足すと 8.71 まで下がる。\n- **なぜ scan を実装し直したか**: 入力依存になると「型紙を 1 個用意して全位置に当てる」畳み込みの形が使えなくなる。一方 recurrence は順次計算で並列化しづらい。著者は parallel scan + kernel fusion + recomputation という古典テクの組み合わせで「状態 $h$ のサイズが (B, L, D, N) と大きくても、それを HBM に書き出さず SRAM 内で計算完結させる」工夫をした。これで実用速度を確保。\n- **Real vs Complex**: 従来 SSM は $A$ を複素数で持つことが多かったが、Mamba は実数をデフォルトに。350M モデルの ablation で S4D-Real ($A_n = -(n+1)$) が ppl 8.71 で S4D-Lin (複素 $A_n = -1/2 + ni$) の 9.16 を上回る。ただし著者は「audio waveform 実験だけは複素に戻した」と注記しており、データの性質によって最適は変わる（\"no free lunch\"）。\n- **論文が認める限界**:\n  - scaling は約 1.3B、zero-shot 評価は 2.8B 止まりで、7B+ スケールでの検証は本論文ではされていない（著者自身が discussion で言及）。\n  - fine-tuning や RLHF、量子化など実用化に必要な手順が Transformer と同じように乗るかは open question として残している。\n  - 連続信号（音声波形など）では LTI の方が良い場面がある、と明記している。\n- **アーキは凝るより selection を入れる方が効く**: H3 アーキ + S6 が 99.7%、Mamba アーキ + S6 が 99.8%。つまり Mamba ブロックの形そのものの貢献より、内部の selective SSM (S6) を入れることの貢献の方が大きい、というのが著者の結論。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2312.00752v2/`\n- 正規ノート: `notes/arXiv-2312.00752v2.md`\n";
+const MACROS = {"\\citep": "\\parencite", "\\citet": "\\textcite", "\\baselinestretch": "#1", "\\cmark": "\\ding{51}", "\\xmark": "\\ding{55}", "\\paren": "\\left (#1 \\right)", "\\dd": "\\mathop{}\\!d", "\\NAME": "Mamba", "\\R": "\\mathbb{R}", "\\dt": "\\Delta", "\\A": "\\bm{A}", "\\B": "\\bm{B}", "\\C": "\\bm{C}", "\\D": "\\bm{D}", "\\K": "\\overline{\\bm{K}}", "\\da": "\\overline{\\bm{A}}", "\\db": "\\overline{\\bm{B}}", "\\dA": "\\overline{\\bm{A}}", "\\dB": "\\overline{\\bm{B}}", "\\AB": "(\\A, \\B)", "\\ABC": "(\\A, \\B, \\C)", "\\dtAB": "(\\dt, \\A, \\B)", "\\dtABC": "(\\dt, \\A, \\B, \\C)", "\\dAB": "(\\dA, \\dB)", "\\para": "\\iftoggle{arxiv}{\\paragraph{#1}}{\\textbf{#1}}", "\\maybe": "\\textcolor{blue}{#1}", "\\samethanks": "\\footnotemark[#1]", "\\diag": "\\operatorname{diag}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

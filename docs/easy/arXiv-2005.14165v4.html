@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Language Models are Few-Shot Learners（言語モデルは「ちょっとお手本を見せるだけで」学べる）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2005.14165v4.md</code>
+  &nbsp;|&nbsp; macros: <code>0</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Language Models are Few-Shot Learners（言語モデルは「ちょっとお手本を見せるだけで」学べる）\n\n- arXiv: https://arxiv.org/abs/2005.14165\n- 一次ソース: ../papers/arXiv-2005.14165v4/\n- 正規ノート: ../notes/arXiv-2005.14165v4.md\n\n---\n\n## 一言で言うと\n\nすごく大きな「文章の続きを当てるAI」（パラメータ1750億個＝GPT-3）に、お手本を数個見せるだけで、追加の練習なしで色んな国語タスクをかなりこなせる、という発見。\n\n## どんな問題を解こうとしてるの？\n\n- これまでのAIは、新しいタスク（例：英文の感情を判定する、要約する、翻訳する）ごとに「正解つきの練習問題」を **数千〜数十万問** 集めて、AI に追加レッスン（fine-tuning：ファインチューニング、← AI を特定の仕事用に追加で訓練すること）を受けさせる必要があった。\n- でも、人間はそんな大量の例を見なくても「悲しい文か嬉しい文か当ててね、これが例だよ」と **2〜3 個の例** を見せるだけで、新しい仕事をだいたいできるようになる。\n- AI も「追加レッスン無し・お手本だけ」で人間みたいに新タスクをこなせるようにしたい。\n- 既存の方法（GPT-2）でこれを試したら、Natural Questions という質問応答タスクで正解率 4% しか出なかった。話にならない。\n- さらに「追加レッスン専用のデータ」に頼ると、AI がそのデータの **クセに過剰適合** してしまい、本番では弱い、という問題もあった。\n\n身近な例で言うと、これまでは「テスト前に過去問を何万問も解かないと点を取れない生徒」だったのを、「先生がテスト中に解き方の例を 2〜3 個見せてくれれば、その場で解ける生徒」にしたい、というイメージ。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n**AI のサイズ（覚えられる数のキャパシティ）を、これまでにないくらい大きくする**。具体的には、これまでで最大級だった同種モデル（17 億〜170 億パラメータ級）の **10 倍**、1750 億パラメータ（175B）まで巨大化させる。パラメータ（← AI の中にあるツマミの数。大きいほど色んなパターンを覚えられる）が増えると、「お手本だけで新タスクをこなす力」が **自然と伸びる**、という仮説を実証する。\n\n例えるなら、引き出しが 100 個しかない机だと、覚えられる事も限られて応用が利かない。でも引き出しが 1750 億個あれば、「ジャンケンの勝ち方」「英語→フランス語」「足し算」みたいな細かい知識を全部しまっておけて、テストの時に「あ、これはあの引き出しだ」と取り出せる。論文はこの仮説を、サイズ違いの 8 個のモデル（125M, 350M, 760M, 1.3B, 2.7B, 6.7B, 13B, 175B）で実験して確かめた。\n\n### 仕組み\n\n- step1: **超巨大な「次の単語当てゲーム」AI を作る**。インターネット上の大量の文章（合計 3000 億トークン分。token：トークン ← 単語や単語のかけらの単位）を読ませて、「この単語の次に来るのは何？」をひたすら当てさせる訓練を行う。これだけ。タスクごとの追加レッスンはしない。\n- step2: モデルの中身は **Transformer（トランスフォーマー）** という種類のニューラルネットワーク（← 人工の脳神経網。たくさんの簡単な計算ユニットが繋がって複雑な計算をする仕組み）。GPT-2 と同じ作りで、注意機構（attention：アテンション ← 入力のどこに注目するかをモデル自身が決める仕組み）を少しだけ工夫した版（Sparse Transformer の dense と局所スパースを交互に使う）。\n- step3: 一番大きいモデル（175B）は 96 層・隠れ次元 12288・96 個の注意ヘッドという巨大さ。入力として一度に 2048 トークンまで読める（context window：コンテキストウィンドウ ← AI が一度に見られる文章の長さ）。\n- step4: **データ** はインターネット全体をフィルタリングした CommonCrawl（410B tokens, 60%）と、WebText2（22%）、Books1（8%）、Books2（8%）、Wikipedia（3%）を質に応じて混ぜる。質の高いものは何度も読ませる。\n- step5: 評価のときは **3 つの設定** を試す:\n  - **zero-shot（ゼロショット）**: 「次の英文をフランス語にしてね」と説明だけ書いて、お手本は 0 個。\n  - **one-shot（ワンショット）**: 説明＋お手本 1 個。\n  - **few-shot（フューショット）**: 説明＋お手本 10〜100 個（K 個）。\n- step6: **大事なポイント**: どの設定でも、AI の中身（パラメータ）は **1 ミリも書き換えない**。ただ「お手本＋本番の問題」を文章として入力して、続きを書かせるだけ。これを **in-context learning（インコンテキスト・ラーニング ← 入力文脈の中で学ぶ）** と呼ぶ。\n- step7: 24 種類以上の国語ベンチマーク（← AI の力を測る標準テストセット）で性能を測り、サイズが大きくなると性能がどう伸びるかを観察する。\n\n### 主要な数式\n\n論文自体は数式がとても少ないけど、中核の考え方は次の 2 つ。\n\n#### 1. 「次の単語当て」モデルの考え方\n\nAI がやってるのは、文章 $w_1, w_2, \\dots, w_{t-1}$ を見て、次の単語 $w_t$ が何になりそうか、その「ありそうさ（確率）」を計算すること。文章全体の「ありそうさ」は、各単語の「次に来そうさ」を全部かけ合わせて表す:\n\n$$ P(w_1, w_2, \\dots, w_n) = P(w_1)\\cdot P(w_2 \\mid w_1) \\cdot P(w_3 \\mid w_1, w_2) \\cdots P(w_n \\mid w_1, \\dots, w_{n-1}) $$\n\n**この式が言ってること**: 「文章全体の自然さ」は、「最初の単語の出やすさ」×「最初の単語の後にこの 2 番目の単語が来る出やすさ」×「…」と、左から順に「次の単語が出る出やすさ」をひたすら掛け算したもの、という意味。AI はこの掛け算の中身を覚えるように訓練される。\n\n**記号の意味**:\n- $w_1, w_2, \\dots, w_n$ … 文章を構成する単語（実際は単語の細かい部品＝トークン）を順番に並べたもの。\n- $P(w_t)$ … 単語 $w_t$ が出てくる「ありそうさ」を表す数（0〜1 の間。1 に近いほど絶対出る、0 に近いほど絶対出ない）。確率（← 「サイコロで 6 が出る目のありそうさ」のような、0〜1 の間の数）のこと。\n- $P(w_t \\mid w_1, \\dots, w_{t-1})$ … 「これまでに $w_1$〜$w_{t-1}$ が並んだ後で、次が $w_t$ になる」ありそうさ。「縦棒 $\\mid$」は「〜という前提のもとで」と読む。\n- $\\cdot$（点）… 掛け算の記号。\n- $n$ … 文章の長さ（単語の数）。\n\n**身近な例え**: しりとりみたい。「りんご」の次に「ゴリラ」が来る自然さは、最初の「り」から始まる単語が「りんご」になる自然さ × 「りんご」の次に「ゴリラ」が来る自然さ。これを最後まで掛け算していく。AI はものすごい量の文章を読んで、「この言葉のあとはこの言葉が来やすい」を全部覚えている、いわば究極のしりとり名人。\n\n#### 2. few-shot：お手本 K 個を文脈に詰める\n\nfew-shot 設定では、AI に入力として渡すのはおおまかに次のような文章:\n\n$$ \\text{入力} = \\underbrace{\\text{タスクの説明}}_{\\text{自然言語}} \\;\\;+\\;\\; \\underbrace{(x_1, y_1),\\, (x_2, y_2),\\, \\dots,\\, (x_K, y_K)}_{\\text{お手本 }K\\text{ 個}} \\;\\;+\\;\\; \\underbrace{x_{\\text{本番}}}_{\\text{答えてほしい問題}} $$\n\n**この式が言ってること**: 「タスクの説明文」＋「問題と答えのペアを K 個」＋「本番の問題」を、一本の長い文章として AI に渡す。すると AI は「続き＝本番の答え」を書いてくれる。中身（パラメータ）は変えない。\n\n**記号の意味**:\n- $x_i$ … $i$ 番目のお手本の「問題」部分（例: 英文 \"Hello\"）。\n- $y_i$ … $i$ 番目のお手本の「答え」部分（例: フランス語訳 \"Bonjour\"）。\n- $K$ … お手本の数。論文では普通 10〜100 個。$K=0$ なら zero-shot, $K=1$ なら one-shot, それ以上なら few-shot。\n- $x_{\\text{本番}}$ … 答えを出してほしい本番の問題。\n- $+$ … ここでは「文章としてくっつける」という意味（足し算ではない）。\n\n**身近な例え**: 数学の宿題プリント。一番上に「分数の計算をしましょう」と説明が書いてあって、その下に解き方のお手本問題と答えが 3 問くらい印刷されていて、最後に「では、これを解いてください: 1/2 + 1/3 = ?」と本番の問題がある、あの形式。AI に渡す入力もちょうどそんな感じのプリント。\n\n#### 3.（参考）スケーリング則: サイズが大きいほど賢くなる\n\n論文には明示の数式は無いけど、結論として「**お手本だけで解く力**は、AI のサイズが大きくなるほどスムーズに伸びる」という観察が中心。aggregate_performance の図1で 42 ベンチマーク平均の正解率が、モデルサイズが 10 倍になるごとにほぼ一定の割合で上がっていく様子が示されている。\n\n論文の Results 冒頭でも「power-law（べき乗則 ← かたっぽが 10 倍になると、もう片っぽがいつも同じ割合だけ変わる関係）を、これまでより **さらに 100 倍（two orders of magnitude）の範囲** 引き延ばしても、ほとんどズレない」と書かれている。\n\n**身近な例え**: 自転車のギアと速度の関係に似ていて、「ペダルを 2 倍速く漕いだら必ず速度がこのくらい上がる」というルールが、すごく速く漕いでもまだ崩れずに成立し続けている感じ。\n\n## 何がすごいの？\n\n論文中で報告されている主な数字を、TeX を確認して並べる:\n\n- **LAMBADA（次の単語当てクイズ）**: few-shot で **86.4%**。これまでの最高記録より **+18%** 改善。\n- **TriviaQA（雑学クイズ）**: few-shot で **71.2%**。資料を見ずに答える設定（closed-book）で、追加レッスン済みの最高記録（RAG: 68.0）を **上回った**。「巨大モデルが持っている知識だけで答える」が成立してしまった例。\n- **PTB（文章のもっともらしさを測るタスク）**: zero-shot で **perplexity 20.50**（perplexity：パープレキシティ ← AI がどれくらい次の単語に迷うかを示す数。小さいほど自信あり）。これまでの最高記録より **15 ポイント** 改善。\n- **SuperGLUE（8 個の国語タスクをまとめた標準テスト）**: few-shot で **71.8**。BERT-Large（69.0、追加レッスン済み）を超えたが、追加レッスン専用の最強モデル（89.0）にはまだ届かない。\n- **算術タスク**: 2 桁の足し算 **100%**、2 桁の引き算 **98.9%**、3 桁足し算 **80.2%**、3 桁引き算 **94.2%**。一方で 4 桁は 25–26%、5 桁は 9–10% と、桁が増えるとガクッと落ちる。\n- **人間が書いたニュース記事と GPT-3 が書いたニュース記事の見分けテスト**: 人間の正答率は約 **52%（＝コインを投げて当てるのとほぼ同じ）**。比較用の小さいモデル（control model）では約 **88%** で見分けられたので、175B のときだけ「ほぼ見分けがつかない」状態に到達。\n- **苦手なタスク**: WiC（2 文比較）は 49.4% で完全に当てずっぽうレベル。ANLI、RACE、QuAC も低い。\n\n著者が「貢献（contribution）」として主張しているのは大きく次の点:\n\n- (1) 1750 億パラメータの自己回帰型言語モデル GPT-3 を実際に訓練して、性能を公開で示した。\n- (2) zero-shot / one-shot / few-shot を「タスク用データへの依存量の連続軸」として整理した。\n- (3) **モデルが大きくなるほど in-context learning がはっきり強くなる**（zero-shot と few-shot の差自体が拡大する）ことを 8 サイズで実証した。\n- (4) 人間が見分けられない品質のニュース記事生成を実証した。\n- (5) 学習データに評価データの中身が混ざる「データ汚染（test-set contamination）」を 13 単語連続一致で系統的に調べる枠組みを示し、影響を解析した。\n- (6) 偏見、悪用、エネルギーコストといった社会的影響を Broader Impacts として論じた。\n\n## キーワード辞典\n\n本文に出てきた順で、中学生向けの一言定義。\n\n- **言語モデル（language model）** … 文章の続きを当てるルールを丸ごと覚えた AI。\n- **fine-tuning（ファインチューニング）** … 出来上がった AI を、特定のタスク用にもう一度追加で訓練して微調整すること。\n- **GPT-3** … この論文で作った、パラメータ 1750 億個の大きな言語モデル。\n- **パラメータ（parameter）** … AI の中にある調整つまみ。多いほど色んなパターンを覚えられる。1750 億個 = 175,000,000,000 個。\n- **トークン（token）** … 単語や単語のかけらの単位。AI が読み書きする最小ブロック。\n- **Transformer（トランスフォーマー）** … 今の言語 AI の主流の作り方。文中の単語同士の関係を一気にまとめて扱える。\n- **attention（アテンション・注意機構）** … 入力のどこに注目すべきかを AI 自身が決める仕組み。\n- **context window（コンテキストウィンドウ）** … AI が一度に読める文章の長さ。GPT-3 は 2048 トークン。\n- **zero-shot / one-shot / few-shot** … 本番のテストで AI にお手本を 0 個 / 1 個 / 10〜100 個渡す設定。\n- **in-context learning（インコンテキスト・ラーニング）** … パラメータをいじらず、入力文の中でお手本を見せて「学ばせる」やり方。\n- **meta-learning（メタ学習）** … 「学ぶこと自体を学ぶ」枠組み。ここでは「訓練中に幅広いスキルを覚え込み、本番ではそれを取り出して使う」構造のこと。\n- **prompt（プロンプト）** … AI に渡す入力文。「タスク説明 + お手本 + 本番の問題」をまとめたもの。\n- **autoregressive（自己回帰）** … 「これまでに出した単語を見て、次の単語を 1 つずつ予測する」やり方。\n- **perplexity（パープレキシティ）** … AI が次の単語に迷う度合いの数値。小さいほど良い。\n- **benchmark（ベンチマーク）** … AI の力を比べるための標準テストセット。\n- **SuperGLUE / LAMBADA / TriviaQA / SQuAD / ANLI / WiC / HellaSwag / PIQA** … 論文に出てくる代表的なベンチマーク（テストの名前）。\n- **BERT / T5 / RoBERTa / RAG** … 比較された他の AI モデル。BERT は双方向（文の前後どちらも見る）、T5 は「全部を文章生成問題に統一」、RAG は外部知識を引っ張って答える方式。\n- **CommonCrawl** … インターネット全体をクロール（巡回収集）した大規模テキストデータ。\n- **fuzzy 重複除去（fuzzy deduplication）** … 完全一致でなく「似ている文書」をまとめて 1 個に絞ること。\n- **data contamination（データ汚染）** … 学習データの中にテストの問題が混じってしまって、点数が過大評価されること。\n- **scaling law（スケーリング則）** … モデルサイズや計算量を増やすと、性能がスムーズに上がる規則性。\n- **closed-book QA** … 質問に答えるとき、外部資料を見ずに「モデルの記憶」だけで答える設定。\n- **open-domain QA** … 質問の分野が決まっていない、何でも来い型の質問応答。\n- **broader impacts** … 技術が社会に与える広い影響（悪用、偏見、エネルギーなど）。\n- **NLI（Natural Language Inference）** … 「文 A と文 B は矛盾／含意／無関係 のどれ？」を当てるタスク。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **「お手本で本当に学んでいるのか？」問題**: 著者自身が limitations（限界）として「few-shot で AI が新しいタスクを `その場で学んでいる` のか、それとも `訓練中に見たパターンを思い出している` だけなのかは、この論文では区別できない」と書いている。これは後の研究（induction heads など）で議論される論点を先取りしている。\n- **苦手の傾向**: 2 つの文を比べる系（WiC で 2 つの文中の同じ単語が同じ意味で使われているか／ANLI で含意か矛盾か）が一様に弱い。著者はこれを「**自己回帰（左から右に書いていく方式）の弱点**」かもしれないと推測している。BERT のように「両方向から見られる」モデルを同じスケールにしたらどうなるか、は future work とされている。\n- **算術が「丸暗記」ではないという根拠**: 3 桁加算の問題 2000 問のうち、学習データに完全一致したのはたった 17 問（0.8%）。減算では 2 問（0.1%）。それでも 80% 解けるので「丸暗記ではない」と論じている。一方で、桁が増えると正解率がガクッと落ちる（5 桁で 9–10%）ので、「桁ごとに繰り上がりを丁寧に扱う計算」は本当には学べていないと示唆される。\n- **データ汚染の正直な扱い**: 訓練データから評価データを取り除くフィルターに **バグ** があり、一部の評価データが学習側に残ってしまった。「再学習にはコストが大きすぎてできなかった」とそのまま書いている。PIQA・Winograd には * 印を付けて報告。CBT・1BW・4 つの Wikipedia LM は **報告自体を取り下げ** ている。\n- **モデル仕様**:\n  - GPT-3 175B: 96 層, $d_{\\mathrm{model}}=12288$, 96 個の注意ヘッド, バッチサイズ 3.2M tokens, 学習率 $0.6\\times 10^{-4}$。\n  - 8 個のサイズで実験: 125M / 350M / 760M / 1.3B / 2.7B / 6.7B / 13B / 175B。全モデルとも合計 300B tokens を学習。\n- **「権威」ではなく「最終的な真実」**: 数値はすべて TeX 由来。本文の解釈で「TeX にはここまでしか書いていない」と思った箇所は推測を断定しないように努めた。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2005.14165v4/`\n- 正規ノート: `notes/arXiv-2005.14165v4.md`\n";
+const MACROS = {};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

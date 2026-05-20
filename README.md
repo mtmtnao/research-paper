@@ -86,6 +86,29 @@ python3 scripts/preview.py --publish                              # docs/ に全
 
 ---
 
+## 中学生向け解説 (`scripts/easy.py`)
+
+研究者向けノート (`notes/`) は専門用語と生 KaTeX をそのまま貼っているので、ML を知らない人には読みにくい。`scripts/easy.py` は同じ論文を「中学校 2 年生にもわかる日本語」で解説し直し、`docs/easy/` に公開する独立系統。
+
+```bash
+python3 scripts/easy.py                            # 不足分を並列生成（default 3 並列）
+python3 scripts/easy.py 5                          # 並列度変更
+python3 scripts/easy.py --only arXiv-1312.6114v11  # 1 本だけ生成（試運転に）
+python3 scripts/easy.py --publish                  # notes_easy/*.md → docs/easy/*.html を一括レンダリング
+python3 scripts/easy.py --all                      # 生成 → publish を続けて実行
+MODEL=claude-opus-4-7 python3 scripts/easy.py
+```
+
+- **一次ソース**: `papers/<folder>/`（TeX。最終的な真実）
+- **補助ソース**: `notes/<folder>.md`（あれば方向性アンカーとして使う・無ければ TeX のみ）
+- **出力**: `notes_easy/<folder>.md` ↔ `docs/easy/<folder>.html`（既存 `notes/` `docs/` と同じ stem。リネーム不要）
+- ML 用語は出るたびにその場で平易補足、数式は **「式が言ってること / 記号の意味 / 身近な例え」の 3 ブロック** で必ずほどく（プロンプトで強制）。
+- `note.py` と同じ機構: `claude -p` 並列、既存 skip で冪等、プラン制限検知で新規ワーカー停止（終了コード 2）、ログは `logs/easy-<folder>.log`。
+- HTML レンダリングは `preview.py` の関数を import で再利用（`preview.py` 本体は改変しない）。論文固有マクロも自動抽出される。
+- 公開 URL: **<https://mtmtnao.github.io/research-paper/easy/>**（`docs/easy/` を push すると自動配信）。
+
+---
+
 ## arXiv TeX ソースの読み方（参考）
 
 論文フォルダの中身は概ね以下のような構造になっている:

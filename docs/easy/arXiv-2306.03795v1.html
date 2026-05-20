@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>AI-Supported Assessment of Load Safety（AI でトラックの荷物の積み方が安全かをチェックする話）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2306.03795v1.md</code>
+  &nbsp;|&nbsp; macros: <code>5</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# AI-Supported Assessment of Load Safety（AI でトラックの荷物の積み方が安全かをチェックする話）\n\n- arXiv: https://arxiv.org/abs/2306.03795\n- 一次ソース: ../papers/arXiv-2306.03795v1/\n- 正規ノート: ../notes/arXiv-2306.03795v1.md\n\n---\n\n## 一言で言うと\n\nトラックの荷台を撮った写真から「ちゃんと積めてるか／危ない積み方か／そもそも写真がダメか」を AI に見分けさせる試み。\n\n## どんな問題を解こうとしてるの？\n\n- **現実の困りごと**: トラックが工場や倉庫を出る前に、運転手や荷積み担当の人（loadmaster）が荷台の写真を撮って「ちゃんと荷物が固定されてるよ」と本社の品質管理部門に送る。でも 1 日に何百枚も写真が来るので、人間が全部チェックするのが追いつかない。ドイツでは 2020 年に警察がトラックを 11,371 回チェックして、そのうち 1,091 回（9.6%）で「積み方が危ない」と摘発されている。罰金や信用低下の損害が大きい。\n- **写真自体がダメな問題もある**: 運転手が現場でスマホでパッと撮るので、暗すぎたり・ボケてたり・荷台の一部しか写ってなかったり、判定に使えない写真が混ざる。人間が見れば「あ、これじゃ判定できない」とすぐわかるけど、判定不能の写真が紛れているせいで仕分けに時間が取られる。\n- **これまでの方法の何が足りなかったか**: 写真チェックは基本「人がやる」しかなく、品質管理部門が**ボトルネック**（列の最後で詰まる場所のこと）になっていた。論文によるとこれまで「物流現場の本物の写真」を使った AI 研究はあまりなく、研究用のきれいなデータでうまくいっても、現場の汚い写真には通用しないことがよくあった。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n「3 つに一気に分ける」のではなく、「**まず使える写真かどうかをチェック → 使えるなら、次に安全／危険を判定**」という **2 段階の分け方** にした。これは、答案を採点する時に「字が読めるかまずチェック → 読めるなら中身を採点」という流れに似ている。最初の段階だけでも倉庫で自動的にできれば、ダメな写真をその場で「撮り直してください」と返せるので、品質管理部門の負担が一気に減る、というアイデア。\n\n判定には **CNN（Convolutional Neural Network、畳み込みニューラルネット）** という、画像の特徴を自動で見つける AI を 3 種類使った。CNN は「人間が \"ここが角だよ\" とか教えなくても、たくさんの写真を見せれば、AI が勝手に \"丸い部分\" や \"縦の線\" などのパターンを覚える」仕組み。\n\n### 仕組み\n\n- **step1**: 物流会社の本物の写真を 5,712 枚集める（解像度 3456x4608、カラー）。\n  - クラス I（安全に積めてる）= 1,813 枚\n  - クラス II（危ない積み方）= 2,355 枚\n  - クラス III（写真が使えない）= 1,544 枚\n- **step2**: 判定を 2 段階に分ける（二分木）。\n  - **Stage1（第1段）**: 「写真が使える／使えない（=クラス III かそれ以外か）」を判定。\n  - **Stage2（第2段）**: 「使える写真」の中で「安全（I）／危険（II）」を判定。\n- **step3**: 3 つの CNN を比べる。\n  - **InceptionV3**（深い AI。Google が作った）\n  - **ResNet101**（深い AI。層が 101 枚もある）\n  - **LogisticNet**（著者が自作した浅い AI。AlexNet という古いモデルを少しいじったもの）\n- **step4**: 写真サイズを変えて学習させる。\n  - 各 AI が元々想定しているサイズ（227x227 / 244x244 / 299x299 ピクセル）と、もっと大きい **800x800 ピクセル** の 2 通り。800 までで止めたのはパソコンのメモリの都合。\n- **step5**: 写真を少しいじって枚数を水増しする（**データ拡張**、Data augmentation）。\n  - 左右反転、ちょっと回転、明るさや色をランダムに変える。\n  - 切り取りはやらない（荷物の一部が切れると意味が変わるから）。\n- **step6**: 300 エポック（= 全データを 300 周）学習させ、途中で **オーバーフィッティング**（後で説明）が起き始める時点を見つけて、その手前で学習を打ち切ってもう一度学習し直す。\n- **step7**: 出来上がった AI に「答えを知っている別の写真」を見せて、どれくらい当たるかを測る。\n\n### 主要な数式\n\nこの論文は数式そのものはあまり出てこなくて、結果を「**Precision・Recall・F1・MCC**」という指標で表している。中学生は聞いたことがないと思うので、その式を 1 つずつ解説する。\n\n#### ① Precision（精度・適合率）\n\n$$ \\text{Precision} = \\frac{\\text{正解だった「危ない」判定の数}}{\\text{AI が「危ない」と言った全部の数}} $$\n\n**この式が言ってること**: AI が「これは危ないよ！」と叫んだ写真のうち、本当に危なかったのは何割か。**狼少年度のチェック**。\n\n**記号の意味**:\n- 分子（上）… AI が「危ない」と言って、実際に答えも「危ない」だった写真の数\n- 分母（下）… AI が「危ない」と言った写真の数全部（本当は安全だったのに「危ない」と言ったケースも含む）\n\n**身近な例え**: 学校の防犯ブザー係が「不審者だ！」と叫ぶ回数のうち、本当に不審者だった回数の割合。叫びすぎると Precision が下がる（オオカミ少年）。\n\n#### ② Recall（再現率）\n\n$$ \\text{Recall} = \\frac{\\text{正解だった「危ない」判定の数}}{\\text{本当に「危ない」写真の全部の数}} $$\n\n**この式が言ってること**: 本当に危ない写真のうち、何割を AI が「危ない！」と捕まえられたか。**取りこぼし度のチェック**。\n\n**記号の意味**:\n- 分子（上）… AI が正しく「危ない」と当てた写真の数\n- 分母（下）… 答えが「危ない」だった写真の総数（AI が見逃したものも含む）\n\n**身近な例え**: 教室にお菓子を隠した友達が 10 人いる時、君が見つけられたのが 8 人なら Recall は 8/10 = 80%。見逃しが多いほど Recall は下がる。\n\n#### ③ F1-Score（F1 スコア）\n\n$$ F_1 = \\frac{2 \\times \\text{Precision} \\times \\text{Recall}}{\\text{Precision} + \\text{Recall}} $$\n\n**この式が言ってること**: Precision と Recall の「いいとこ取り平均」。両方が高くないと F1 は高くならない。0 から 1 の値で、1 が完璧。\n\n**記号の意味**:\n- $\\text{Precision}$ … 上の ① のこと（狼少年度の逆）\n- $\\text{Recall}$ … 上の ② のこと（取りこぼしの逆）\n\n**身近な例え**: テストで「国語の点数」と「数学の点数」を 1 つの数字でまとめたい時、片方が 100 でもう片方が 0 だと困る。そういう時に「両方ちゃんと高いか」を見るための平均の出し方。普通の平均（足して 2 で割る）と違って、低い方に引っ張られやすい。\n\n#### ④ MCC（Matthews correlation coefficient、マシューズ相関係数）\n\n$$ \\text{MCC} = \\frac{TP \\times TN - FP \\times FN}{\\sqrt{(TP+FP)(TP+FN)(TN+FP)(TN+FN)}} $$\n\n**この式が言ってること**: 二択の判定がどれくらい「ちゃんと当たってるか」を -1 〜 +1 の数字で表す。**1 なら完璧、0 ならランダムに当てずっぽうしてるのと同じ、-1 なら全部逆**。F1 より厳しく、偏ったデータでも騙されにくい。\n\n**記号の意味**:\n- $TP$（True Positive）… 「危ない」と当てて、本当に危なかった写真の数\n- $TN$（True Negative）… 「安全」と判定して、本当に安全だった写真の数\n- $FP$（False Positive）… 「危ない」と言ったけど、本当は安全だった写真の数（誤報）\n- $FN$（False Negative）… 「安全」と言ったけど、本当は危なかった写真の数（見逃し）\n- $\\sqrt{\\ }$ … ルート記号（中身の数の「2 回かけたら元になる数」を取る。例: $\\sqrt{9}=3$）\n\n**身近な例え**: ジャンケンで「相手は次に何を出す？」を当てるゲーム。当てずっぽうで当てると MCC は 0 付近。コツを掴んで本当によく当たるようになると 1 に近づく。逆に「予想と逆の手」を出してるとマイナスになる。\n\n### AI の比較イメージ\n\n> ※論文に数式は無いが、AI が決める「これは何クラスっぽいか」を選ぶ最後の関数だけ補足する。論文には `softmax` を使うと書かれている。\n\n$$ \\text{softmax}(x_i) = \\frac{e^{x_i}}{e^{x_1} + e^{x_2}} $$\n\n**この式が言ってること**: AI が出した「クラス 1 っぽさ」「クラス 2 っぽさ」の生の数字を、足したら 1 になる確率っぽい形に整える計算。\n\n**記号の意味**:\n- $x_1, x_2$ … AI が出した 2 つのクラスごとの「生の点数」\n- $e$ … 約 2.718 の特別な数（**自然対数の底**と呼ばれる、ただの定数だと思って OK）\n- $e^{x_i}$ … $e$ を $x_i$ 乗したもの。$x_i$ が大きいほど急激に大きくなる。点数の差を強調する役割\n\n**身近な例え**: クラスで「給食何が好き？」と聞いて、生徒 1 が「カレー +3、ラーメン +1」と書いた時、これを「カレー 88%、ラーメン 12%」みたいに比率に直す変換。差を大げさにして「より好きな方」をはっきりさせる。\n\n## 何がすごいの？\n\n- **Stage1（写真が使える／使えない）は 3 つ全部で 90% 超え**（Table 1）。\n  - LogisticNet（227x227）: Recall 98% / Precision 95%（一番良い）\n  - ResNet101（244x244）: Recall 94% / Precision 91%\n  - ResNet101（800x800）: Recall 92% / Precision 89%\n  - InceptionV3（299x299）: Recall 94% / Precision 92%\n  - InceptionV3（800x800）: Recall 93% / Precision 90%\n  - → 自作の浅い LogisticNet が、深い高級モデルより良かった！（写真が「使えるかどうか」は全体の印象でわかるので、深い AI は逆にやりすぎだった、と読める）\n- **Stage2（安全／危険）は崩れた**（Table 2）。\n  - ResNet101（800x800）: F1=0.59, MCC=0.20（最高でこれ）\n  - ResNet101（244x244）: F1=0.57, MCC=0.18\n  - InceptionV3（800x800）: F1=0.52, MCC=0.13\n  - InceptionV3（299x299）: F1=0.43, MCC=0.09\n  - → MCC が 0.2 を超えないので、**ほぼ当てずっぽうに近い**。実際 confusion matrix（Fig. 4）でも、InceptionV3 (299) は安全な写真 100 枚中 72 枚は当てるが、危険な写真 100 枚中 37 枚しか当てられない。\n- **データセット**: 物流会社の実写真 5,712 枚（学術用のきれいな写真ではなく、現場のリアル写真）。これは強み。\n- **著者が掲げた貢献**:\n  1. 物流現場の本物の写真で実験した\n  2. 「使えない写真の自動仕分け」だけでも導入価値があると示した\n  3. 深い AI と浅い AI を Stage1 で比べ、浅くても十分だと示した\n- **正直なところ**: 著者は Conclusion で「Stage2 はまだ AI だけでは無理。**人間の監督が必要**」と認めている。原因は「クラス I と II の境界が曖昧で、人間でも判断が分かれる写真があるから」と推測している。\n\n## キーワード辞典\n\n- **AI（Artificial Intelligence、人工知能）** … 人間がやるような判断をコンピュータにさせる技術全般。\n- **ANN（Artificial Neural Network、人工ニューラルネット）** … 脳の神経細胞のつながりをマネした計算の仕組み。たくさんのデータからパターンを覚える。\n- **CNN（Convolutional Neural Network、畳み込みニューラルネット）** … 画像専用に強くした ANN。「画像の小さな窓を順番に見て、特徴を集める」のが得意。\n- **AlexNet / VGG / GoogleNet / ResNet / InceptionV3** … 有名な CNN の名前。順番に新しくて強くなっていった。\n- **LogisticNet** … この論文の著者が AlexNet を少し改造して作った浅い CNN（クラスを 2 つに絞り、最初の窓のサイズを 11×11 から 3×3 に小さくした）。\n- **二分木（decision tree of two binary classifications）** … 質問を 2 つに分けて、Yes/No で進む木のような流れ。最初に「使える写真？」、次に「安全？」と聞く形。\n- **クラス（class）** … 「カテゴリ」「分類のグループ」のこと。この論文では I/II/III の 3 つ。\n- **学習（training）** … AI に正解付きのデータをたくさん見せて、覚えさせる作業。\n- **エポック（epoch）** … 学習で「全データを 1 周回した」単位。300 エポック = 300 周。\n- **オーバーフィッティング（overfitting、過学習）** … AI が練習問題を覚えすぎて、本番（見たことない問題）で点が取れなくなること。中学生で言うと「過去問の答えだけ暗記して、本番で似てる別の問題が出たら解けない」状態。\n- **データ拡張（data augmentation）** … 同じ写真を反転・回転・色変えなどで増やして、データの枚数を水増しすること。\n- **解像度（resolution）** … 写真の細かさ。「800x800 ピクセル」なら縦横 800 個の点で表す。\n- **kernel（カーネル）** … CNN が画像をスキャンする時の「小さな窓」のサイズ。11x11 なら 11 マス × 11 マス。\n- **softmax** … AI が出した点数を「足したら 1 になる確率っぽい数」に変える計算。\n- **Precision / Recall / F1 / MCC** … 上の数式の欄を見て。AI の当たり具合を測る指標。\n- **confusion matrix（混同行列）** … 「本当はこのクラスだったのに、AI はどのクラスと言ったか」を表にしたもの。\n- **boundary case（境界ケース）** … 人間でも「安全とも危険とも言える」グレーゾーンの写真。\n- **receptive field（受容野）** … CNN が 1 つの判定をする時に「見える範囲」。深い AI ほど広く見える。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **なぜ Stage1 で浅い LogisticNet が勝ったのか（著者は明言していないが、TeX の記述から読める直感）**: 「写真が使えるか」は「全体が暗い／ボケてる／荷台が映ってない」など**画像全体の大ざっぱな特徴**で決まる。深い AI は細かい特徴まで見るので、逆にここでは「考えすぎ」になりやすい。一方 Stage2 の「安全か危険か」は荷物の固定具やひもなどの**細かい場所**を見る必要があるので、解像度を 299 から 800 に上げると改善する（F1 0.43 → 0.52）。「**写真が使えるかは全体特徴、安全かは局所特徴**」が直感的なオチ。\n- **LogisticNet の改造点**: 元の AlexNet では最初の「窓」が 11x11 と大きかったが、これを 3x3 に小さくした。著者は「最近の研究で小さい窓の方が小さい特徴を取りやすいと言われているから」と書いている。最後の出力層も 1000 クラスから 2 クラスに減らしている。\n- **解像度の上限**: ResNet101 は理論上 971x971、InceptionV3 は 1311x1311 まで対応できる（receptive field の計算から）。でもパソコンのメモリ事情で 800x800 で止めた。\n- **オーバーフィッティング開始エポック**: InceptionV3（299x299）は 58 エポック、（800x800）は 85、ResNet101（244）は 90、（800）は 120、LogisticNet は 49。これらを超える前に学習を止めた。\n- **データの偏り**: クラス I が 1,813 / II が 2,355 / III が 1,544 で少し偏ってるのに、論文では「クラスを揃える対策（重み付け・サンプリング）」を入れていない。State of the Art の節では「データの偏りは精度に効く」と引用してるのに、実装には反映されていない。これは正規ノートでも弱点として指摘されている。\n- **テストデータの扱い**: 論文には「validation accuracy（検証用データでの当たり率）」しか書かれておらず、「独立したテストセット（学習に一切使ってない別データ）」で評価したかは明記されていない。TeX 中には書かれていないので、正確には不明。\n- **Stage2 の失敗を著者はどう説明したか**: 「クラス I と II の境界が曖昧で、同じ写真を人間が見ても安全とも危険とも判定しうる boundary cases がある」と書いている。ただし「実際に複数の人がどれくらい判定が分かれるか」を数値で測ってはおらず、感想レベル。今後の改善案として「合成画像（CG）と本物の写真を混ぜたハイブリッドデータセットを作る」を挙げている。\n- **著者の結論**: 「AI は積載安全のチェックを**今でもそこそこ手伝える**が、まだ**人間の監督が必要**」と正直に書いている。Stage1 の自動化（撮り直し依頼の自動化）には十分使える、Stage2 はまだ人が見るべき、というスタンス。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2306.03795v1/`\n- 正規ノート: `notes/arXiv-2306.03795v1.md`\n";
+const MACROS = {"\\BibTeX": "{%\n    \\normalfont B\\kern-0.5em{\\scshape i\\kern-0.25em b}\\kern-0.8em\\TeX}", "\\makesub": "%\n  \\saveexpandmode\\noexpandarg\n  \\StrSubstitute{#1}{_}{\\_}[\\temp]%\n  \\restoreexpandmode", "\\doihref": "%\n  \\makesub{#1}%\n  \\href{https://doi.org/\\temp}\n  {doi: #1}%", "\\shortauthors": "", "\\shorttitle": ""};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

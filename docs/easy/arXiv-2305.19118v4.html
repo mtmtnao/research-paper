@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Encouraging Divergent Thinking in Large Language Models through Multi-Agent Debate（大規模言語モデルに、ディベートでいろんな考え方をさせよう）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2305.19118v4.md</code>
+  &nbsp;|&nbsp; macros: <code>3</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Encouraging Divergent Thinking in Large Language Models through Multi-Agent Debate（大規模言語モデルに、ディベートでいろんな考え方をさせよう）\n\n- arXiv: https://arxiv.org/abs/2305.19118\n- 一次ソース: ../papers/arXiv-2305.19118v4/\n- 正規ノート: ../notes/arXiv-2305.19118v4.md\n\n---\n\n## 一言で言うと\n\nChatGPT に「自分で間違いを直して」と頼むだけだと頑固で直らないので、AI を 2 人用意して言い合いをさせ、審判 AI に判定させると正解にたどり着きやすい、という発見。\n\n## どんな問題を解こうとしてるの？\n\n- AI（ここでは ChatGPT のような **大規模言語モデル＝LLM**。← たくさんの文章を読んで賢くなった、文章を作る AI のこと）に難しい問題を解かせたい。\n- 最近の流行りは「**自己反省（self-reflection）**」というやり方。← AI に「いまの答え、どこが変か自分で見直して」と頼んで、答えを直してもらう方法のこと。\n- ところがこの方法には弱点がある。AI は一度「これが答えだ！」と決めると、もう自分では間違いに気づけない。これを著者たちは **DoT（Degeneration-of-Thought）** と名付けた。← 直訳すると「思考の劣化」。「自信を持っちゃうと新しい考えが出てこなくなる」現象のこと。\n- 身近に置き換えると、テストで「絶対こうだ！」と思い込んだ問題を、いくら自分で見直しても同じ間違いをしてしまう、あの状態。\n- 困りごと: AI が頑固で、間違ったままになってしまう。特に「直感だと罠にかかる問題」（例: 「敵の一師団を**食べる**」と直訳してしまう中国語→英語の翻訳）で弱い。\n\n著者たちは「自分一人で見直してもダメなら、別の誰かに反論してもらえばいい」と考えた。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n人間の会議室を思い浮かべてほしい。1 人で考え込むと自分の思い込みから抜けられないけれど、2 人で「いやそれは違うよ」「いやこっちが正しい」と言い合えば、お互いの見落としに気づける。さらに第三者が司会・審判をすれば、「もう答え出たね」「まだだね」を判定できる。\n\n著者たちはこれを AI でやった。**賛成役 AI**（devil＝悪魔役）と **反対役 AI**（angel＝天使役）の 2 人に議論させ、**審判 AI**（judge）が見守る。これを **MAD（Multi-Agent Debate、複数エージェントによる討論）** と呼ぶ。\n\n### 仕組み\n\n- step1: **メタプロンプト（meta prompt）** で議論のルールを設定する。← プロンプト ＝ AI に最初に渡す指示文のこと。ここに「君たちは討論者です。必ずしも相手に同意する必要はない。目的は正解を見つけることだ」と書いておく。\n- step2: **賛成側の AI** が最初の答えを言う。「敵の一師団を eat up（食べ尽くす）すべきだ」のように。\n- step3: **反対側の AI** がそれに対し「いや、それは literal すぎる。destroy（破壊する）が正しい」のように反論する。反対側のプロンプトには「賛成側に同意してはいけない」と明示してある。\n- step4: 1 ラウンド終わるたびに **審判 AI** が「もう答え出たかな？」を判断する（**判別モード**）。出たと判断したらそこで終了（これを **adaptive break＝早期打ち切り** と呼ぶ）。\n- step5: 上限ラウンド（デフォルトは 3 ラウンド）まで来ても決着がつかなかったら、審判 AI が議論ログ全体から最終回答を抜き出す（**抽出モード**）。\n- 設定: 討論者は基本 2 人、temperature＝0（← AI の出力のランダムさ。0 にすると毎回同じような答えが出る）、zero-shot（← 例題を見せずに、いきなり本番問題を解かせるやり方）。\n\n### 主要な数式\n\nこの論文は数式がほとんど無く、討論を回す手順そのものがアイデア。中核となるのは「審判 AI のはたらき」の定義 1 本だけ。\n\n$$\nJ_d(H) = \\begin{cases} \\text{True}, & \\text{答えが得られた場合} \\\\ \\text{False}, & \\text{そうでない場合} \\end{cases}\n$$\n\n**この式が言ってること**: 審判 AI は、これまでの議論ログ全部を読んで、「もう正しい答えが出てる？」を True か False かの 2 択で答える。True なら討論はそこで終わり、False ならもう 1 ラウンド議論を続ける、という分岐をしているよ。\n\n**記号の意味**:\n- $J_d$ … 審判（Judge）の **判別モード**（discriminative mode）。判別 ＝ 「これは○か×か」の 2 択を出す働きのこと。\n- $H$ … これまでの議論ログ（History）。賛成側と反対側がここまでに言った文章を全部つないだもの。\n- $\\text{True} / \\text{False}$ … 「正解が出た／まだ出ていない」の 2 値。コンピュータ用語で「はい／いいえ」のこと。\n\n**身近な例え**: 学校の討論大会で、先生が時計を見ながら「うん、今のやりとりで結論が出たから終わりにしましょう」か「まだ煮詰まってないからもう一往復続けて」を判断するのとそっくり。先生の頭の中は「結論出た？ Yes/No」の 2 択しか動いていない。\n\n論文にはもう 1 つだけ、討論者の発話を表す式が出てくる: $D_i(H) = h$。これは「$i$ 番目の討論者 $D_i$ が、これまでの議論ログ $H$ を読んで、新しい発言 $h$ を生み出す」というだけの意味。文章を作る AI を関数のように書いたもので、難しい計算は何もしていない。\n\n## 何がすごいの？\n\n論文が報告している具体的な数字（全部 TeX 由来）:\n\n- **Common MT（中国語→英語の翻訳ベンチマーク）**: 計 1000 例（Lexical 200 / Contextless 450 / Contextual 350）。指標は COMET・BLEURT（← どちらも翻訳の良さを自動で点数化する道具。100 に近いほど良い）と、HUMAN（← プロの翻訳者が 1〜5 点で採点）。\n  - Lexical 部分で **GPT-3.5-Turbo + MAD** が COMET 82.0、BLEURT 70.9、HUMAN 3.78 を出し、**GPT-4 単体**（COMET 82.0、BLEURT 70.1、HUMAN 3.41）を上回った。\n  - 比較対象（Self-Reflect、Rerank、MAPS）は Turbo に対してわずかな改善しかない。\n  - つまり「小さい AI + 討論」が「大きい AI 単体」に勝つことがある、というのが目玉。\n- **CIAR（Counter-Intuitive Arithmetic Reasoning、直感だと罠にかかる算数推論）**: 著者が新規に作った 200 問のテスト。\n  - GPT-4 単体: 51.0%\n  - GPT-3.5-Turbo 単体: 26.0%\n  - Turbo + CoT（← Chain-of-Thought。「順を追って考えよう」と AI に唱えさせる方法）: 28.0%\n  - Turbo + Self-Consistency（← 何回も答えさせて多数決を取る方法）: 29.5%\n  - Turbo + Self-Reflect: 27.5%\n  - **Turbo + MAD: 37.0%** （GPT-4 には届かないが、Turbo ベースの他手法を大きく上回る）\n- **追加実験（付録）**: GSM（小学校算数の問題集）70.2→73.8、AddSub 87.3→92.1、Date 56.4→65.2 など、別の推論タスクでも MAD が一貫して伸ばす。\n- **DoT が本当に解消されたかの検証**: 「同じ間違いに固執する度合い（Bias）」が 29.0→24.8 に下がり、「答えの多様性（100 − Self-BLEU）」が 19.3→49.7 に上がった。狙い通り「思考の劣化」が緩和されている。\n- **計算コスト**: CoT を 1.0 倍とすると、Self-Reflect が 1.83 倍、MAD が 2.46 倍（生成する文字量で計測）。早くなるわけではなく、お金（API 利用料）はかかる。\n\n著者自身が論文中で挙げている **貢献（contribution）**:\n\n1. **DoT 問題を初めて定式化** した。「自己反省は AI が頑固になると効かない」と図で示してから手法を出す構成。\n2. **MAD フレームワーク**（討論 + 審判 + 早期打ち切り）を提案し、Turbo+MAD が Common MT で GPT-4 を上回ることを実証。\n3. 議論の強度、討論者の人数、審判の設定など、細かい条件をたくさん変えて分析した。特に重要な発見として、**LLM の審判は、討論者と同じ種類の LLM を贔屓する** という不公平さを定量的に示した（例: GPT-4 を審判にすると、GPT-4 が話している側に肩入れしがち）。これは MAD だけでなく「AI に AI を採点させる」やり方全般に対する警鐘になっている。\n\n## キーワード辞典\n\n- **LLM (Large Language Model)** … 大量の文章を学習した、文章を作る AI。例: ChatGPT。\n- **GPT-3.5-Turbo / GPT-4** … OpenAI が作った LLM。GPT-4 のほうが大きくて賢いが、お金がかかる。論文では Turbo-0301 と GPT-4-0314 という特定バージョンを使用。\n- **Vicuna-7b / 13b** … オープンソースの LLM。7b は 70 億パラメータ、13b は 130 億パラメータ。パラメータ ＝ AI の脳内の調整つまみの数。\n- **self-reflection（自己反省）** … 「いまの答えを自分で見直して直して」と AI に頼むやり方。\n- **DoT (Degeneration-of-Thought)** … 思考の劣化。AI が一度自信を持つと、自己反省では新しい考えが出なくなる現象。本論文が初めて名付けた。\n- **MAD (Multi-Agent Debate)** … 複数エージェントによる討論。この論文の手法そのもの。\n- **agent（エージェント）** … 役割を持って動く AI のこと。ここでは「賛成側 AI」「反対側 AI」「審判 AI」がそれぞれエージェント。\n- **tit for tat** … 英語の慣用句で「やられたらやり返す」「目には目を」の意味。論文では「相手の発言にちゃんと反論する空気」を作るためのキーワード。\n- **meta prompt（メタプロンプト）** … 討論のルールを最初に書いた指示文。\n- **adaptive break（早期打ち切り）** … 審判が「もう答え出た」と判断したら討論を途中で止める仕組み。\n- **CoT (Chain-of-Thought)** … 「Let's think step by step」のように「順を追って考えて」と促す手法。\n- **Self-Consistency** … 同じ質問を何回もさせて、多数決で答えを決める手法。\n- **zero-shot** … 例題を見せずに、いきなり問題を解かせる設定。\n- **temperature（温度）** … AI が答えるときのランダムさのつまみ。0 だと毎回ほぼ同じ答え。\n- **COMET / BLEURT** … 翻訳の良し悪しを自動で点数化する道具。100 に近いほど良い。\n- **Common MT** … 「中国語→英語、ことわざや慣用句で直訳すると間違える系」の翻訳テスト集。\n- **CIAR (Counter-Intuitive Arithmetic Reasoning)** … 著者が作った、直感で答えると罠にかかる算数 200 問。\n- **GSM8K / AddSub / MultiArith** … 算数の文章題テスト集（既存のベンチマーク）。\n- **MAPS / Rerank** … 翻訳の改善のために提案された既存手法。比較対象として使われている。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **議論の強さは中庸が一番良い**: 著者はメタプロンプトの文言を 4 段階（level 0＝全合意～level 3＝全反対）で試した。level 3 まで「絶対反対しろ」と強制すると、討論者の意見が割れる度合いは 0.988 まで上がる（ほぼ毎回反対する）が、翻訳の精度はむしろ下がる。著者は「合意点を見失い、勝つこと自体が目的化する（polarization）」と解釈している。level 2（デフォルト、「合意必須ではない」）が一番良い。これは人間社会の議論にも刺さる示唆。\n- **討論者を増やすと逆効果**: 2 人→3 人→4 人と増やすと COMET は 84.4→83.1→82.9 と下がる。原因は「LLM は長い文章の真ん中を忘れる（Lost in the Middle と呼ばれる既知の弱点）」こと。タイトルは \"Multi-Agent\" だが、実質 2-Agent が最適という皮肉な結論。\n- **審判の身内びいき問題**: 論文の Table（tab:behavior-agent）で、審判はずっと GPT-4 にしたまま、賛成側と反対側の AI のバックボーンだけ入れ替える実験をしている。すると賛成側が GPT-4 のときは 120対77 で賛成側が選ばれ、反対側が GPT-4 のときは 136対52 で反対側が選ばれた。位置に関係なく「審判と同じ種類の AI」が選ばれている。これは「異なる LLM を混ぜて MAD を組むと評価が壊れる」という運用上の重大な警告。\n- **adaptive break が大事**: 「議論を長くするほど良い」というわけではなく、強制的に多ラウンド回すと COMET はむしろ下がる。審判が「もう出た」と判断した時点で止めるのが最良、というのが図 COMET-iteration の主張。\n- **本論文の限界（著者自身が認めている）**:\n  - 推論時間が増える（コスト 2.46 倍）。\n  - 長い議論ログを保持し続けることが LLM は苦手。\n  - 審判 LLM が自分の出力を贔屓する（上記）。\n- **より厳密な定義の補足**: 賛成側の発話は $D_1(H)=h_1$、反対側は $D_2(H)=h_2$ のように、これまでの履歴 $H$ を受け取って新しい発言を生み出す関数とみなす。$N$ 人いれば $\\{D_i\\}_{i=1}^N$。1 ラウンドが終わると $H$ が伸びていき、次のラウンドの入力になる。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2305.19118v4/`\n- 正規ノート: `notes/arXiv-2305.19118v4.md`\n";
+const MACROS = {"\\zh": "\\begin{CJK*}{UTF8}{gkai}#1\\end{CJK*}", "\\hzw": "\\textcolor{hzw}{(hzw: #1)}", "\\lt": "\\textcolor{red}{[lt: #1]}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

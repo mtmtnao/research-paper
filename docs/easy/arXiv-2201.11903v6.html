@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Chain-of-Thought Prompting Elicits Reasoning in Large Language Models（大きな言語モデルに「途中の考え」を書かせると、難しい問題も解けるようになるよ）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2201.11903v6.md</code>
+  &nbsp;|&nbsp; macros: <code>38</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Chain-of-Thought Prompting Elicits Reasoning in Large Language Models（大きな言語モデルに「途中の考え」を書かせると、難しい問題も解けるようになるよ）\n\n- arXiv: https://arxiv.org/abs/2201.11903\n- 一次ソース: ../papers/arXiv-2201.11903v6/\n- 正規ノート: ../notes/arXiv-2201.11903v6.md\n\n---\n\n## 一言で言うと\n\n「お手本を見せるときに、答えだけじゃなく **途中の考え方** も一緒に書いてあげる」だけで、大きな AI が算数や常識問題を一気に解けるようになるよ、という話。\n\n## どんな問題を解こうとしてるの？\n\n- **困りごと**: ChatGPT みたいな AI（=「大きな言語モデル」、以下 LLM と呼ぶよ。← これは「人間が書いた大量の文章を読み込んで、次に来る単語を当てるのが超得意になった巨大なプログラム」のこと）は、ふつうの会話は得意なのに、**算数の文章題**（例: 「ロジャーはテニスボールを 5 個持ってる。あと 2 缶買って、1 缶に 3 個入ってる。今いくつ？」）になると、急にポンコツになる。\n- 例えるなら、**おしゃべりは超得意なクラスの友達が、文章題のテストになるとなぜか「8 個！」とテキトーに即答してハズす** ようなもの。\n- これまでのやり方には 2 つの道があったよ。\n  - **道 1**: AI に「途中式の書き方」を山ほど追加で勉強させる（これを **fine-tuning** という。← 「もとのモデルに追加で教科書を読ませて、特訓させる」こと）。これは教材を大量に作るのが大変。\n  - **道 2**: お手本を数個だけ見せて、それを真似してもらう（これを **few-shot prompting** という。← 「テストの前に例題を 5〜8 個見せて、『これと同じ形式で解いてね』とお願いするだけ」のやり方）。簡単だけど、難しい問題には全然効かなかった。\n- 著者たちは「道 2 のお手本に **途中の考えも一緒に書く** だけで、道 1 並みに賢くなるんじゃない？」と思いついた。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n人間が文章題を解くとき、頭の中で「えーと、ボールはもともと 5 個で、2 缶 × 3 個 = 6 個増えて、合計 11 個…」と **段階を踏んで** 考えるよね。これと同じことを AI にもさせよう、という発想。\n\n例えるなら、**算数の宿題で「答えだけ書く」 vs 「途中式も書く」の違い**。先生から「答えだけじゃ部分点ないよ、式も書いて」と言われるのと同じで、AI に「途中の考え（=chain of thought、考えの鎖）」を書かせると、その途中ステップを足場にして、最後の答えにたどり着けるようになる。\n\nそして大事なのは、**追加で勉強させなくていい** こと。お手本を 8 個だけ、人間が手で書いて見せる。これだけ。\n\n### 仕組み\n\n- **step1**: テストで AI に問題を解かせる前に、お手本を 8 個（AQuA という選択式のデータだけは 4 個）AI に見せる。\n- **step2**: お手本は「問題 → 途中の考え → 答え」という **3 つ組** の形にする。これまでは「問題 → 答え」の 2 つ組だった。\n  - 例: 「Q: ボール 5 個持ってる。2 缶 × 3 個増えた。今いくつ？ / A: もとは 5 個。2 × 3 = 6 個もらった。5 + 6 = 11。答えは 11。」\n- **step3**: そのあとに本番の問題を投げる。すると AI も自然に「えーと…」と途中の考えを書き始め、最後に答えを言う。\n- **step4**: 算数・常識クイズ・記号操作の 3 ジャンル、合計 12 個くらいのテスト（=「ベンチマーク」← 「みんなが共通で使う実力テスト問題集」のこと）で点数を測る。\n- **step5**: いろんなサイズの AI（小さいの〜超でかいの）で比べて、「どのサイズから効くか？」も調べる。\n\n### 主要な数式\n\nこの論文には **数学っぽい式は出てこない**（プロンプトの書き方の話なので）。代わりに、論文の核は「お手本の形を変える」という構造そのもの。図にするとこう。\n\n$$\n\\text{ふつうのお手本: } \\{\\ \\langle\\text{問題},\\ \\text{答え}\\rangle\\ \\}\n$$\n\n$$\n\\text{この論文のお手本: } \\{\\ \\langle\\text{問題},\\ \\text{途中の考え},\\ \\text{答え}\\rangle\\ \\}\n$$\n\n**この式が言ってること**: お手本のペアの真ん中に「途中の考え」を **挟むだけ**。たったこれだけの変更。\n\n**記号の意味**:\n- $\\langle \\cdot, \\cdot \\rangle$ … 「セット」を表す書き方。たとえば $\\langle$ りんご, 100 円 $\\rangle$ なら「りんごと値段のセット」。\n- $\\{\\ \\cdot\\ \\}$ … 「複数個ある」という意味。お手本は 1 個じゃなくて 8 個くらいセットで見せる。\n- 「問題」 … 解いてほしい質問文（例: 「ボール何個？」）\n- 「途中の考え」 … 答えに至るまでの段階を **人間の言葉** で書いたもの（例: 「5 + 6 = 11 だから…」）\n- 「答え」 … 最終的な数字や単語（例: 「11」）\n\n**身近な例え**: 料理のレシピと同じ。「カレーの完成写真」（=答えだけ）を見せるよりも、「①玉ねぎを切る → ②炒める → ③水を入れる → ④ルーを入れる → 完成」と **手順書** を見せた方が、相手も真似して同じものを作れる。AI も「答えだけのお手本」より「手順付きのお手本」を見た方が、応用が利く。\n\n---\n\nもう 1 個だけ大事な「考え方の数式」を補足。論文では「AI のサイズ（パラメータ数）」と「正解率」のグラフが繰り返し出てくる。ざっくりこう。\n\n$$\n\\text{正解率}_{\\text{CoT}}(N) - \\text{正解率}_{\\text{ふつう}}(N) \\approx 0 \\ \\ (N < 100\\text{B のとき})\n$$\n\n$$\n\\text{正解率}_{\\text{CoT}}(N) - \\text{正解率}_{\\text{ふつう}}(N) \\gg 0 \\ \\ (N \\geq 100\\text{B のとき})\n$$\n\n**この式が言ってること**: AI のサイズ（=パラメータ数 $N$。← パラメータは「AI の脳のつまみの数」みたいなもの。多いほど大きい脳）が **1000 億個（100B）より小さい間はぜんぜん効果なし**、でも **1000 億を超えた瞬間に急にドカンと効く**。\n\n**記号の意味**:\n- $N$ … AI のサイズ。単位は「個」。100B = 1000 億個。\n- $\\text{B}$ … Billion = 10 億。100B = 100 × 10 億 = 1000 億。\n- $\\text{正解率}_{\\text{CoT}}$ … 「途中の考え」付きで解かせたときの正解率。\n- $\\text{正解率}_{\\text{ふつう}}$ … 答えだけ書かせたときの正解率。\n- $\\approx 0$ … ほぼ差が無い。\n- $\\gg 0$ … めっちゃ差がついて、CoT の方が大きい。\n\n**身近な例え**: 自転車に **補助輪を付ける効果**。3 歳児（=小さい AI）に補助輪を付けても、そもそも脚力が足りなくて漕げない。でも 10 歳児（=大きい AI）に補助輪を付けると、急にスイスイ走れるようになる。「途中の考え」も、AI が一定以上大きくないと、足場として活かせない。\n\n## 何がすごいの？\n\n論文に出てくる **実際の数字** を並べると、こうなる（PaLM 540B = 5400 億パラメータの巨大 AI を使ったとき）:\n\n- **算数の文章題（GSM8K というベンチマーク）**: ふつうのやり方だと **17.9%** しか正解できなかったのが、CoT だと **56.9%** にジャンプ。3 倍以上。\n- **SVAMP**（少しひねった算数）: 69.4% → **79.0%**\n- **MAWPS**（算数の総合テスト）: 79.2% → **93.3%**\n- **AQuA**（選択式の代数）: 25.2% → **35.8%**\n- **常識クイズ（StrategyQA）**: 68.6% → **75.6%**（それまでの最強記録 69.4% を超えた！）\n- **スポーツの常識**: 84%（スポーツ好きな人間）→ **95.4%**（CoT 付き AI）。AI が人間に勝った。\n- **記号操作（コインの表裏 / 名前の最後の文字つなぎ）**: ほぼ **100% 正解** にまで上がった。\n- さらに、**短い問題で練習させて、長い問題を解かせる**（=応用問題）でも、CoT 付きなら通用する。ふつうのやり方だと壊れる。\n\n著者が「自分たちの貢献」として挙げているのは:\n\n1. **追加学習ゼロ・お手本 8 個だけ** で多段の考え（=何ステップも考える問題）を AI に解かせる方法を提案したこと。\n2. 算数・常識・記号という **3 ジャンル × 12 個のテスト** で、3 系統の AI（GPT-3、LaMDA、PaLM）すべてで効くと実証したこと。\n3. これが **1000 億パラメータを超えてはじめて出てくる現象**（=emergent ability、急に現れる能力）だと示したこと。\n4. 「効くのは『途中の考えを **答えの前** に自然言語で出す』こと自体だ」と、いろんな比較実験で切り分けたこと。\n\n特に 4 番が大事で、論文では 3 つの「もしかしてこっちが本当の理由？」を全部潰している:\n\n- **「式だけ書かせる」**: ダメだった。GSM8K は式だけだと解けない。\n- **「ドット `…` を式の文字数ぶん書かせる」**（=ただ考える時間を増やすだけ）: ダメだった。時間じゃなく内容が大事。\n- **「答えを言ってから途中の考えを書かせる」**: ダメだった。**答えの前に** 考えを出さないと意味がない。\n\n## キーワード辞典\n\n- **LLM（Large Language Model、大規模言語モデル）** … 大量の文章を読み込んで、次の単語を予測するのが超得意になった巨大プログラム。ChatGPT や Gemini の中身もこれ。\n- **prompting（プロンプティング）** … AI への「お願い文」を工夫すること。AI を再学習させずに、入力の書き方だけで挙動を変える。\n- **few-shot prompting（少数事例プロンプト）** … お手本を数個だけ見せてから本番問題を解かせるやり方。\n- **chain of thought（CoT、考えの鎖）** … 答えに至るまでの中間ステップを、人間の言葉で順番に書いたもの。\n- **exemplar（イグゼンプラ）** … お手本。論文では 8 個（AQuA だけ 4 個）。\n- **fine-tuning（ファインチューニング）** … もとの AI に追加で勉強させて特訓すること。CoT は **使わない**（ここがすごい）。\n- **parameter（パラメータ）** … AI の「脳のつまみ」。多いほど大きな AI。B = Billion = 10 億。\n- **GPT-3 / LaMDA / PaLM / UL2 / Codex** … 5 種類の LLM。論文ではこれら全部で実験。PaLM 540B（5400 億パラメータ）が最大で、一番強い結果を出す。\n- **GSM8K** … 小学校レベルの算数文章題 8500 問のテスト集。\n- **SVAMP / MAWPS / ASDiv / AQuA** … いろんなタイプの算数テスト集。\n- **StrategyQA / CSQA / Date / Sports / SayCan** … 常識クイズ系のテスト集。\n- **last letter concatenation** … 「単語の最後の文字をつなげる」記号操作タスク（例: Amy Brown → yn）。\n- **coin flip** … 「コインを誰がひっくり返した／返さなかった」を追って表裏を答えるタスク。\n- **emergent ability（創発的能力）** … AI が一定サイズを超えたとたん、急にできるようになる能力。CoT もその例。\n- **benchmark（ベンチマーク）** … 共通の実力テスト問題集。AI 同士を公平に比べるために使う。\n- **baseline（ベースライン）** … 比較の土台にする「ふつうのやり方」。ここでは答えだけ書かせる few-shot。\n- **state of the art（SOTA、最強記録）** … その時点でいちばん良い成績。CoT は GSM8K・SVAMP・MAWPS・StrategyQA で当時の SOTA を更新。\n- **greedy decoding（グリーディーデコーディング）** … AI が単語を生成するとき、**毎ステップで一番確率の高い単語を選ぶ** やり方（最もシンプルな出力方法）。\n- **ablation study（アブレーション）** … 「ここを抜いたらどうなる？」と部品を 1 個ずつ外して、本当に効いてる部品はどれか調べる実験。\n- **OOD（out-of-domain、領域外）** … 練習で見せたものよりも難しい／長い問題でテストすること。\n- **annotator（アノテーター）** … お手本の文章を書く人。論文では著者 3 人が独立に書いて比較した。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **なぜ大きい AI でしか効かないのか？** 著者は「小さい AI でも CoT 風の文を書くことはできるけど、内容が **流暢だけど論理的にめちゃくちゃ**（fluent but illogical）になる」と分析している。8B（80 億）くらいだと、文法は通るのに途中の計算が間違ってる、みたいな chain ができる。100B 超えると、ようやく途中ステップを **論理的にも** 正しく書けるようになる。\n- **失敗の中身を手作業で分類**: LaMDA 137B が GSM8K で間違えた 50 問を著者が手で見たら、46% は「計算ミスや 1 ステップ抜け」みたいな **ちょっとしたミス**。残り 54% は「問題文の意味を取り違えた」みたいな **重大なミス**。これらの大半は、PaLM を 62B → 540B にスケールアップすると消える。\n- **正解 50 問のうち 48 問は途中の考えも完全に正しかった**: 残り 2 問は「途中はおかしいのに偶然答えだけ合ってた」というケース。つまり CoT は **見せかけのウソ説明ではなく、本当に推論として機能してる** ことが多い。\n- **お手本の書き方への頑健性**: 著者 A・B・C が独立に書いた 3 種類のお手本、さらに GSM8K の練習問題からランダムに取った 8 個、どれを使っても、ふつうの few-shot より大きく勝つ。\n- **prompt engineering は完全には消えない**: コイン投げタスクでは、著者 A の書き方だと 99.6% なのに、著者 C だと 71.4% という大差がついたケースもある。完全に書き方フリーではない。\n- **著者自身の limitation（弱み告白）**: (1) これが本当に「推論」なのかは未解決。 (2) **正しい考えの保証はない**（合ってるように見える chain が間違ってることも、間違った chain が偶然正解することもある）。 (3) 100B 超の AI を動かすのは高コスト。\n- **この論文が拓いた道**: その後の Self-Consistency（複数 chain の多数決）、Zero-shot CoT（「Let's think step by step.」と書くだけ）、Tree-of-Thoughts（枝分かれ思考）など、現代の「考える AI」はだいたいこの論文の延長線上にある。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2201.11903v6/`\n- 正規ノート: `notes/arXiv-2201.11903v6.md`\n";
+const MACROS = {"\\jred": "#1", "\\jgr": "\\textbf{\\jweigreen{#1}}", "\\calc": "\\hspace{0.7mm} \\battleshipgrey{\\scriptsize #1}", "\\diff": "#1 {\\scriptsize (#2)}", "\\stanchain": "{\\small standard} & {\\small CoT}", "\\cell": "#1{ \\scriptsize $\\pm$#2}", "\\rcell": "{#1}{ \\scriptsize $\\pm$#2}", "\\gcell": "{#1}{ \\scriptsize $\\pm$#2}", "\\dataset": "#1", "\\theHalgorithm": "\\arabic{algorithm}", "\\cmark": "\\ding{51}", "\\xmark": "\\ding{55}", "\\iftodonotes": "\\if@todonotes@disabled\\expandafter\\@secondoftwo\\else\\expandafter\\@firstoftwo\\fi", "\\noindentaftertodo": "\\iftodonotes{\\noindent}{}", "\\fixme": "\\todo[color=yellow,size=\\scriptsize,fancyline,caption={},#1]{#2}", "\\note": "\\todo[author=#2,color=#3,size=\\scriptsize,fancyline,caption={},#1]{#4}", "\\battleshipgrey": "{\\color{battleshipgrey}{#1}}", "\\americanrose": "{\\color{americanrose}{#1}}", "\\jweigreen": "{\\color{jweigreen}{#1}}", "\\darkgreen": "{\\color{ao(english)}{#1}}", "\\aliceblue": "{\\color{aliceblue}{#1}}", "\\beige": "{\\color{beige}{#1}}", "\\babyblue": "{\\color{babyblue}{#1}}", "\\camel": "{\\color{camel}{#1}}", "\\cinnamon": "{\\color{cinnamon}{#1}}", "\\orange": "#1", "\\camera": "{\\color{orange}{#1}}", "\\Fixme": "\\fixme[inline,#1]{#2}\\noindentaftertodo", "\\Notewho": "\\notewho[inline,#1]{#2}{#3}\\noindentaftertodo", "\\jason": "\\note[#1]{jason}{violet!20}{#2}", "\\Jason": "\\jason[inline,#1]{#2}\\noindentaftertodo \\vspace{-5mm}", "\\denny": "\\note[#1]{denny}{orange!40}{#2}", "\\Denny": "\\denny[inline,#1]{#2}\\noindentaftertodo \\vspace{-5mm}", "\\checkme": "\\textcolor{violet}{#1}", "\\cellcheck": "\\makecell[c]{\\checkmark}", "\\cellx": "\\makecell[c]{\\xmark}", "\\lamda": "LaMDA", "\\palm": "PaLM"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

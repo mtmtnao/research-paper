@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Auto-Encoding Variational Bayes（オートエンコーダ風の変分ベイズ法）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-1312.6114v11.md</code>
+  &nbsp;|&nbsp; macros: <code>76</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Auto-Encoding Variational Bayes（オートエンコーダ風の変分ベイズ法）\n\n- arXiv: https://arxiv.org/abs/1312.6114\n- 一次ソース: ../papers/arXiv-1312.6114v11/\n- 正規ノート: ../notes/arXiv-1312.6114v11.md\n\n---\n\n## 一言で言うと\n\n絵を「作る AI」と「読み取る AI」を 2 つペアで同時に学習させて、ランダムな数から新しい絵を作れるようにした仕組み。\n\n## どんな問題を解こうとしてるの？\n\n- たくさんの絵（手書き数字 MNIST や顔写真 Frey Face）を見せて、「同じような絵を新しく作れる AI」を作りたい。これは「絵の特徴を覚えて、絵の世界の地図を頭の中に持つ AI」のイメージ。\n- そのためには「絵の裏側にある正体（特徴）」を推測する力が必要。たとえば手書きの「3」を見せられたら、「これは数字の 3 だな」「ちょっと太字だな」「右に傾いてるな」みたいな**隠れた性質**を当てたい。この隠れた性質をこの論文では $\\mathbf{z}$（潜在変数、ラテント）と呼ぶ。\n  - **潜在変数（ラテント）** ← データの裏に隠れている「数で表した特徴」のこと。本物の数値が直接は見えないので「潜（ひそ）んでいる」と呼ぶ。\n- 以前の方法（**wake-sleep アルゴリズム** ← 1995 年に Hinton らが作った古い方法、目的が 2 つあって 1 つにまとまっていなかった、や **MCEM** ← サイコロをたくさん振って計算するやり方で時間がかかる）には欠点があった:\n  - サンプル（サイコロを振った結果）から計算した「進む方向の目安」がブレすぎる。\n  - データ 1 個ごとにいちいち長い計算が必要で、データが大量にあると間に合わない。\n- だから「ブレずに」「データ 1 個でも一瞬で」学習できる新しい方法が必要だった。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n絵を「作る役」と「読み取る役」の 2 人のニューラルネットワークを同時に育てる。\n\n- **ニューラルネットワーク** ← 数を入れると数が出てくる「学習できる関数」。たくさんの「重み」というつまみが付いていて、学習中につまみが少しずつ調整されていく。\n- 「読み取る役」（**エンコーダ** = encoder、絵を見て特徴の数 $\\mathbf{z}$ を当てる係）と、「作る役」（**デコーダ** = decoder、特徴の数 $\\mathbf{z}$ を渡されたら絵を描く係）を、**同じ目標**を目指して同時に練習させる。\n\n例え話: 暗号の「送信係」と「受信係」を一緒に練習させると思えばよい。送信係は「絵 → 数（短い暗号）」、受信係は「数 → 絵」に変換する。両方の腕が上がれば、ランダムな数を渡しても受信係がそれっぽい絵を描けるようになる。\n\nただし「読み取る役」の出す答えはランダム性を持つ（同じ絵を見せても少しブレた数を出す）ので、そのままだと「読み取る役のつまみをどう動かせば良くなるか」が計算しづらい。そこで使うのが**リパラメタライゼーション・トリック**という小ワザ。\n\n- **リパラメタライゼーション・トリック** ← ランダムさを「ノイズ $\\epsilon$」という別の部品に押し出して、本体の計算を普通の関数にする裏ワザ。これで微分（つまみをどう動かせばいいかの計算）ができるようになる。\n- **微分** ← 「この数を少し増やすと、結果はどれだけ動くか」を測る数学。山登りで「どっちに 1 歩進めば高くなるか」を見ているイメージ。微積分は中 2 では習わないので「方向の目安を出す道具」と覚えれば OK。\n\n### 仕組み\n\n- step1: 絵 $\\mathbf{x}$ を「読み取る役」（エンコーダ）に入れる。エンコーダは「特徴の数 $\\mathbf{z}$」がどんな分布（どんな値が出やすいか）なのかを返す。具体的には平均 $\\mu$ とばらつき $\\sigma$ の 2 つの数。\n  - **平均** ← データの「だいたい真ん中の値」。テストの点数の平均と同じ意味。\n  - **ばらつき**（標準偏差 $\\sigma$）← データが平均からどれだけ散らばっているかの目安。みんなが似た点数なら小さく、バラバラなら大きい。\n- step2: 平均 $\\mu$ とばらつき $\\sigma$ から「サイコロを振って」具体的な $\\mathbf{z}$ を 1 つ作る。このとき $\\mathbf{z} = \\mu + \\sigma \\times \\epsilon$ という形にする（$\\epsilon$ は正規分布から振ったランダムな数）。\n  - **正規分布** ← つりがね型のグラフで表される、自然界でよく出てくるランダムさの形。身長とかテストの点数の散らばり方がだいたいこの形になる。\n- step3: その $\\mathbf{z}$ を「作る役」（デコーダ）に入れて、絵を復元してもらう。元の絵にどれだけ近いかを採点する（**復元誤差**）。\n- step4: 同時に、「読み取る役」が出した $\\mathbf{z}$ の分布が、あらかじめ決めた基準の分布（平均 0、ばらつき 1 の正規分布）からあまり離れすぎないように罰を与える（**KL 罰**）。\n- step5: 「復元の良さ」と「基準からの離れすぎへの罰」の合計を「下界（かかい、ELBO）」と呼んで、これを大きくする方向に両方のネットワークのつまみを同時に動かす。\n  - **下界（ELBO）** ← Evidence Lower BOund の略。本当に計算したい「絵らしさのスコア」が直接は計算できないので、その**少なくともこれよりは大きい**という目安の数を代わりに最大化する。\n- step6: たくさんの絵を**ミニバッチ**（一度に 100 枚ずつ）で繰り返し見せて学習する。\n  - **ミニバッチ** ← 全部のデータを一気に使わず、毎回少しずつランダムに選んで使うやり方。荷物を小分けに運ぶイメージ。\n\n### 主要な数式\n\n#### ① 下界（ELBO、学習で最大化したい目標）\n\n$$ \\mathcal{L}(\\bm{\\theta}, \\bm{\\phi}; \\mathbf{x}^{(i)}) = - D_{KL}\\big(q_{\\bm{\\phi}}(\\mathbf{z}|\\mathbf{x}^{(i)}) \\,\\|\\, p_{\\bm{\\theta}}(\\mathbf{z})\\big) + \\mathbb{E}_{q_{\\bm{\\phi}}(\\mathbf{z}|\\mathbf{x}^{(i)})}\\big[\\log p_{\\bm{\\theta}}(\\mathbf{x}^{(i)}|\\mathbf{z})\\big] $$\n\n**この式が言ってること**: 学習のゴール（目標スコア）は 2 つの足し算でできている。前半は「読み取る役の出す $\\mathbf{z}$ の分布が、基準の分布からどれだけ離れているかの罰」（マイナス記号がついているので、離れすぎないほど点が高い）。後半は「$\\mathbf{z}$ から元の絵をどれだけうまく復元できたかのご褒美」。両方を足した合計が大きいほど良い AI ということ。\n\n**記号の意味**:\n- $\\mathcal{L}$ … 下界（最大化したい合計スコア）\n- $\\bm{\\theta}$（シータ） … 「作る役」（デコーダ）のつまみの集まり\n- $\\bm{\\phi}$（ファイ） … 「読み取る役」（エンコーダ）のつまみの集まり\n- $\\mathbf{x}^{(i)}$ … $i$ 番目の絵（データ 1 個）\n- $\\mathbf{z}$ … その絵の裏にある特徴の数（潜在変数）\n- $q_{\\bm{\\phi}}(\\mathbf{z}|\\mathbf{x})$ … 絵 $\\mathbf{x}$ を見たときに「読み取る役」が答える $\\mathbf{z}$ の分布\n- $p_{\\bm{\\theta}}(\\mathbf{x}|\\mathbf{z})$ … 特徴 $\\mathbf{z}$ を渡されたとき「作る役」が描く絵の分布\n- $p_{\\bm{\\theta}}(\\mathbf{z})$ … 事前に決めた $\\mathbf{z}$ の基準の分布（普通は平均 0、ばらつき 1 の正規分布）\n- $D_{KL}(A \\| B)$ … 分布 A が分布 B からどれだけズレているかの数値（**KL ダイバージェンス**、必ず 0 以上、ピッタリ同じなら 0）\n- $\\mathbb{E}[\\cdots]$ … 「期待値」、ランダムにたくさんサンプルした時の平均（「サイコロを 1000 回振った平均の目」みたいなもの）\n- $\\log$ … 自然対数。**ここでは「数が 0 に近いほどものすごく大きなマイナスになる関数」と思っておけば良い**。「絵らしさの確率」が低い（うまく作れなかった）ときに大きな罰になる。\n\n**身近な例え**: テストの成績評価に近い。「ノートが先生のお手本ノートからどれだけ離れているか」のマイナス点と、「テスト本番でどれだけ正解できたか」のプラス点を足した合計を最大化したい、という採点表。ノートをサボっても本番だけうまくいく可能性はあるけど、両方バランス良くやらないと点が伸びない。\n\n#### ② リパラメタライゼーション・トリック（ランダムさを外に追い出す変身）\n\n$$ \\mathbf{z} = \\bm{\\mu} + \\bm{\\sigma} \\odot \\bm{\\epsilon}, \\quad \\bm{\\epsilon} \\sim \\mathcal{N}(\\mathbf{0}, \\mathbf{I}) $$\n\n**この式が言ってること**: 「読み取る役」が出した平均 $\\mu$ とばらつき $\\sigma$ を使って、$\\mathbf{z}$ を「$\\mu$ にずらして、$\\sigma$ で拡大した $\\epsilon$」として作る。ランダムさは $\\epsilon$ に押し込んだので、$\\mu$ や $\\sigma$ を動かしても式の形は普通の足し算・かけ算のまま。これで「つまみをどう動かせばいいか」が計算できるようになる。\n\n**記号の意味**:\n- $\\mathbf{z}$ … 特徴の数（最終的に「作る役」に渡すもの）\n- $\\bm{\\mu}$（ミュー） … 「読み取る役」が出した平均（だいたいこのあたり、という数）\n- $\\bm{\\sigma}$（シグマ） … 「読み取る役」が出したばらつき（どれくらい散らすか）\n- $\\bm{\\epsilon}$（イプシロン） … 平均 0・ばらつき 1 の正規分布から振ったランダムな数（「外から持ってきたサイコロの目」）\n- $\\odot$ … 同じ位置同士でかけ算する記号（バラバラに並んだ数同士を、それぞれペアでかける）\n- $\\mathcal{N}(\\mathbf{0}, \\mathbf{I})$ … 平均 0、ばらつき 1 の正規分布（一番標準的なつりがね型）\n\n**身近な例え**: 料理のレシピでいう「基本の生地」を $\\epsilon$、「味付け」を $\\mu$ と $\\sigma$ と考える。基本の生地はいつも同じレシピで作って、それを使って「甘くする ($\\mu$ をずらす)」「水を増やしてゆるくする ($\\sigma$ をかける)」と最終的なお菓子 $\\mathbf{z}$ ができる。基本の生地（ランダムさ）を外で作っておけば、「甘さをどれだけ変えると味がどう変わるか」を落ち着いて確かめられる。\n\n#### ③ ガウス分布同士の KL 罰の閉じた式（実際にコードで使う形）\n\n$$ -D_{KL} = \\frac{1}{2} \\sum_{j=1}^{J} \\left( 1 + \\log \\sigma_j^2 - \\mu_j^2 - \\sigma_j^2 \\right) $$\n\n**この式が言ってること**: 「読み取る役」が出した $\\mathbf{z}$ の分布と、基準の分布（平均 0・ばらつき 1）との離れ具合を、計算で 1 行に書ける形。$\\mu$ が 0 から離れるほど、$\\sigma$ が 1 から離れるほど、罰が大きくなる。サンプリング（サイコロを振る）をしなくても**そのまま計算できる**のがミソ。\n\n**記号の意味**:\n- $J$ … 特徴の数 $\\mathbf{z}$ が何個の数を並べたものか（次元の数。例: 20 次元なら 20 個の数を並べる）\n- $\\mu_j$ … $\\mathbf{z}$ の $j$ 番目の数の「平均」\n- $\\sigma_j$ … $\\mathbf{z}$ の $j$ 番目の数の「ばらつき」\n- $\\sigma_j^2$ … ばらつきの 2 乗（**分散**と呼ぶ）\n- $\\log$ … 自然対数（前と同じ。1 を入れると 0 になり、1 より小さい数を入れるとマイナスになる関数）\n- $\\sum_{j=1}^{J}$ … $j=1$ から $J$ まで全部足す（順番に足し算していく記号）\n- $-D_{KL}$ … 「離れ具合の罰」の **マイナス**（だから大きい方が嬉しい、下界の一部）\n\n**身近な例え**: 「平均テストとどれだけ違うか」を計算するみたいなもの。クラスの平均点（基準）からあなたの点数の散らばり（$\\mu, \\sigma$）がどれくらいズレているか、それぞれの科目ごとに $J$ 個ぶん足し算する。ズレが大きいほど罰が大きい。\n\n## 何がすごいの？\n\n- **データセット**: MNIST（手書き数字、白黒の小さい絵がたくさん）と Frey Face（人の顔の動画から切り出した小さい絵）の 2 種類で実験した。\n- **隠れユニット数**（ニューラルネットワークの中間の「ニューロン」の個数）: MNIST では 500 個、Frey Face では 200 個（小さいデータセットなので過学習を避けるため少なめ）。\n- **ミニバッチサイズ** $M=100$、サンプル数 $L=1$（データ 1 個につき $\\epsilon$ を 1 回振るだけで足りた）。\n- **下界の比較（Figure 2）**: MNIST では潜在変数 $\\mathbf{z}$ の次元 $N_{\\mathbf{z}} \\in \\{3, 5, 10, 20, 200\\}$、Frey Face では $\\{2, 5, 10, 20\\}$ の各場合で、AEVB は wake-sleep より**速く収束し、最終的な下界も高い**。**潜在変数の数を増やしても過学習しない**（次元 200 でも下界が下がらない）。\n  - **過学習** ← 練習問題は完璧に解けるけど本番では失敗する状態。覚えすぎて応用が利かない感じ。\n- **周辺尤度（マージナル尤度）の比較（Figure 3）**: 隠れユニット 100 個、潜在次元 3 で、wake-sleep と MCEM（HMC サンプラー使用）と比較。AEVB は wake-sleep より良い**周辺尤度**に到達した。MCEM は小さいデータセットでは競合するが、MNIST 全体には適用が難しい（オンライン学習ではないため）。\n  - **周辺尤度** ← データそのものの「ありそうさ」の点数。本当はこれを最大化したいが、直接は計算しづらい。\n- **2 次元の潜在空間の可視化（Figure 4）**: 潜在次元を 2 に絞り、基準の正規分布の**逆 CDF**で格子状に並べた点をデコーダに通すと、MNIST では「3 → 8 → 9」のように手書き数字が、Frey Face では「笑顔 → 真顔 → しかめっ面」のように顔が、なめらかに変化する地図ができた。\n  - **逆 CDF** ← 「下からこの割合の位置はどの値か」を返す関数。例: 中央値 (50 % の位置) を返す。\n- **MNIST のランダムサンプル（Figure 5）**: 潜在次元 2 / 5 / 10 / 20 のそれぞれで、ランダムな $\\mathbf{z}$ から作った数字の画像を提示。\n- **論文が掲げる「貢献」（contributions、著者の言葉）**:\n  1. リパラメタライゼーションを使って、変分下界を「微分できてブレが小さい」推定量（SGVB）に書き換えた。\n  2. その推定量を使って、認識モデル（エンコーダ）と生成モデル（デコーダ）を同時最適化するアルゴリズム AEVB を提案した。これにより新しい絵を見たときも、エンコーダの 1 回の計算で $\\mathbf{z}$ の分布が出る。\n\n## キーワード辞典\n\n- **VAE（Variational Auto-Encoder）** … この論文で提案された手法。エンコーダ MLP がガウス分布を返すバージョンの AEVB のこと。\n- **AEVB（Auto-Encoding Variational Bayes）** … VAE の学習アルゴリズム全体の名前。\n- **SGVB（Stochastic Gradient Variational Bayes）** … 下界を「サンプリングで近似して微分可能にした推定量」の名前。AEVB の中で使われる。\n- **ELBO / 下界** … Evidence Lower BOund の略。本当に計算したい対数尤度の代わりに最大化する目安の数。\n- **潜在変数 / ラテント** $\\mathbf{z}$ … データの裏に隠れている「特徴を数で表したもの」。\n- **エンコーダ / 認識モデル** $q_{\\bm{\\phi}}(\\mathbf{z}|\\mathbf{x})$ … 絵を見て特徴 $\\mathbf{z}$ の分布を当てる係（読み取る役）。\n- **デコーダ / 生成モデル** $p_{\\bm{\\theta}}(\\mathbf{x}|\\mathbf{z})$ … 特徴 $\\mathbf{z}$ から絵を描く係（作る役）。\n- **MLP（多層パーセプトロン）** … ニューラルネットワークの一番基本の形。今回は中間層が 1 つ（fully-connected）。\n- **リパラメタライゼーション・トリック** … 「ランダムな $\\mathbf{z}$」を「ノイズ $\\epsilon$ + 普通の関数」に書き換える小ワザ。微分を可能にする。\n- **KL ダイバージェンス** $D_{KL}$ … 2 つの分布のズレを表す数値。0 以上、ピッタリ同じなら 0。\n- **正規分布 / ガウス分布** $\\mathcal{N}(\\mu, \\sigma^2)$ … つりがね型の分布。\n- **ミニバッチ** … 毎回データを少しずつ（100 個など）使って学習する方法。\n- **SGD / Adagrad** … つまみを少しずつ動かして目標を上げていく定番の最適化アルゴリズム。Adagrad は「動かす量」を自動で調整するタイプ。論文では Adagrad のステップサイズを $\\{0.01, 0.02, 0.1\\}$ から選んだ。\n- **wake-sleep アルゴリズム** … 1995 年に提案された古い学習方法。目的関数が 2 つに分かれていて、下界に直接対応しないのが弱点。比較相手。\n- **MCEM（Monte Carlo EM）** … サンプリングを使う古典的な学習法。データ 1 個ごとに長い計算が必要で大きなデータには不向き。比較相手。\n- **HMC（Hybrid / Hamiltonian Monte Carlo）** … 高品質なサンプリング手法。MCEM の中で使われている。\n- **周辺尤度（マージナル尤度）** … データそのものの「ありそうさ」の総合点。直接計算は難しい。\n- **過学習** … 練習データを覚えすぎて本番で失敗する現象。\n- **再構成誤差** … デコーダが描いた絵が元の絵からどれだけズレたかの数値。下界の後半項に相当。\n- **事前分布** $p(\\mathbf{z})$ … $\\mathbf{z}$ について「あらかじめ決めた基準の分布」。今回は平均 0・ばらつき 1 の正規分布。\n- **事後分布** $p(\\mathbf{z}|\\mathbf{x})$ … 絵 $\\mathbf{x}$ を見た後の $\\mathbf{z}$ の分布。これを直接計算するのが大変なので、エンコーダ $q_{\\bm{\\phi}}$ で近似する。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **なぜ素朴な Monte Carlo（スコア関数推定）はダメか**: 普通にやると $\\nabla_{\\bm{\\phi}} \\mathbb{E}_{q}[f(\\mathbf{z})] \\approx \\frac{1}{L} \\sum f(\\mathbf{z}^{(l)}) \\nabla \\log q(\\mathbf{z}^{(l)})$ になるが、これは分散が非常に大きく（[Blei et al. 2012] でも指摘）、実用にならない。リパラメタライゼーションは「$f(\\mathbf{z})$ をそのまま微分できる」ので分散が小さい。\n- **Estimator A と Estimator B の違い**: A は KL 項もサンプリングで近似する一般形。B は KL 項を解析的に積分できる場合（ガウス×ガウスなど）で、分散がさらに小さい。実用上 B が標準。\n- **リパラメタライゼーションが使える分布の 3 類型**: (1) 逆 CDF が計算できる分布（指数・コーシー・ロジスティック・レイリー・パレートなど）、(2) 位置–スケール族（ラプラス・スチューデント t・一様・ガウスなど）、(3) 合成（対数正規 = 正規の指数、ガンマ = 指数の和、ディリクレ = ガンマの重み付け和、ベータ・カイ二乗・F など）。離散分布には素直には使えない。\n- **論文中の閉形式 KL（appendix B）**: $-D_{KL}(\\mathcal{N}(\\mu, \\sigma^2) \\| \\mathcal{N}(0, I)) = \\frac{1}{2} \\sum_j (1 + \\log \\sigma_j^2 - \\mu_j^2 - \\sigma_j^2)$。これを下界に直接組み込めるので、サンプリングが必要なのは復元項だけになる。\n- **周辺尤度推定の限界**: 著者自身が「5 次元以下でしか信頼できない」と明記。だから Figure 3 では潜在次元 3 に限定している。Figure 2 の高次元（200 次元）での test log-likelihood は本文には載っていない（下界の比較のみ）。\n- **autoencoder との関係**: SGVB の目的関数を見ると「KL 罰 + 復元誤差（負）」の形になっており、これは正則化付き autoencoder と同じ構造。ただし通常の autoencoder で必要な「正則化ハイパラの調整」が、VAE では下界の理論から自動で決まる、と著者は主張。\n- **並行発見**: Rezende+ 2014（DLGM）が独立に同じリパラメタライゼーションに到達している、と Related work で明記されている。\n- **実装デフォルト**: $M=100, L=1$、初期化 $\\mathcal{N}(0, 0.01)$、Adagrad、prior $p(\\bm{\\theta}) = \\mathcal{N}(0, I)$ に相当する弱い weight decay。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-1312.6114v11/`\n- 正規ノート: `notes/arXiv-1312.6114v11.md`\n";
+const MACROS = {"\\fix": "\\marginpar{FIX}", "\\new": "\\marginpar{NEW}", "\\algorithmicforall": "\\textbf{for each}", "\\bb": "\\mathbf{#1}", "\\bbb": "\\bb{b}", "\\bx": "\\bb{x}", "\\bxi": "\\bx^{(i)}", "\\bxl": "\\bx^{(l)}", "\\bt": "\\bb{t}", "\\by": "\\bb{y}", "\\bv": "\\bb{v}", "\\bw": "\\bb{w}", "\\bc": "\\bb{c}", "\\bd": "\\bb{d}", "\\bg": "\\bb{g}", "\\bh": "\\bb{h}", "\\br": "\\bb{r}", "\\bu": "\\bb{u}", "\\byl": "\\by^{(l)}", "\\bz": "\\bb{z}", "\\bzi": "\\bz^{(i)}", "\\bzl": "\\bz^{(l)}", "\\bzil": "\\bz^{(i,l)}", "\\bpa": "\\bb{pa}", "\\bT": "\\boldsymbol{\\theta}", "\\bTl": "\\boldsymbol{\\theta}^{(l)}", "\\balpha": "\\boldsymbol{\\alpha}", "\\bphi": "\\boldsymbol{\\phi}", "\\beps": "\\boldsymbol{\\epsilon}", "\\bepsl": "\\beps^{(l)}", "\\bepsil": "\\beps^{(i,l)}", "\\bzeta": "\\boldsymbol{\\zeta}", "\\bzetal": "\\zeta^{(l)}", "\\bsigma": "\\boldsymbol{\\sigma}", "\\bmu": "\\boldsymbol{\\mu}", "\\bzero": "\\bb{0}", "\\bL": "\\bb{L}", "\\bV": "\\bb{V}", "\\bW": "\\bb{W}", "\\bI": "\\bb{I}", "\\bR": "\\bb{R}", "\\bX": "\\bb{X}", "\\bO": "\\bb{O}", "\\btPa": "\\widetilde{\\bb{Pa}}", "\\btpa": "\\widetilde{\\bb{pa}}", "\\tz": "\\widetilde{z}", "\\tZ": "\\widetilde{Z}", "\\tf": "\\widetilde{f}", "\\btZ": "\\widetilde{\\bb{Z}}", "\\btz": "\\widetilde{\\bz}", "\\btT": "\\widetilde{\\bT}", "\\tPa": "\\widetilde{Pa}", "\\pT": "p_{\\bT}", "\\pTl": "p_{\\bT^{(l)}}", "\\pA": "p_{\\balpha}", "\\qT": "q_{\\bT}", "\\qPhi": "q_{\\bphi}", "\\fT": "f_{\\bT}", "\\fPhi": "f_{\\bphi}", "\\fTPhi": "f_{\\bT,\\bphi}", "\\gT": "g_{\\bT}", "\\gPhi": "g_{\\bphi}", "\\hPhi": "h_{\\bphi}", "\\Exp": "\\mathbb{E}_{#1}\\left[#2\\right]", "\\Ed": "\\mathbb{E}_\\bd", "\\eqnr": "\\addtocounter{equation}{1}\\tag{\\theequation}", "\\LB": "\\mathcal{L}^{#1}(\\bT,\\bphi; #2)", "\\LBT": "\\widetilde{\\mathcal{L}}^{#1}(\\bT,\\bphi; #2)", "\\argmax": "\\operatorname{argmax}", "\\factoredge": "%\n  %\n  \\foreach \\f in {#3} { %\n    \\foreach \\x in {#2} { %\n      \\draw[-,#1] (\\x) edge[-] (\\f) ; %\n    } ;\n    \\foreach \\y in {#4} { %\n      \\draw[->,#1] (\\f) -- (\\y) ; %\n    } ;\n  } ;", "\\edge": "%\n  %\n  \\foreach \\x in {#2} { %\n    \\foreach \\y in {#3} { %\n      \\draw[->,#1] (\\x) -- (\\y) ;%\n    } ;\n  } ;", "\\factor": "%\n  %\n  \\node[factor, label={[name=#2-caption]#3}, name=#2, #1,\n  alias=#2-alias] {} ; %\n  %\n  \\factoredge {#4} {#2-alias} {#5} ; %", "\\plate": "%\n  \\node[wrap=#3] (#2-wrap) {}; %\n  \\node[plate caption=#2-wrap] (#2-caption) {#4}; %\n  \\node[plate=(#2-wrap)(#2-caption), #1] (#2) {}; %", "\\gate": "%\n  \\node[gate=#3, name=#2, #1, alias=#2-alias] {}; %\n  \\foreach \\x in {#4} { %\n    \\draw [-*,thick] (\\x) -- (#2-alias); %\n  } ;%", "\\vgate": "%\n  %\n  \\node[wrap=#2] (#1-left) {}; %\n  \\node[wrap=#4] (#1-right) {}; %\n  %\n  \\node[gate=(#1-left)(#1-right)] (#1) {}; %\n  %\n  \\node[caption, below left=of #1.north ] (#1-left-caption)\n  {#3}; %\n  \\node[caption, below right=of #1.north ] (#1-right-caption)\n  {#5}; %\n  %\n  \\draw [-, dashed] (#1.north) -- (#1.south); %\n  %\n  \\foreach \\x in {#6} { %\n    \\draw [-*,thick] (\\x) -- (#1); %\n  } ;%", "\\hgate": "%\n  %\n  \\node[wrap=#2] (#1-top) {}; %\n  \\node[wrap=#4] (#1-bottom) {}; %\n  %\n  \\node[gate=(#1-top)(#1-bottom)] (#1) {}; %\n  %\n  \\node[caption, above right=of #1.west ] (#1-top-caption)\n  {#3}; %\n  \\node[caption, below right=of #1.west ] (#1-bottom-caption)\n  {#5}; %\n  %\n  \\draw [-, dashed] (#1.west) -- (#1.east); %\n  %\n  \\foreach \\x in {#6} { %\n    \\draw [-*,thick] (\\x) -- (#1); %\n  } ;%"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

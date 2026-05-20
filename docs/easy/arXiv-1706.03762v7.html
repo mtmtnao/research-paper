@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Attention Is All You Need（注意（attention）だけで十分だよ）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-1706.03762v7.md</code>
+  &nbsp;|&nbsp; macros: <code>18</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Attention Is All You Need（注意（attention）だけで十分だよ）\n\n- arXiv: https://arxiv.org/abs/1706.03762\n- 一次ソース: ../papers/arXiv-1706.03762v7/\n- 正規ノート: ../notes/arXiv-1706.03762v7.md\n\n---\n\n## 一言で言うと\n\n文を読みながら順番に処理するのをやめて、「どの単語に注目するか」を計算するだけで翻訳できる新しい仕組み（Transformer）を作ったら、英→独翻訳でこれまでの記録を一気に超えた、という話。\n\n## どんな問題を解こうとしてるの？\n\n- やりたいこと: 英語の文を日本語やドイツ語に翻訳する AI（「機械翻訳」と呼ばれる仕事）を、もっと速く・もっと正確に作りたい。\n- 困っていたこと（昔の方法の弱点）:\n  - 昔は RNN（リカレントニューラルネット ← 「文を 1 単語ずつ順番に読んで、前の単語の感想を覚えながら次に進む」やり方の AI）を使っていた。\n  - これだと **必ず 1 単語ずつ順番に処理する** ので、コンピュータの中で同時並行で計算できない。文が長いほど時間がかかる。\n  - たとえるなら、本を読むときに「1 ページ目を読み終わってからじゃないと 2 ページ目を開いてはダメ」というルールがあるようなもの。10 人で手分けして読めば速いのに、それができない。\n  - また「文の最初の単語」と「文の最後の単語」が関係している（例: It → 何を指す？）とき、その関係を学ぶのが難しかった。距離が遠い情報ほど忘れちゃう。\n\n- そこで著者たちは: 「順番に読む」のをやめて、**最初から全単語を見渡して『どの単語が今の単語と関係深いか』を一気に計算する** 方法だけで翻訳機を作ろうとした。\n\n## どうやって解いたの？\n\n### コアアイデア\n\nクラスに 30 人いて、誰かが「今日の宿題ってなんだっけ？」と質問したとする。すると、その質問は **クラス全員に同時に届く** よね。みんなが「自分は答えを知ってるかな？」と考えて、いちばん関係ありそうな人（先生のメモを見てた人）の声が大きく届く。これが「注意（attention）」のイメージ。\n\nTransformer は文中の各単語が「他のどの単語に注目すべきか」を **同時に・一気に** 計算する仕組みだけで作られている。だから「前の単語が終わるまで待つ」必要がなく、コンピュータの中で全単語を並列に処理できる。さらに「注目の仕方」を 8 通りも同時に試して（後述の multi-head）、文法的な関係・意味的な関係などいろんな切り口で単語のつながりを捉える。\n\n### 仕組み\n\n- **step 1**: 入力文（例: \"I am a student\"）の各単語を、数字の列に変換する（embedding ← 単語を数字のリストに置きかえる作業。たとえば \"cat\" → [0.2, -0.1, 0.7, ...] みたいに、500 個くらいの数字で 1 単語を表す）。\n- **step 2**: 順番情報がそのままだと消えてしまうので、「これは何番目の単語か」を表す数字（**positional encoding** ← 位置の番号札）を足す。\n- **step 3**: 入力側（encoder ← 文を「理解する」担当）に、同じ作りの層を 6 段重ねる。各段で:\n  - 各単語が「自分が他のどの単語に注目すべきか」を計算（**self-attention** ← 文の中の単語同士でお互いに注目し合うこと）。\n  - その後、単語ごとに小さな計算（FFN）をかける。\n- **step 4**: 出力側（decoder ← 翻訳文を「作る」担当）も同じく 6 段。違いは:\n  - 翻訳文を 1 単語ずつ作っていく途中で、**まだ出していない未来の単語を盗み見ない** ようにマスク（目隠し）をかける。これを「masked self-attention」と呼ぶ。\n  - もう 1 段、入力側で理解した結果も見にいく層がある（**encoder-decoder attention**）。\n- **step 5**: 最後に「次に来る単語の候補」のうち、どれが一番ありえるかを確率で出して、いちばん高いものを選ぶ（実際には beam search ← 候補をいくつか残しながら少しずつ選ぶ探索法、を使う）。\n\n### 主要な数式\n\n#### ① Scaled Dot-Product Attention（一番大事な式）\n\n$$ \\mathrm{Attention}(Q, K, V) = \\mathrm{softmax}\\!\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right) V $$\n\n**この式が言ってること**: 「質問 $Q$」が「鍵 $K$」とどれくらい合うかを掛け算で点数にして、その点数を softmax（← 点数を「合計が 1 の割合」に変換する道具。「点数が高いやつほど大きな割合になる」関数）で割合に変えてから、「中身 $V$」を割合ぶんだけ取り出して合計する。要するに「関係ありそうな単語の情報を、関係の強さに応じて混ぜて取ってくる」式。\n\n**記号の意味**:\n- $Q$ … query（質問）。今注目している単語が「何を知りたいか」を表す数字の列。\n- $K$ … key（鍵）。他の各単語が「自分はこういう情報を持ってますよ」と看板を出している数字の列。\n- $V$ … value（中身）。実際に取り出される情報そのもの。\n- $QK^T$ … $Q$ と $K$ の掛け算。質問と鍵の「相性の良さ」を点数化する操作（中学では習わないけど「内積（ないせき）」と呼ばれる。2 つの数字の列を要素ごとに掛けて全部足すと、似てるほど大きな値になる、と覚えれば OK）。\n- $d_k$ … 鍵 $K$ の長さ（鍵を表す数字が何個並んでいるか）。本論文では 64。\n- $\\sqrt{d_k}$ … $d_k$ の平方根。$\\sqrt{64}=8$。点数が大きくなりすぎないように割って小さくする「ブレーキ」。\n- $\\mathrm{softmax}(\\cdot)$ … 点数たちを「合計 1 の割合」に変える関数。\n\n**身近な例え**: 図書館で「ピラミッドについて知りたい！」と質問する場面。本棚に並ぶ本の背表紙（鍵 $K$）と質問（$Q$）を見比べて、「エジプトの本」「数学の本」「料理の本」…のうちエジプトの本が一番合うので 80%、数学の本（図形ピラミッド）が 15%、料理の本が 5%、…と割合をつける。そして各本の中身（$V$）をその割合だけ抜き出して混ぜたものを「答え」にする。$\\sqrt{d_k}$ で割るのは「点数が極端に開きすぎて、いつも 1 冊の本しか開かれない」状況を防ぐためのブレーキ。\n\n#### ② Multi-Head Attention（注目を 8 つ並行する）\n\n$$ \\mathrm{MultiHead}(Q, K, V) = \\mathrm{Concat}(\\mathrm{head}_1, \\ldots, \\mathrm{head}_h) W^O $$\n$$ \\mathrm{head}_i = \\mathrm{Attention}(QW_i^Q,\\ KW_i^K,\\ VW_i^V) $$\n\n**この式が言ってること**: 上の attention を **$h$ 通り（本論文では 8 通り）並行で** やって、結果をつなげて 1 つにまとめる。8 つそれぞれが「違う角度」で注目してくれるので、文法的なつながり・意味的なつながり・遠くの単語との関係…などを同時に拾える。\n\n**記号の意味**:\n- $h$ … 並行する個数（head の数）。本論文では 8。\n- $\\mathrm{head}_i$ … $i$ 番目の attention（$i$ は 1 から 8）。\n- $W_i^Q, W_i^K, W_i^V$ … $i$ 番目の head 用の「$Q, K, V$ を変換する道具」。AI が学習で覚える数字の表。\n- $W^O$ … 最後にまとめる用の変換の表。\n- $\\mathrm{Concat}$ … 8 個の結果を横にずらっとつなげる操作（しおりを 8 枚並べてセロハンテープで貼るイメージ）。\n\n**身近な例え**: 探偵の捜査で 8 人のチームを組む。1 人は指紋を、1 人は足跡を、1 人は証言を、1 人は時間関係を… と **同時に違う観点で調べる**。最後に集まって全員の報告書を 1 冊にまとめれば、1 人が全部調べるより速いし見落としも少ない。\n\n#### ③ Positional Encoding（順番の番号札）\n\n$$ PE_{(pos, 2i)} = \\sin\\!\\left(\\frac{pos}{10000^{2i/d_{\\text{model}}}}\\right) ,\\quad PE_{(pos, 2i+1)} = \\cos\\!\\left(\\frac{pos}{10000^{2i/d_{\\text{model}}}}\\right) $$\n\n**この式が言ってること**: 「これは文の何番目の単語か」を、波（sin と cos ← 角度を入れると -1 から +1 のあいだの値が返ってくる関数。高校で習う「波の形を表す関数」）で表現する。位置 $pos$ が変わると波の値も変わるので、その値を単語の数字列に足してやれば、AI は「これは 3 番目の単語だな」「これは 17 番目だな」と区別できるようになる。\n\n**記号の意味**:\n- $pos$ … 単語の位置（1 番目なら $pos=1$、2 番目なら $pos=2$ …）。\n- $i$ … 数字列の何個目の成分を計算しているか（0, 1, 2, ...）。\n- $d_{\\text{model}}$ … 1 単語を表す数字列の長さ（本論文では 512）。\n- $\\sin, \\cos$ … 波の形を表す関数。$pos$ が変わるとなめらかに上下する。\n\n**身近な例え**: 体育の整列で、生徒に「1, 2, 3, ...」と番号を書いた札を首から下げてもらうのと似ている。ただし普通の番号だと「番号が近い＝距離が近い」が直感的に分かりにくいので、代わりに **波の高さ** で位置を表す。波だと「1 番目と 2 番目の差」と「101 番目と 102 番目の差」が同じパターンになるので、AI が「お隣どうし」「3 個離れ」みたいな相対的な距離を学びやすい。\n\n## 何がすごいの？\n\n論文中の数値はすべて TeX から確認したもの。\n\n- **WMT 2014 英→独翻訳** で BLEU スコア（← 翻訳の良さを 0〜100 で測る指標。お手本の文とどれだけ単語が一致するか）が:\n  - Transformer (big) で **28.4 BLEU**。\n  - これまでの最強モデル（複数モデルを合体させた \"ensemble\" を含む）より **2.0 BLEU 以上高い** 新記録。\n  - 小型版（base）でも **27.3 BLEU** で、過去のすべてのモデルを上回った。\n- **WMT 2014 英→仏翻訳** でも **41.8 BLEU** で、単一モデルでの新記録。\n- **学習の速さ**:\n  - 計算コストは $3.3 \\times 10^{18}$ FLOPs（FLOPs ← 計算の総回数の単位）で、ConvS2S（畳み込みを使った当時の競合）の $9.6 \\times 10^{18}$ の **約 1/3**。\n  - big モデルでも 8 台の GPU で **3.5 日** で学習完了。base モデルなら **12 時間**。\n- **翻訳以外でも使える**:\n  - 英語の構文解析（文の構造を木の形で当てる仕事）で、専用チューニングほぼなしで **F1=91.3**（WSJ データのみ学習）、半教師ありで **F1=92.7** を達成。\n- **著者が論文で「貢献」として挙げていること**:\n  1. RNN も CNN も使わずに self-attention だけで作った初の翻訳モデル。\n  2. WMT'14 英独・英仏で訓練コストを大きく減らしつつ SOTA（state-of-the-art ← 当時の世界最高）を達成。\n  3. multi-head attention + scaled dot-product + sin/cos の位置エンコーディング、というレシピを示した。\n  4. head 数・$d_k$・dropout・PE のいろんな組み合わせをアブレーション（← 部品を 1 つずつ抜いて精度の変化を見る実験）した。\n  5. 翻訳以外（構文解析）でも汎用性を示した。\n\n## キーワード辞典\n\n出現順に並べる。\n\n- **Transformer** … この論文が提案した、attention だけで作られた翻訳 AI の名前。今や ChatGPT の T も Transformer の T。\n- **sequence transduction（系列変換）** … 「単語の並び」を別の「単語の並び」に変換する仕事（翻訳・要約・音声認識など）。\n- **encoder-decoder（エンコーダー・デコーダー）** … 入力を理解する部品（encoder）と、出力を作る部品（decoder）に分ける作り方。\n- **RNN / LSTM / GRU** … どれも「1 単語ずつ順番に読む」昔の AI。LSTM と GRU は RNN の進化版。\n- **CNN（畳み込みニューラルネット）** … 画像で有名な AI の仕組み。文に使うと「近くの数単語をまとめて見る」処理になる。\n- **attention（アテンション）** … 「どの情報に注目するか」を計算する仕組み。情報の重み付き平均をとる。\n- **self-attention** … 1 つの文の中で、単語同士がお互いに注目し合う attention。\n- **encoder-decoder attention** … 出力側（翻訳中の単語）が入力側（元の文）に注目するための attention。\n- **Query / Key / Value（$Q, K, V$）** … attention の登場人物 3 名。Q=質問、K=鍵（看板）、V=中身。\n- **softmax** … 点数たちを「合計 1 の割合」に変える関数。大きい点数ほど大きな割合になる。\n- **scaled dot-product** … 内積（掛けて足す）に $\\sqrt{d_k}$ で割るブレーキをかけた attention の計算法。\n- **multi-head attention** … attention を 8 通り並列でやって結果をつなげる作り。\n- **mask（マスク）** … decoder で「未来の単語を見ない」ようにする目隠し。$-\\infty$ を入れて softmax 後の確率を 0 にする。\n- **FFN（feed-forward network）** … 各単語にかける小さな計算（2 段の変換 + ReLU）。\n- **ReLU** … 「マイナスは 0、プラスはそのまま」と返すシンプルな関数。$\\max(0, x)$。\n- **embedding（埋め込み）** … 単語を数字のリストに変換すること。\n- **positional encoding** … 単語の位置（何番目か）を波で表した数字列。\n- **BLEU** … 翻訳の良さを測る点数（0〜100、高いほど良い）。\n- **WMT** … 機械翻訳の世界大会で使われる標準データセットの名前。\n- **dropout** … 学習中にランダムに数字を消す訓練テク。覚えすぎ（過学習）を防ぐ。\n- **label smoothing** … 「正解は 100% 正解、他は 0%」とせず、ちょっとだけ他にも確率を残す訓練テク。\n- **Adam** … AI の学習でよく使われる「学習の進めかた」の 1 つ。\n- **FLOPs** … コンピュータの計算回数の単位。多いほど大きな計算をしている。\n- **constituency parsing（句構造解析）** … 文を「主語のかたまり」「動詞のかたまり」… と木の形で分解する仕事。\n- **F1** … 正解率の一種（0〜100）。高いほど良い。\n- **ensemble（アンサンブル）** … 複数モデルの予測を平均して精度を上げるテク。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **なぜ $\\sqrt{d_k}$ で割るのか？** $Q$ と $K$ の成分がランダムで「平均 0・ばらつき 1」だとすると、$QK^T$ の値の「ばらつき」は $d_k$ になる（足す個数が増えればばらつきも増えるから）。$d_k=64$ だとばらつきが 64、極端に大きな点数が出る → softmax がほぼ「1 つだけ 100%」になってしまい、他の単語の重みがほぼ 0 になる → 学習信号がほとんど流れなくなる。そこで $\\sqrt{d_k}$ で割って点数のばらつきを 1 に戻す。\n- **multi-head の最適な数**: Table 2(A) によると、head 数 1 で BLEU 24.9、4 で 25.5、8 で 25.8（最良）、16 で 25.8、32 で 25.4。少なすぎても多すぎても悪い「ちょうど良いところ」が 8。\n- **層の深さ・幅**: 6 層・512 次元が base。big は 6 層・1024 次元・FFN 内部 4096・head 16。big で 213M（2 億 1300 万）パラメータ、base で 65M。\n- **sin/cos の位置エンコーディング vs 学習した位置エンコーディング**: ほぼ同じ精度（BLEU 25.7 vs 25.8）。著者は sin/cos を選んだ理由として「訓練で出てきたより長い文にも外挿（がいそう ← 学習範囲の外まで予測を伸ばすこと）できる可能性がある」と説明。ただしこの外挿性は本論文では実証されていない。\n- **訓練レシピの細部**: Adam $\\beta_1=0.9, \\beta_2=0.98, \\epsilon=10^{-9}$。学習率は最初の 4000 ステップは線形に増やして、その後は $1/\\sqrt{\\text{ステップ数}}$ で減らす（warmup 付き inverse-sqrt スケジュール）。dropout 0.1（big は 0.3）、label smoothing 0.1。\n- **計算量の比較**（Table 1）: self-attention は層あたり $O(n^2 d)$、recurrent は $O(n d^2)$。文の長さ $n$ が次元 $d$（=512）より短ければ self-attention の方が速い。ただし $n$ が大きくなると $n^2$ が効いてくるので、著者自身も「近所だけに注目する制限版」を将来課題として挙げている。\n- **decoder のマスク**: softmax を計算する直前に、未来の位置に対応する点数を $-\\infty$ にする。$\\exp(-\\infty)=0$ なので、softmax の結果その位置の重みが 0 になり、未来の情報を盗み見られなくなる。\n- **限界として著者自身が認めていること**: (1) 文が長くなると $n^2$ で計算量が爆発する、(2) 翻訳と構文解析しか試していない、(3) 推論時は結局 1 単語ずつ作るので速くならない、を Conclusion と Why Self-Attention 節で明言している。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-1706.03762v7/`\n- 正規ノート: `notes/arXiv-1706.03762v7.md`\n";
+const MACROS = {"\\blfootnote": "%\n%   \\begingroup\n%   \\renewcommand\\thefootnote{}\\footnote{#1}%\n%   \\addtocounter{footnote}{-1}%\n%   \\endgroup\n%", "\\thefootnote": "", "\\todo": "\\textcolor{red}{[[#1]]}", "\\mc": "\\mathcal{#1}", "\\samethanks": "\\footnotemark[#1]", "\\kq": "q", "\\km": "k", "\\vq": "o", "\\vm": "m", "\\Wkq": "W_q", "\\Wkm": "W_k", "\\Wvq": "W_o", "\\Wvm": "W_m", "\\dmodel": "d_{\\text{model}}", "\\dffn": "d_{\\text{ffn}}", "\\dff": "d_{\\text{ff}}", "\\mbf": "\\mathbf{#1}", "\\concat": "\\left[#1 \\parallel_#3 #2\\right]"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>
