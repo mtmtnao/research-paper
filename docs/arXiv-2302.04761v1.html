@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Toolformer: Language Models Can Teach Themselves to Use Tools</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes/arXiv-2302.04761v1.md</code>
+  &nbsp;|&nbsp; macros: <code>20</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Toolformer: Language Models Can Teach Themselves to Use Tools\n\n- arXiv: https://arxiv.org/abs/2302.04761\n- source: ../papers/arXiv-2302.04761v1/\n- authors: Timo Schick, Jane Dwivedi-Yu, Roberto Dessì, Roberta Raileanu, Maria Lomeli, Luke Zettlemoyer, Nicola Cancedda, Thomas Scialom (Meta AI Research; † UPF)\n- venue / year: arXiv preprint, 2023（TeX 中に venue 明示なし。同梱 .sty は emnlp2021 テンプレ）\n- tags: [tool-use, LLM, self-supervised, finetuning, API-calls]\n- read_date: 2026-05-13\n\n---\n\n## Summary（著者の主張）\n\n- **問題**: LLM は few-shot / zero-shot で多様なタスクを解けるが、算術・最新事実の参照・低リソース言語・時間進行の把握など、もっと小さい専用ツールなら簡単に解ける処理が苦手で hallucinate しがち。既存の tool 統合手法は (a) 大量の人手アノテーションに依存（WebGPT, LaMDA）、または (b) タスク固有 few-shot prompt で「どのツールを使うか」を人間が指定（PAL, TALM）、のいずれかで、自律的かつ汎用的な tool use になっていない。\n- **手法**: **Toolformer**。pretrained LM 自身に in-context learning で API 呼び出し候補を生成させ、self-supervised に「将来トークン予測の loss を下げるか」で取捨選択し、その拡張データで finetune する。\n  1. Sampling: 各位置 $i$ で $p_M(\\texttt{<API>} \\mid P(x), x_{1:i-1}) > \\tau_s$（既定 0.05）の位置を top $k=5$、各位置で $m=5$ 個の API 呼び出しを生成（calculator/MT は $\\tau_s=0$, $k=20$, $m=10$, $\\tau_f=0.5$）。\n  2. Execution: 実 API を叩いて結果 $r_i$ を得る。\n  3. Filtering: 重み付き cross-entropy で $L_i^+ = L_i(\\text{e}(c_i, r_i))$ と $L_i^- = \\min(L_i(\\varepsilon), L_i(\\text{e}(c_i, \\varepsilon)))$ を比較し、$L_i^- - L_i^+ \\geq \\tau_f$（既定 1.0）のものだけ残す。重みは $\\tilde{w}_t = \\max(0, 1-0.2t)$。\n  4. Finetuning: API 呼び出しを本文中に interleave した $\\mathcal{C}^*$ で GPT-J を通常 LM 目的関数で finetune。\n  5. Inference: 生成中に `→` が出たら decoding を中断 → 実 API を呼ぶ → 結果と `</API>` を挿入して続行。`<API>` トークンを top-$k$（$k=10$）にあれば発火させる decoding 修正を入れる。\n  - データ: CCNet サブセット、base LM: GPT-J 6.7B。ツールは QA (Atlas, NQ で finetuned)、Calculator (Python, 四則のみ, 小数2桁丸め)、Wikipedia Search (BM25 over KILT dump)、MT (NLLB 600M, source 言語は fastText で自動検出 → 英語へ)、Calendar (URL から日付抽出)。\n- **結果**: 全部 zero-shot prompted setting。\n  - **LAMA** (SQuAD/Google-RE/T-REx): GPT-J 17.8/4.9/31.9, GPT-3 175B 26.8/7.0/39.8, Toolformer **33.8/11.5/53.5**（QA ツールを 98.1% 使用、Wikipedia Search は fair でないので禁止）。\n  - **Math** (ASDiv/SVAMP/MAWPS): GPT-J 7.5/5.2/9.9, GPT-3 175B 14.0/10.0/19.8, Toolformer **40.4/29.4/44.0**（calculator 97.9%）。\n  - **QA** (WebQS/NQ/TriviaQA): GPT-3 175B 29.0/22.6/65.9 にはまだ届かない（Toolformer 26.3/17.7/48.8、Wikipedia Search 99.3%）。BM25 の弱さと「クエリ書き換え不可」が原因と著者は分析。\n  - **MLQA** (Es/De/Hi/Vi/Zh/Ar): MT ツールは Es/De/Vi で使用率 63.8〜94.9% だが Hindi だけ 7.3%。CCNet finetune による分布シフトで GPT-J vanilla を一貫しては上回らない。OPT 66B / GPT-3 175B は英語回答指示に従えず壊滅（Es 3.4, Zh 17.7 など）。\n  - **Temporal** (TempLAMA/Dateset): Toolformer **16.3/27.3**。Dateset では Calendar を 54.8% 使用して効くが、TempLAMA では Calendar は 0.2% しか使われず、改善は QA/WikiSearch 由来。\n  - **Perplexity** (WikiText/CCNet): GPT-J 9.9/10.6, Toolformer (disabled) 10.3/10.5。API 呼び出しを混ぜた finetune でも素の言語モデル性能は壊れない。\n  - **Scaling laws**: GPT-2 124M/355M/775M/1.6B + GPT-J 6.7B で比較し、ツール使用が効くのは概ね 775M 以降。サイズが上がっても「API 有り vs 無し」のギャップは縮まらない。\n- **貢献**: (1) self-supervised に API 呼び出しの「位置・引数・タイミング」を学習する一般枠組み、(2) perplexity 削減量でフィルタするシンプルかつ強力な信号、(3) QA / 計算 / Wiki / MT / Calendar の 5 ツール全部で zero-shot 改善を実証、(4) 6.7B モデルが GPT-3 175B を多くのタスクで上回るというサンプル効率の良さの提示、(5) ツール使用能力の emergence が ~775M パラ近辺で起こる scaling 観察。\n\n## Takeaway（自分にとっての要点）\n\n- 「API 呼び出しを sampling → 実行 → *次トークン予測 loss を下げたかどうか* で残す」という filter が肝。報酬モデルも human label も要らず、pretrained LM 自身が信号源になっている。RLHF より遥かに安く tool use を仕込める。\n- decoding 時の「`<API>` が top-$k$ にあれば発火」は地味だが効く。$k=1$（純 greedy）では T-REx で 47.8、$k=10$ で 53.5。逆に $k=1$ のとき、モデルは「自分が外しそうな例だけ」API を呼ぶような calibration を見せる（NC 44.3 < AC 53.0）— ただし $k$ を上げるとこの calibration は崩れる。「呼ぶ確率」を信頼度として使えるかもしれない可能性は面白い。\n- API ごとに **どこを filter heuristic で絞り込むか** が実装上の急所。Calculator は「3 個以上の数字 / `=`/`equals` 直後の数字」で絞り、Calendar は URL から日付が抽出できる文書だけ残す（CCNet の 18%）。100 万文書から calculator 用は数千例しか残らない、というサンプル効率の悪さは率直に書かれている。\n- 「ツール使用は ~775M パラから emergence」は ToT / CoT 系の emergence 議論と整合する観察で、小モデルで tool use を試すのは筋が悪いという証拠。逆にそのサイズ以上であれば、6.7B でも 175B 級の zero-shot を超えうる。\n- limitation の指摘がそのまま次研究のテーマリスト: **chain 不可・interactive 不可・wording sensitive・sample inefficient・API コスト無考慮**。とくに chain と interactive は ReAct / Toolformer 後継（Gorilla, ToolLLM など）が直接埋めにいく所。\n\n## Critical Thoughts（評価・疑問）\n\n- **強み**:\n  - filtering 信号が「実行結果を入れたら loss が下がるか」というモデル内在的シグナルだけで完結している点が美しい。ground truth answer もタスク label もいらない。\n  - 各ツールに専用 prompt は要るが、それは「数例の人手 demonstration」だけで済む。WebGPT / LaMDA のように人間が逐次教師信号を与える方式に比べてスケーラビリティが圧倒的に上。\n  - 「API call を入れた finetune が WikiText perplexity を悪化させない」をきちんと検証している（Table 5）。tool use と言語モデリングのトレードオフを定量化する誠実さ。\n  - decoding bias ($k=10$) のような実装ノブを ablation 込みで開示している（Table 6）。再現に必要な情報がそろっている。\n- **弱み / 疑問**:\n  - 著者自身が認める通り **chain of tool calls ができない**。TempLAMA で「Calendar → QA」が最適だと自ら指摘しつつ、訓練データ生成時に各 API を独立サンプリングしている設計上、根本的に学習できない。これが本手法最大の boundary。\n  - **interactive な検索（クエリ書き換え・複数結果の閲覧）が不可能**。QA で GPT-3 175B に届かない主因がここだと著者も書いており、BM25 + 単発クエリだけで Wikipedia Search を評価していることは方法論的制約。\n  - **wording sensitivity**: 「ほぼ同じ意味の入力でも API 呼ぶ／呼ばないが変わる」と limitation 節で告白。prompt engineering 依存度が高く、production 用途では不安定要因。\n  - **sample inefficiency**: 100 万文書からカリキュレータ用に残るのは数千例（$\\tau_f=1.0$ で 994 件、Table 2）。MT も 1,034 件。CCNet 全体に占めるツール有用例の比率が極小で、希少 API ほど不利。iterative bootstrapping で対処できる、と書いてあるが本論文ではやっていない。\n  - **コスト考慮なし**: API 呼ぶ／呼ばないを loss 差だけで決めているので、安価な calculator と高価な MT/QA を区別せずに「呼んだ方が perplexity 下がる」だけで採択している。実運用では効用＝精度向上 - レイテンシ - 課金、を最適化する必要がある。\n  - **MLQA で vanilla GPT-J に勝てない言語がある**（De/Zh/Ar）。CCNet finetune 由来の分布シフトと書かれているが、ツールが効くはずの多言語タスクで一貫した改善が出ないのは弱い。\n  - **ベースが GPT-J 一機種**。手法の generality は GPT-2 124M〜1.6B との scaling では示されているが、Llama 系・OPT 系で同じ filtering 信号が機能するかは未検証。\n  - **TempLAMA で Calendar が 0.2% しか呼ばれない**事実は、「filtering 信号が将来トークン予測 loss だけ」ゆえに「日付があっても珍しい固有名詞が予測できない」ケースで API 呼び出しがそもそも生成 → 採択されにくいという構造的弱点を示している。タスク信号ではないので「正解できる API」が選ばれる保証がない。\n- **次に試したいこと**:\n  - filtering 段階で **chain（API₁ の結果を context に入れて API₂ をサンプリング）** を許容する反復生成 → 多段 tool use の Toolformer。著者が提示するが実装していない自然な拡張。\n  - decoding 時の API 発火確率 $p_M(\\texttt{<API>})$ を **信頼度スコアとして較正**し、ECE で confidence prompt と比較。$k=1$ のときの「外しそうな例だけ呼ぶ」現象（Table 6）の定量化。\n  - **コスト付き objective**: $L_i^- - L_i^+ - \\lambda \\cdot \\text{cost}(c_i)$ で tool ごとの計算コスト・課金を考慮した filtering に拡張。\n  - iterative self-training: filter で生き残った例で finetune → 新モデルでもう一度 sampling → さらに filter、を 2〜3 周回した時の sample efficiency 改善幅。\n  - 手法を Llama-3 8B / Qwen-2.5 7B のような近年のオープン LM に移植し、Toolformer-style filtering 信号が今でも反復通用するか。RLHF 済みモデルでは `<API>` 生成自体が抑制されている可能性を確認。\n  - **interactive Wikipedia Search**: 1 文書中に複数の API call を許容し、最初の検索結果を context にした 2 段目クエリを生成・filtering する。\n\n## Notes / Quotes\n\n- \"we let a LM annotate a huge language modeling dataset with potential API calls. We then use a self-supervised loss to determine which of these API calls actually help the model in predicting future tokens.\" (introduction)\n- linearize: `e(c) = <API> a_c(i_c) </API>`, `e(c,r) = <API> a_c(i_c) → r </API>` で、実装上は `[`, `]`, `->` を予約トークンとして流用（vocab 拡張なし）。\n- filter 基準: $L_i^- - L_i^+ \\geq \\tau_f$。$L_i^+$ は API+結果を prefix、$L_i^- = \\min(L_i(\\varepsilon), L_i(\\text{e}(c_i, \\varepsilon)))$ は「呼ばない」と「呼ぶが結果なし」の min。後者を含めるのは、API 呼び出し自身が prompt として情報を含んでしまうのを差し引くため。\n- 重み $w_t \\propto \\max(0, 1-0.2t)$ により、API 呼び出し近傍の 5 トークン程度に loss を集中。\n- decoding: greedy 中、`<API>` が top-$k=10$ にあれば発火させる。生成中 1 リクエスト 1 API call の制約あり（無限ループ防止）。\n- LAMA で API 用途内訳: QA 98.1%, 他ツール 0.7%, ノーツール 1.2%。Math では calculator 97.9%。QA タスクでは Wikipedia Search 99.3%。\n- $\\mathcal{C}^*$ サイズ ($\\tau_f=1.0$): QA 18,526 / WikiSearch 60,974 / Calculator 994 / Calendar 20,587 / MT 1,034 例。calculator と MT が極端に少ない。\n- 「emergence at ~775M parameters」(Section Scaling Laws, Figure 4)。\n- limitations 抜粋（自認）:\n  - no chain: 「API calls for each tool are generated independently」\n  - no interaction: Webgpt 風のブラウジング/クエリ修正不可\n  - prompt sensitivity: 「sensitive to the exact wording of their input when deciding whether or not to call an API」\n  - sample inefficiency: 「processing more than a million documents results in only a few thousand examples of useful calls to the calculator API」\n  - cost-blind: 「does not take into account the tool-dependent, computational cost incurred from making an API call」\n- 興味深い decoding 観察 (Table tab:top-k, $k=1$): T-REx で API call した部分集合 (AC) 53.0 > しなかった部分集合 (NC) 44.3 > 全部禁止 34.9。モデルは「呼べば伸びる例」と「呼ばなくても解ける例」をある程度区別している。\n\n- (verified 2026-05-20) venue 行から「NeurIPS 2023 採択」を削除（main.tex に venue 言及なし、テンプレ .sty は emnlp2021 残骸）。他の数値・固有名詞・実験結果は main.tex の Table 1〜6・Limitations 節・Appendix で全て裏取り済み。\n\n## Related Papers\n\n- Brown+ 2020, GPT-3 — zero-shot baseline、175B モデルの比較対象。\n- Wang+ 2022 Self-Instruct, Honovich+ 2022 Unnatural Instructions — in-context generation で大規模データ自動生成という発想の系譜。\n- Komeili+ 2022 (BlenderBot/Internet-Augmented), Thoppilan+ 2022 (LaMDA), Nakano+ 2021 (WebGPT) — 大量人手アノテーションで tool 使用を教える対極アプローチ。\n- Gao+ 2022 PAL, Yao+ 2022 ReAct, Lazaridou+ 2022 — task-specific few-shot prompt で tool 使用を引き出すアプローチ。\n- Parisi+ 2022 TALM — 最も近い研究。同様の self-supervised 学習で電卓と検索を扱うが、downstream 専用 finetune に限定。Toolformer は zero-shot 汎用。\n- Izacard+ 2022 Atlas — 内部で使う QA システム本体。retrieval-augmented LM。\n- Costa-jussà+ 2022 NLLB — MT ツールに使用した 600M 多言語翻訳モデル。\n- Petroni+ 2019 LAMA, Patel+ 2021 SVAMP, Miao+ 2020 ASDiv, Koncel-Kedziorski+ 2016 MAWPS, Kwiatkowski+ 2019 Natural Questions, Joshi+ 2017 TriviaQA, Berant+ 2013 WebQS, Lewis+ MLQA, Dhingra+ 2022 TempLAMA — 評価ベンチマーク。\n- Zelikman+ 2022 STaR, Schick & Schütze 2021 PET, Izacard+ 2021 — self-training/bootstrap の系譜（filtering で残った自分の生成で再学習する思想の源流）。\n- Wei+ 2022 (Emergent abilities) — 「 775M で tool use が emerge」観察の参照点。\n";
+const MACROS = {"\\floatpagefraction": "1.0", "\\topfraction": ".9", "\\timo": "\\ifshowcomments\\textcolor{purple}{[Timo: #1]}\\fi", "\\nicola": "\\ifshowcomments\\textcolor{blue}{[Nicola: #1]}\\fi", "\\luke": "\\ifshowcomments\\textcolor{cyan}{[Luke: #1]}\\fi", "\\jane": "\\ifshowcomments\\textcolor{orange}{[Jane: #1]}\\fi", "\\rob": "\\ifshowcomments\\textcolor{green}{[Roberto: #1]}\\fi", "\\maria": "\\ifshowcomments\\textcolor{magenta}{[Maria: #1]}\\fi", "\\thom": "\\ifshowcomments\\textcolor{gray}{[Thomas: #1]}\\fi", "\\negphantom": "\\settowidth{\\dimen0}{#1}\\hspace*{-\\dimen0}", "\\todo": "\\textcolor{red}{[TODO: #1]}", "\\ours": "Toolformer", "\\oursFull": "\\textcolor{red}{\\textsc{Our Method}}", "\\mc": "\\textcolor{red}{(CITE #1)}", "\\mn": "\\textcolor{red}{??.?}", "\\cmark": "\\ding{51}", "\\xmark": "\\ding{55}", "\\tabularxcolumn": "m{#1}", "\\argmax": "\\operatorname{arg\\,max}", "\\argmin": "\\operatorname{arg\\,min}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

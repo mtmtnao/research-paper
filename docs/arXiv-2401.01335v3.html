@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Self-Play Fine-Tuning Converts Weak Language Models to Strong Language Models</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes/arXiv-2401.01335v3.md</code>
+  &nbsp;|&nbsp; macros: <code>8</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Self-Play Fine-Tuning Converts Weak Language Models to Strong Language Models\n\n- arXiv: https://arxiv.org/abs/2401.01335\n- source: ../papers/arXiv-2401.01335v3/\n- authors: Zixiang Chen, Yihe Deng, Huizhuo Yuan, Kaixuan Ji, Quanquan Gu (UCLA, equal contribution for the first three)\n- venue / year: ICML 2024\n- tags: [self-play, LLM, fine-tuning, alignment, synthetic-data, DPO]\n- read_date: 2026-05-13\n\n---\n\n## Summary（著者の主張）\n\n- **問題**: SFT で一度学習し終えた LLM を、同じ SFT データセットでさらに学習しても性能はサチるか、むしろ下がる（実際 zephyr-7b-sft-full を Ultrachat200k で 1 epoch 追加 SFT すると平均 58.14→57.23、tab:ablation_data）。一方 RLHF / DPO は追加の preference データ（人手 or GPT-4 評価）が必要で高価。「追加データなしで弱い LLM を強くできるか」が本論文の問い。\n- **手法**: Self-Play fIne-tuNing (SPIN)。SFT 済みモデル $p_{\\btheta_0}$ から出発し、iteration $t+1$ で\n  1. 旧モデル $p_{\\btheta_t}$ に SFT データセットのプロンプト $\\xb$ を入れて合成応答 $\\yb'$ を生成\n  2. 新モデル $p_{\\btheta_{t+1}}$ を、IPM（integral probability metric）に基づく目的関数\n     $L_{\\text{SPIN}} = \\EE\\,\\ell\\!\\big(\\lambda\\log\\frac{p_\\btheta(\\yb|\\xb)}{p_{\\btheta_t}(\\yb|\\xb)} - \\lambda\\log\\frac{p_\\btheta(\\yb'|\\xb)}{p_{\\btheta_t}(\\yb'|\\xb)}\\big)$ で訓練（$\\ell$ は logistic loss、$\\lambda=\\beta=0.1$、最終 iter のみ $\\beta=5.0$）。\n\n  形式上 GAN の discriminator と generator が同一 LLM の異 iteration 同士になる構造で、DPO とは Bradley-Terry でなく IPM ベース・iterative・preference データ不要・$p_\\text{ref}$ が iter ごとに進化する点が違うと著者は主張。Theorem 1: $\\ell$ が単調減少凸なら、global minimum は $p_\\btheta = p_\\text{data}$ のときだけ（必要十分）。Theorem 2: logistic loss のとき $p_{\\btheta_{t+1}} \\propto p_{\\btheta_t}(p_\\text{data}/p_{\\btheta_t})^{1/\\lambda}$。\n- **結果**: ベース zephyr-7b-sft-full（Mistral-7B を Ultrachat200k で SFT 済）に対して、Ultrachat200k から 50k プロンプトだけ抜き出し SPIN を回す。\n  - HuggingFace Open LLM Leaderboard 平均: 58.14 → 60.80（iter 0, +2.66）→ 62.12（iter 1, +1.32）→ 62.97（iter 2, +0.85）→ 63.16（iter 3, +0.19）。tab:main。\n  - 個別: Arc 60.41→65.87、TruthfulQA 43.73→54.90、Winogrande 74.19→73.72、GSM8k 26.76→38.97、HellaSwag 82.85→85.54、MMLU 60.92→59.99。TruthfulQA と GSM8k で +10pt 超。\n  - 比較: 62k preference データ（UltraFeedback Binarized, GPT-4 評価）で DPO した zephyr-7b-dpo-full の平均 61.31 を、SPIN は iter 1 時点（62.12）で既に上回る。SPIN iter 3 のあと追加で DPO を回すと 64.05（+0.89）。\n  - MT-Bench: 5.94 → 6.46 → 6.65 → 6.78（iter 1 時点で既に vicuna-13b-v1.5 の 6.57 を上回る）。Big-Bench Hard 3 タスク (Causal Judgment, Formal Fallacies, Sports Understanding) と OpenBookQA でもベース比で改善し著しい劣化なし（ただし BB-Sports は 96.0→95.2→95.2→94.4、BB-Formal は 49.6→51.6→51.2→51.2 と単調ではない）。tab:ablation_bbh。\n  - Ablation: SPIN iter 0 の学習サイズを 14k/26k/50k と振ると単調改善、一方で Ultrachat200k で SFT を 2,3 epoch 続けても +1% も上がらない（fig:training_size）。iter 0 を epoch 数だけ伸ばしても iter 1 の精度には届かない → iterative であることが本質（fig:ablation_epoch）。\n- **貢献**: (1) preference データも reward model も追加人手データも不要で SFT モデルをさらに伸ばせる self-play fine-tuning 法、(2) Theorem 1/2 による収束点の特徴づけ、(3) 50k subset だけで 62k preference 付き DPO に勝てることの実証、(4) SPIN+DPO がスタックできることの実証。\n\n## Takeaway（自分にとっての要点）\n\n- **「SFT データの再利用」の枠組みとして実用的**: 追加データ収集が難しい場面（社内データ・規制データ）で、既に持っている SFT データから生成・自己判別だけで更に伸ばせるレシピが具体的なハイパラ込み（lr 5e-7→1e-7, β=0.1→5.0 at last iter, RMSProp, global batch 64, 2 epoch/iter）で書かれている。\n- **DPO 損失との形式的類似が示唆的**: SPIN の損失は DPO の損失で $\\yb_w=\\yb_\\text{human}$, $\\yb_l=\\yb_\\text{model生成}$ かつ $p_\\text{ref}$ を毎 iter 自己更新したものと等価に近い。つまり「自分の出力＝loser、人手＝winner」と決めてしまえば preference label 不要、と読める。これは self-rewarding / iterative DPO 系（Yuan et al. 2024、Xu et al. 2023）と同じ近傍にある。\n- **$\\beta$（=λ）を最終 iter で 0.1→5.0 に一気に上げる運用**: Theorem 2 から「収束近傍では λ 大の方が安定」というのを実装にそのまま反映している。これは他の iterative preference 法でもそのまま流用できそうな実用ノウハウ。\n- **生成コストが訓練コストに支配される**: A100×8 で 50k 生成が 1.45h、訓練が 4.32–8.64h（tab:times）。「self-play は重い」という直感とは逆で、ボトルネックは推論ではなく fine-tune 側。\n- **iterative であることが本質**: 同じ計算予算で iter 0 の epoch を伸ばしても iter 1 には届かないという ablation（fig:ablation_epoch）。「合成データの分布を更新しながら学ぶ」効果は単なる epoch 増加では再現できない。curriculum learning 的解釈（簡単→難しい識別へ）と整合。\n\n## Critical Thoughts（評価・疑問）\n\n- **強み**:\n  - 理論（Theorem 1/2）と実装（zephyr-7b-sft-full + 50k Ultrachat200k）がきれいに対応。global optimum が $p_\\text{data}$ の一点で必要十分という保証はシンプルで強い。\n  - DPO ベースラインに対する fair な比較設計：同じ SFT checkpoint から出発し、SPIN は preference データなし・DPO は 62k preference あり、それでも SPIN iter 1 が勝つ、というのは説得力がある。\n  - SPIN→DPO のスタッキング（tab:additionspindpo）で TruthfulQA が +5pt 伸びるところまで示しており、SFT と RLHF の間に挟む独立工程として位置づける主張が裏付けされている。\n- **弱み / 疑問**:\n  - **著者自身が認める limitation**: \"fixed target data distribution generated by humans\" を仮定しており、SFT データ分布が性能の上限（ceiling）になる。super-human にはこの枠組みのままでは行けない、と Conclusion で明記。\n  - **合成データ生成のコスト削減も future work** とされている（Conclusion 末尾）。50k×4 iter は中規模実験で、より大きいデータ・大きいモデルでスケールするかは未検証。\n  - **MMLU が iter 0 で 60.92→60.03 と微減**し、Winogrande も 74.19→72.30〜73.72 で頭打ち。「すべての軸で改善」ではなく、TruthfulQA / GSM8k / Arc に偏った伸びで、平均が押し上げられているように見える。タスク依存性の議論はほぼない。\n  - **比較対象の DPO が zephyr-7b-dpo-full 1 種類のみ**。RLAIF や iterative DPO（Xu+ 2023, Yuan+ 2024）と直接の数値比較がない。Concurrent work 扱いで本文に記述はあるが、表での横並びはない。\n  - **「自分の出力＝negative」と決め打つ学習が生む副作用**は議論されていない。SFT 直後の良い回答まで penalize する可能性、長期的に多様性が削られる可能性、自己ループでの mode collapse の可能性などは TeX 中には明示されていない。\n  - **データ汚染**：Ultrachat200k は OpenAI Turbo 由来の対話。事実上 GPT-3.5 の蒸留分布を $p_\\text{data}$ として追っているとも言え、「human-annotated data」と呼ぶのは緩い。\n  - **`yb_g`** という変数が experiment setup の脚注（コメントアウト済 `\\todoq` 含む）に残っており、本文との対応が一部曖昧（執筆の名残）。実害はないが、合成データ生成のプロンプト・サンプリング温度などの詳細が TeX 中で十分明示されていない（Appendix の hyperparams にも温度の記載は見当たらない）。\n- **次に試したいこと**:\n  - 「自分の出力＝loser」と決め打ちせず、reward model や preference judge を挟む iterative DPO と、同じ計算予算で pareto curve を引いて SPIN の優位がどこから来ているか切り分ける。\n  - $\\beta$（=λ）を iter ごとにスケジューリングする戦略の系統的研究（Theorem 2 が示唆する方向で、0.1→5.0 の jump を smooth schedule に置き換えると iter 3 の +0.19 が伸びるか）。\n  - target distribution を動かす拡張：iter ごとに $p_\\text{data}$ を rewriter LLM で精錬する／別モデルの出力をミックスする、など Conclusion で言及された \"dynamically changing target\" の素朴な実装。\n  - SPIN 後のモデルで生成多様性（distinct-n, self-BLEU）と calibration（ECE）がどう変わるかの測定。本論文は accuracy 軸のみ。\n  - 同じ recipe を Mistral-7B 以外（Llama-3-8B、Qwen2-7B 等）で再現し、ベース SFT の質との依存性を見る。\n\n## Notes / Quotes\n\n- \"Can we empower a weak LLM to improve itself without acquiring additional human annotated data?\" (introduction.tex) — 論文の中心問い。\n- Theorem 1 (sufficiency & necessity): \"$\\btheta_t$ is the global minimum of (eq:loss)\" iff $p_{\\btheta_t}=p_\\text{data}$（適切な $\\lambda$ の下で）。\n- Theorem 2 (logistic loss): $p_{\\btheta_{t+1}}(\\yb|\\xb) \\propto p_{\\btheta_t}(\\yb|\\xb)\\big(p_\\text{data}(\\yb|\\xb)/p_{\\btheta_t}(\\yb|\\xb)\\big)^{1/\\lambda}$。\n- Hyperparams (app:exp): RMSProp, no weight decay, global batch 64, 10% warmup, bfloat16, peak lr 5e-7 (iter 0,1) → 1e-7 (iter 2,3), $\\beta=0.1$, max seq 2048, last iter $\\beta=5.0$, 2 epoch/iter.\n- Synthetic data 量: iter 0 で 50k、iter 1/2/3 で前 iter の 50k と合わせて 100k。\n- Generation/Training time per iter（8×A100 80G, tab:times）: 1.45h 生成 / 4.32h (iter 0) or 8.64h (iter 1–3) 訓練。\n- Limitations (Conclusion): \"fixed target data distribution ... inherently imposes a ceiling on the performance\"、\"considering the resource demands of synthetic data generation, another promising avenue ... is to reduce the volume of required synthetic data\"。\n- \"while DPO leverages more data from new sources, $\\method$ based on the existing SFT data can already achieve comparable average performance to DPO training at iteration 0. From iteration 1, $\\method$ even surpasses the performance of DPO\" (experiments)。\n- (verified 2026-05-20) MT-Bench で vicuna-13b-v1.5 (6.57) を超えるタイミングを「iter 2」→「iter 1 時点で既に上回る」に修正 (main.tex tab:ablation_bbh で iter 0=6.46, iter 1=6.65, iter 2=6.78)。\n- (verified 2026-05-20) Big-Bench Hard 3 タスクと OpenBookQA を「単調改善」と書いていたが、tab:ablation_bbh の実値で BB-Sports (96.0→95.2→95.2→94.4) と BB-Formal (49.6→51.6→51.2→51.2) は単調でないため、TeX 本文「steady improvement ... with no significant degradation」に沿った表現へ修正。\n\n## Related Papers\n\n- Rafailov+ 2023, DPO — 損失形式が最も近い直接比較対象。SPIN との違いは Bradley-Terry vs IPM、single iter vs iterative、preference data の要否。\n- Tunstall+ 2023, Zephyr / Alignment Handbook — ベースモデル zephyr-7b-sft-full と zephyr-7b-dpo-full の出所、コードベース。\n- Jiang+ 2023, Mistral-7B — pre-trained backbone。\n- Ding+ 2023, UltraChat / Cui+ 2023, UltraFeedback Binarized — SFT データと preference データ。\n- Silver+ 2017, AlphaGo Zero / AlphaZero — self-play の思想的源流。\n- Goodfellow+ 2014, GAN / Arjovsky+ 2017, Wasserstein GAN / Jolicoeur-Martineau 2018, Relativistic GAN — (eq:f-star) の構造的類縁。\n- Ho & Ermon 2016, GAIL — discriminator/policy を分離する従来法との対比。\n- Burns+ 2023 (\"weak-to-strong generation\") / Singh+ 2023 (ReST 系 self-training) — concurrent / 隣接設定の比較対象。\n- Xu+ 2023, Pairwise Cringe / iterative DPO, Yuan+ 2024, Self-Rewarding LM — concurrent work、SPIN の「self-assessment is implicit」という差別化点の比較先。\n- Cheng+ 2023, APO (Adversarial Preference Optimization) — adversarial alignment の関連。\n- Open LLM Leaderboard 構成データセット: Clark+ 2018 ARC, Lin+ 2021 TruthfulQA, Sakaguchi+ 2021 Winogrande, Cobbe+ 2021 GSM8k, Zellers+ 2019 HellaSwag, Hendrycks+ 2020 MMLU。\n- Zheng+ 2023, MT-Bench / Mihaylov+ 2018, OpenBookQA / Srivastava+ 2023, Big-Bench — 追加評価。\n";
+const MACROS = {"\\todoq": "\\todo[size=\\scriptsize,color=orange!20!white,#1]{Quanquan: #2}", "\\todoz": "\\todo[size=\\scriptsize,color=blue!20!white,#1]{Zixiang: #2}", "\\todoy": "\\todo[size=\\scriptsize,color=green!20!white,#1]{Yihe: #2}", "\\todoh": "\\todo[size=\\scriptsize,color=red!20!white,#1]{HZ: #2}", "\\method": "\\texttt{SPIN}", "\\la": "\\langle", "\\ra": "\\rangle", "\\cIs": "\\cI_{\\hat{s}}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

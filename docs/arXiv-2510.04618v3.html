@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes/arXiv-2510.04618v3.md</code>
+  &nbsp;|&nbsp; macros: <code>64</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models\n\n- arXiv: https://arxiv.org/abs/2510.04618\n- source: ../papers/arXiv-2510.04618v3/\n- authors: Qizheng Zhang, Changran Hu, Shubhangi Upasani, Boyuan Ma, Fenglu Hong, Vamsidhar Kamanuru, Jay Rainton, Chen Wu, Mengmeng Ji, Hanchen Li, Urmish Thakker, James Zou, Kunle Olukotun (Stanford / SambaNova / UC Berkeley)\n- venue / year: ICLR 2026 submission (preprint, v3)\n- tags: [LLM, context-engineering, agent, prompt-optimization, test-time-adaptation, self-improvement]\n- read_date: 2026-05-12\n- rating:\n\n---\n\n## Summary（著者の主張）\n\n- **問題**: LLM 応用（agent・ドメイン推論）は重み更新ではなく「コンテキスト適応 (context adaptation)」に依存する方向にシフトしている。しかし既存の prompt optimizer / memory 系手法には 2 つの病理がある: (1) **brevity bias** — GEPA など多くの最適化器は「短く一般化された prompt」に収束し、ドメイン固有のヒューリスティクスや failure mode が削れる。(2) **context collapse** — Dynamic Cheatsheet のような「LLM が context を一括書き直し」する設計だと、ステップが進むうちに長文 context が急に短い要約に潰れて性能が崩落する（AppWorld で step 60 → 61 のあいだに 18,282 tokens / acc 66.7 → 122 tokens / acc 57.1、ReAct baseline の 63.7 をも下回る、background §2.2）。\n- **手法**: **ACE (Agentic Context Engineering)**。context を「進化する playbook」として扱い、3 役割で分担する agentic フレームワーク（design §3）:\n  - **Generator**: ReAct 等で query を解き、reasoning trajectory と「どの bullet が役立った/誤導したか」をフィードバック。\n  - **Reflector**: 成功・失敗のトレースから具体的な lesson を抽出（最大 5 round の iterative refinement）。\n  - **Curator**: lesson を「**delta entry** = id + helpful/harmful カウンタを持つ箇条書き bullet」にまとめ、決定的（非 LLM）ロジックで既存 context にマージ。\n  - **Incremental delta updates**: 全書き換えではなく局所差分のみ → collapse 回避・並列マージ可能。\n  - **Grow-and-refine**: 新 id は append、既存は in-place 更新、定期的に semantic embedding で重複 prune。\n  - 評価は offline（system prompt 最適化、train で学習し test 評価、pass@1）と online（test を順に処理し、各 sample で予測→context 更新）両方。\n- **結果**:\n  - **AppWorld (DeepSeek-V3.1-671B + ReAct, Table 1)**: ReAct baseline 平均 42.4。offline は ICL 46.0 / GEPA 46.4 に対し ACE **59.4** (+17.0)。online は DC(CU) 51.9 に対し ACE **59.5** (+17.1)。GT label 無しでも +14.8 平均改善。test-challenge TGC は 41.5 → 66.0。\n  - **AppWorld leaderboard (2025-09-20)**: ReAct+ACE 59.4% で IBM-CUGA (GPT-4.1 製、60.3%) と平均でほぼ並び、test-challenge では TGC で +8.4、SGC で +0.7 上回る（より小さい open-source モデル DeepSeek-V3.1 使用）。\n  - **金融 (FiNER + Formula, Table 2)**: base 69.1。offline で ACE 81.9 (+12.8、ICL 69.6 / MIPROv2 70.9 / GEPA 72.5 を凌駕)。Formula は 67.5 → **85.5** (+18.0)。online でも ACE +7.5。一方、GT label もなく実行フィードバックも弱い設定では DC も ACE も劣化することがある (FiNER online no-label で ACE -3.4)。\n  - **アブレーション (Table 3)**: Reflector 無 / multi-epoch 無 → 55.1、Reflector あり multi-epoch 無 → 56.8、フル ACE → 59.4。online も offline warmup ありで 56.1 → 59.5。\n  - **コスト**: AppWorld offline で GEPA に対し adaptation latency **-82.3%** (53,898→9,517 s)、rollout 数 **-75.1%** (1,434→357)。FiNER online で DC に対し latency **-91.5%** (65,104→5,503 s)、token \\$ コスト **-83.6%** ($17.7→$2.9)。長い context でも GPT-5.1 では **91.8% が KV cache 再利用**され、billed input token cost は raw 比 -82.6%。\n  - **汎化** (appendix §A.1): GPT-OSS-120B では AppWorld 平均 +5.9（offline GT）/+7.6（online no-label）、Finance 平均 +12.1/+8.7。GPT-5.1 では AppWorld +6.0/+11.6、Finance +9.5/+3.8。Llama-3.3-70B-Instruct は FiNER のみ報告で offline +2.4 / online +1.1 と他モデルより小幅（同表）。\n- **貢献**: (1) brevity bias / context collapse を「現象として定式化」し AppWorld の具体的な数値で示した、(2) Generator/Reflector/Curator + delta bullet + grow-and-refine という再利用可能なフレームワーク、(3) agent benchmark で open-source モデル + ACE が GPT-4.1 ベース production agent と並ぶ実証、(4) 実行フィードバックのみでラベルなし自己改善できることを示した、(5) cost / latency が下がる「長い context = 高コスト」ではないという主張（KV cache 観点込み）。\n\n## Takeaway（自分にとっての要点）\n\n- **「prompt は短く一般化が良い」という直感を真っ向から否定**している。LLM 向けには人間向け要約と違って、ドメインヒューリスティクス・失敗例・コードスニペットを全部詰めた「playbook」のほうが効くという立場。長 context モデル + KV cache 時代だからこそ取れる戦略。\n- 設計上の肝は「**LLM に context を書き直させない**」点。Curator は LLM だが、マージ自体は決定的ロジックで bullet を id 単位で append / counter 更新する。これによって rewrite 起因の崩落を遮断している。`delta entry = id + helpful/harmful counter + content` という構造は、それ自体が memory entry のフォーマットとして真似しやすい。\n- offline / online を同じ枠組みで扱える点が実装上ありがたい。offline warmup で初期 playbook を作ってから online で継続更新、という流れは AppWorld online で best (+17.1)。\n- ラベルなしでも執行フィードバック（コード実行成否）で動く＝ agent 系では実用的。逆に「実行で正解判定できない」ドメイン (FiNER no-label) では ACE 自身も劣化する、と論文が明示している。**「feedback signal の質」が ACE の上限を決める**、というのが正直な絵。\n- coverage が広く playbook が長くなる → 普通なら推論コストが膨らむ、が ACE は KV cache 前提で「reuse 91.8%」と数字を出してきている。同じ context を何度も叩く ICL ワークロードでは現実的にコストが乗らない、という議論はベンチに載せにくい点を丁寧に拾っている。\n- アブレーションで「Reflector + multi-epoch + offline warmup」が積み上げで効いていて、どれを抜いても -3〜+5 pt 変動するのが見える。Dynamic Cheatsheet の主要欠点 (rewrite + Reflector 無し) をピンポイントで補強する設計、という読み方ができる。\n- 「prompt 工学を捨てて RL/finetune に行くべき」という潮流に対して、cost と解釈性で押し返してくる種類の論文。selective unlearning や継続学習との接続も discussion で示唆されている。\n\n## Critical Thoughts（評価・疑問）\n\n- **強み**:\n  - context collapse を **具体的な step-level の token 数 / accuracy** で示している（18,282→122 tokens, 66.7→57.1）。失敗例を定量化しているので主張に信頼が乗る。\n  - 同一 LLM (DeepSeek-V3.1) を Generator/Reflector/Curator 全部に使うことで「強い Reflector が弱い Generator を引き上げているだけ」の疑念を切っている (results §4.2)。\n  - cost 比較が latency / rollout / token $ の 3 軸で揃っており、しかも KV cache 再利用率まで実測 (91.8%) しているのは誠実。\n  - GT label の有/無を Table の中に並べて、ablation 的に supervision の効き方まで見せている。online no-label で AppWorld は強いが FiNER は弱い、という非対称も隠していない。\n  - leaderboard 比較で open-source モデルがクローズドな production agent と並ぶ、という「ぱっと響く」結果を持っている。\n- **弱み / 疑問**:\n  - 著者自身が limitations (§5) で書いている通り、**Reflector の質に強く依存**する。実行フィードバックが得にくいドメインでは context が \"noisy or even harmful\" になりうる、と明言（FiNER online no-label の -3.4 がまさにそれ）。\n  - \"context は長いほうが良い\" を主張するが、HotPotQA や Game of 24 のように「短い指示で十分」なタスクでは ACE は不要だと自分でも認めている。**どこからが ACE 適用領域なのか、apriori に判別する基準は提示されていない**。\n  - playbook が膨張する一方で、grow-and-refine の de-duplication が semantic embedding 一発であり、**embedding が誤って同義と判定して有用 bullet を消す**ケースのアブレーションは本文では見えない（incremental update の効果は appendix）。\n  - AppWorld 以外の agent benchmark での評価は appendix と StreamBench（医療 DDXPlus / BIRD-SQL）に限定。**ベンチがドメイン特化系に偏っている**ので、open-ended な web agent や多モーダル系には外挿しにくい。\n  - \"KV cache 再利用で長 context は高くならない\" は OpenAI API の prompt caching に依存した主張で、**self-host (vLLM 等) でも同じ 80% 級の billed コスト削減が出るかは未検証**。\n  - GEPA との比較で auto=\"heavy\" を使っているが、GEPA を ACE と同じ rollout 数で揃えた条件で打つとどうなるか（**iso-budget 比較**）が無い。GEPA は本来 sample-efficient を売っているので、彼らに「より多く回せた条件」を与えた場合の上限が気になる。\n  - \"production-level agent IBM CUGA と並ぶ\" の比較は本文 footnote 自身が「方法論的比較ではなく文脈参照」と但し書きしており、見出しほどフェアな勝利ではない（agent engineering の差を込みにした参考値）。\n  - context は人間可読、と謳うが Figure 3 の例は部分表示で、実際に何百〜何千 bullet になった playbook の可読性・運用性（誰がレビューするのか）は議論されていない。\n- **次に試したいこと**:\n  - 同じ delta bullet 設計で **Reflector を蒸留**する（強い Reflector のフィードバックを weak Generator+Curator に flow させ続けるとどこまで base が引き上がるか）。\n  - playbook を **「diff 列」として保存**しておき、ある bullet を消したら spec の何が壊れるかを post-hoc に traceback できる仕組み（selective unlearning の具体実装）。\n  - iso-budget で GEPA / TextGrad / Reflexion を並べた **rollout 数 vs accuracy の pareto** を AppWorld 上で引く。\n  - reward が無い設定で、Generator の自信度 (logprob) や agent-self-judge を Reflector の代理シグナルとして使い、FiNER online no-label の劣化が回復できるかを検証。\n  - bullet ベースの context を **RAG index と同じインフラに載せる**（id + counter + content をベクトル DB に）と運用がどう変わるか。\n\n## Notes / Quotes\n\n- \"We argue that contexts should function not as concise summaries, but as comprehensive, structured playbooks that are detailed, inclusive, and rich with domain insights.\" (introduction)\n- \"at step 60 the context contained 18,282 tokens and achieved an accuracy of 66.7, but at the very next step it collapsed to just 122 tokens, with accuracy dropping to 57.1—worse than the baseline accuracy of 63.7 without adaptation.\" (background §2.2, context collapse の定量例)\n- \"Inspired by the agentic design of Dynamic Cheatsheet, ACE introduces a structured division of labor across three roles ... Generator ... Reflector ... Curator.\" (design §3)\n- \"bullet ... consists of (1) metadata, including a unique identifier and counters tracking how often it was marked helpful or harmful; and (2) content...\" (design §3.1)\n- \"ACE achieves 82.3% reduction in adaptation latency and 75.1% reduction in the number of rollouts as compared to GEPA\" (results §4.5, AppWorld offline)\n- \"91.8% of input tokens are served from cache during evaluation stage, which reduces billed input-token cost by 82.6% relative to counting raw context tokens.\" (results §4.5, GPT-5.1 prompt caching study)\n- \"A limitation of ACE is its reliance on a reasonably strong Reflector: if the Reflector fails to extract meaningful insights from generated traces or outcomes, the constructed context may become noisy or even harmful.\" (discussion §5)\n- \"ACE is most beneficial in settings that demand detailed domain knowledge, complex tool use, or environment-specific strategies that go beyond what is already embedded in model weights or simple system instructions.\" (discussion §5、ACE 不要なケースの裏返し)\n- 主要ハイパーパラ: Reflector refinement の最大 round = 5、offline epoch 最大 = 5、batch size = 1 (1 sample で 1 delta) (results §4.2)。\n- (verified 2026-05-20) Related Papers の \"Suzgun & Krause\" は誤り。Dynamic Cheatsheet (arXiv:2504.07952) の著者は Suzgun, Yuksekgonul, Bianchi, Jurafsky, Zou (iclr2026_conference.bib `suzgun2025dynamic` で確認)。本文の `krause2019dynamic` は別論文 (Krause+ \"Dynamic Evaluation of Transformer Language Models\", 2019) を指す TeX 側の citation バグ。\n- (verified 2026-05-20) Summary の「汎化: 5–12 pt」は Llama-3.3-70B (FiNER +2.4/+1.1) を含めると過大評価。GPT-OSS-120B / GPT-5.1 / Llama-70B それぞれの実測値（extended_results_CR.tex Table 4–7）に置き換えた。Reflector 質依存に関する主張は §5 で一般論として述べられているのみで Llama-70B 個別の解釈は TeX 上に明示なし、削除。\n\n## Related Papers\n\n- Suzgun, Yuksekgonul, Bianchi, Jurafsky & Zou, *Dynamic Cheatsheet* (arXiv:2504.07952, 2025) — ACE が直接の比較対象かつ着想源。rewrite 起因の context collapse を見せるための代表例。\n- Agrawal+ *GEPA* (2025) — reflective prompt evolution + genetic Pareto。brevity bias の代表例として批判される一方、offline の主 baseline。\n- Opsahl-Ong+ *MIPROv2* (2024, DSPy) — 共通 baseline (ベイズ最適化系)。\n- Shinn+ *Reflexion* (2023) / Yuksekgonul+ *TextGrad* (2024) — natural language feedback 系の系譜。\n- Yao+ *ReAct* (2023) — AppWorld の公式 agent 実装、ACE もこの上に乗る。\n- Trivedi+ *AppWorld* (2024) — メイン agent benchmark。\n- Loukas+ *FiNER* (2022) / Wang+ *FinLoRA / Formula* (2025) — 金融 domain benchmark。\n- Wu+ *StreamBench* (2024) / Fansi+ *DDXPlus* (2022) / Li+ *BIRD-SQL* (2023) — 追加ドメイン (医療 / text-to-SQL)。\n- Xu+ *A-Mem* (2025) / Suzgun+ *Dynamic Cheatsheet* — bullet 構造の memory framework として比較。\n- Gim+ 2024 / Yao+ *CacheBlend* 2025 / Liu+ *KIVI* 2024 — KV cache 再利用・圧縮の根拠付け文献。\n- Marreed+ *IBM CUGA* (2025) — leaderboard 比較用の production agent。\n";
+const MACROS = {"\\fix": "\\marginpar{FIX}", "\\new": "\\marginpar{NEW}", "\\blfootnote": "%\n  \\begingroup\n  \\renewcommand\\thefootnote{}\\footnotetext{#1}%\n  \\addtocounter{footnote}{-1}%\n  \\endgroup", "\\thefootnote": "", "\\name": "\\textsc{ACE}\\xspace", "\\fillme": "{\\bf XXX}\\xspace", "\\eg": "{\\it e.g.,}\\xspace", "\\ie": "{\\it i.e.,}\\xspace", "\\etal": "{\\it et.~al}\\xspace", "\\bigO": "\\mathrm{O}", "\\cmark": "\\ding{51}", "\\xmark": "\\ding{55}", "\\lstb": "\\textbf{#1}", "\\lstem": "\\textit{#1}", "\\PromptCardFromFile": "%\n  \\begin{tcolorbox}[\n    colback=PromptBack, colframe=PromptFrame, boxrule=0.5pt,\n    arc=1.2mm, left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,\n    title={#2}, fonttitle=\\bfseries\\sffamily\\footnotesize,\n    colbacktitle=PromptTitleBack, coltitle=black,\n    #1\n  ]\n    \\lstinputlisting[style=promptstyle, xleftmargin=1.8em]{#3}\n  \\end{tcolorbox}", "\\figleft": "{\\em (Left)}", "\\figcenter": "{\\em (Center)}", "\\figright": "{\\em (Right)}", "\\figtop": "{\\em (Top)}", "\\figbottom": "{\\em (Bottom)}", "\\captiona": "{\\em (a)}", "\\captionb": "{\\em (b)}", "\\captionc": "{\\em (c)}", "\\captiond": "{\\em (d)}", "\\newterm": "{\\bf #1}", "\\train": "\\mathcal{D}", "\\valid": "\\mathcal{D_{\\mathrm{valid}}}", "\\test": "\\mathcal{D_{\\mathrm{test}}}", "\\tens": "\\bm{\\mathsfit{#1}}", "\\etens": "\\mathsfit{#1}", "\\pdata": "p_{\\rm{data}}", "\\ptrain": "\\hat{p}_{\\rm{data}}", "\\Ptrain": "\\hat{P}_{\\rm{data}}", "\\pmodel": "p_{\\rm{model}}", "\\Pmodel": "P_{\\rm{model}}", "\\ptildemodel": "\\tilde{p}_{\\rm{model}}", "\\pencode": "p_{\\rm{encoder}}", "\\pdecode": "p_{\\rm{decoder}}", "\\precons": "p_{\\rm{reconstruct}}", "\\laplace": "\\mathrm{Laplace}", "\\E": "\\mathbb{E}", "\\Ls": "\\mathcal{L}", "\\R": "\\mathbb{R}", "\\emp": "\\tilde{p}", "\\lr": "\\alpha", "\\reg": "\\lambda", "\\rect": "\\mathrm{rectifier}", "\\softmax": "\\mathrm{softmax}", "\\sigmoid": "\\sigma", "\\softplus": "\\zeta", "\\KL": "D_{\\mathrm{KL}}", "\\Var": "\\mathrm{Var}", "\\standarderror": "\\mathrm{SE}", "\\Cov": "\\mathrm{Cov}", "\\normlzero": "L^0", "\\normlone": "L^1", "\\normltwo": "L^2", "\\normlp": "L^p", "\\normmax": "L^\\infty", "\\parents": "Pa", "\\argmax": "\\operatorname{arg\\,max}", "\\argmin": "\\operatorname{arg\\,min}", "\\sign": "\\operatorname{sign}", "\\Tr": "\\operatorname{Tr}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

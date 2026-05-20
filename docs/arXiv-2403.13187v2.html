@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Evolutionary Optimization of Model Merging Recipes</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes/arXiv-2403.13187v2.md</code>
+  &nbsp;|&nbsp; macros: <code>5</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Evolutionary Optimization of Model Merging Recipes\n\n- arXiv: https://arxiv.org/abs/2403.13187\n- source: ../papers/arXiv-2403.13187v2/\n- authors: Takuya Akiba, Makoto Shing, Yujin Tang, Qi Sun, David Ha (Sakana AI)\n- venue / year: arXiv preprint (v2), 2024\n- tags: [model-merging, evolutionary-search, LLM, VLM, japanese, CMA-ES]\n- read_date: 2026-05-12\n- rating:\n\n---\n\n## Summary（著者の主張）\n\n- **問題**: model merging（mergekit 等で行われる Task Arithmetic / TIES / DARE / Frankenmerging）は学習不要で安価だが、選ぶ source モデル・係数・層スタックの組み合わせは「黒魔術 (black art / alchemy)」で人間の直感に依存している。手動設計には限界があり、特に Frankenmerging（層スタック）は探索コストが高くほとんどの利用者が同じ recipe を使い回しているのが現状。\n- **手法**: Evolutionary Model Merge。merging を 2 つの直交する空間に分解して進化計算で同時最適化する。\n  - **Parameter Space (PS)**: 各層ごとに DARE-TIES の sparsification / weight mixing パラメータを置き、CMA-ES (Optuna 実装, σ=1/6, init=0.5, pop = 4 + ⌊3 ln n⌋) で最適化。1000 trials。\n  - **Data Flow Space (DFS)**: 重みは固定したまま、token が通る inference path（どの model のどの層を何番目に通すか）を進化させる。N model の全層を直列に並べたものを r 回繰り返した長さ T=M×r の indicator array $\\mathcal{I}$ と、層間のアクティベーションを補正する scaling matrix $W \\in \\mathbb{R}^{M\\times M}$（$W_{ij}=\\pi_\\theta(i,j,t)$ で NN 化も可）を CMA-ES on EvoJAX（pop=128, 100 generations）で同時最適化。M=64, r=3 で T=192。$\\mathcal{I}$ は model A の層が前半に出るよう $2\\sigma$ で初期化。\n  - **PS+DFS**: 先に PS で得たモデルを model A として source プールに足し、再度 DFS を回す。\n- **結果（Japanese Math, MGSM-JA acc / JP-LMEH avg）**:\n  - source: shisa-gamma-7b-v1 (9.6 / 66.1), WizardMath-7B-V1.1 (18.4 / 60.1), Abel-7B-002 (30.0 / 56.5)\n  - **Ours (PS) 7B: 52.0 / 70.5**, Ours (DFS) 10B: 36.4 / 53.2, **Ours (PS+DFS) 10B: 55.2 / 66.2**\n  - 参照: Llama 2 70B 18.0 / 64.5, Japanese StableLM 70B 17.2 / 68.3, Swallow 70B 13.6 / **71.5**, GPT-3.5 50.4, GPT-4 78.8\n  - 7B/10B にもかかわらず JP-LMEH で 70B 級と互角〜上回り、PS+DFS 10B は MGSM-JA で GPT-3.5 を超える。\n- **結果（baseline 比較, Table 2）**: 未最適化 merging は TIES-Merge 4.4, DARE-TIES 35.2, Frankenmerging 0.0 (MGSM-JA)。LoRA fine-tune の最良は WizardMath ベースで 43.2（JP-LMEH は 55.9 に落ちる）。提案手法は MGSM-JA も JP-LMEH も同時に上げる唯一の手段。\n- **結果（VLM, ROUGE-L）**: source は LLaVA-1.6-Mistral-7B (JA-VG-VQA-500 14.3 / JA-VLM-Bench-In-the-Wild 41.1), Japanese Stable VLM (- / 40.5)。**Ours (PS) 19.7 / 51.2**, **Ours (PS+DFS) 20.4 / 47.6**。Frankenmerging 相当 (Passthrough) は 7.3 / 26.7 で大失敗。\n- **結果（13B scale）**: ELYZA-japanese-Llama-2-13b-instruct + MetaMath-13B-V1.0 で MGSM-JA を 13.2 → 34.0 (PS+DFS) に。7B より絶対値は低いが（Llama-2-13B < Mistral-7B の素性差由来）スケール可能なことを示した。\n- **貢献**: (1) PS と DFS を分離して進化計算で扱う一般枠組みの提案。(2) 異ドメイン横断（言語 × 数学、言語 × Vision）の merging で SOTA。(3) `EvoLLM-JP` / `EvoVLM-JP` を OSS 公開、Apache 2.0 版 `EvoLLM-JP-A` も提供。(4) 新ベンチマーク **JA-VLM-Bench-In-the-Wild**（42 画像・50 問）と JA-VG-VQA-500 を公開。(5) アブレーション群（無関係モデル混入による distraction、$W$ の有無、source 並び順、層スキップ）。\n\n## Takeaway（自分にとっての要点）\n\n- **「merge は学習しないので候補評価が一瞬」が進化計算と本質的に相性が良い**。NAS は候補ごとの再学習が必要で重かったが、merging は forward だけで fitness が出るので CMA-ES がそのまま回る。これは方法論として汎用的に応用が利く視点。\n- **PS と DFS は直交かつ加法的**。PS だけで 52.0、DFS だけで 36.4 だが、PS で作ったモデルを model A に組み込んで DFS を重ねると 55.2。NSGA-II 的に多目的化する余地が示唆されている。\n- **scaling matrix $W$ が DFS merging の要**：除去すると 13B では PS+DFS 26.4 → ablate (model #6) と PS-merged より悪化、7B 解析でも 20% 以上の劣化。単に層を抜き挿しするだけだと層間で活性化分布がズレて壊れる、を経験的に裏付けている。\n- **PS merging の最適解で「3 モデルの重み和が ≈2」になる**＝単なる補間ではなく increase-density で combination している。DARE の sparsification は 100B token で継続事前学習したモデルでは過剰削減になる、という DARE 論文 §4.6 の指摘とも整合（shisa-gamma の重みは消されにくい状態に進化が誘導した）。\n- **DFS が効くメカニズムは \"subtract\" と \"add\" の両面**：13B 解析では MetaMath の layer #30 を skip するだけで MGSM-JA が 8.0 → 10% に。さらに、(1) 英語数学モデルが日本語で出力しない問題を出力分布シフトで矯正、(2) 数学モデルが日本語の理解で間違える箇所を日本語 LM 層を挿入して補正、の 2 シナリオで効いている。\n- **無関係モデルを 8 個まぜても PS は 40.8 までしか落ちない (元 50.0)**。手動 source 選定の感度がそこまで高くないという実用上有用な知見。\n- **MGSM-JA の最終モデルは MGSM train を見ていない**：optimize 用には GSM8k の MGSM 非重複部分 1069 サンプルを翻訳して使い、test の 250 サンプルとは厳格に分離。「benchmark を最適化しなかった結果として他 benchmark に汎化した」のがこの論文のキーメッセージ。\n- 実用上、**SDXL-Lightning と通常 SDXL を merge できた (EvoSDXL)** という follow-up は、異プロトコル間統合に効く可能性の示唆として面白い。\n\n## Critical Thoughts（評価・疑問）\n\n- **強み**:\n  - PS / DFS という 2 軸への分解が綺麗で、既存手法（TIES, DARE, Frankenmerging, NAS）の各々が枠組み内に整理される。\n  - 7B–10B で 70B 日本語 LLM を上回るという結果のインパクトは大きく、しかも MGSM-JA test を最適化に使っていない点で benchmark hack 批判を回避している。\n  - baseline がきちんと用意されている：未最適化 merging（TIES/DARE-TIES/Frankenmerging）と fine-tune（LoRA / full × 3 source models）の両方を同データで比較。Frankenmerging が 0.0 になる落とし穴を明示しているのは誠実。\n  - distraction 実験（無関係 8 モデル混入）と $W$ ablation、source 並び順 ablation が揃っており、結果の頑健性検証として丁寧。\n  - Author Contributions が役割分担まで明記（Akiba=PS, Tang=DFS, Shing=VLM/diffusion, Sun=eval, Ha=guidance）。再現の手がかりとして有用。\n- **弱み / 疑問**:\n  - **著者自身が認める limitations**: \"merged models produced responses that lacked logical coherence\"、instruction tuning / alignment を行っていないので factually flawed な出力が出うる、と Discussion で明言。\n  - **計算コストの fair comparison が薄い**。CMA-ES を 1000 trial × 各候補のフル評価、DFS は 128 pop × 100 gen。同じ GPU 時間を fine-tune に振った場合のカーブが示されていない（fine-tune は 3 epoch / 1069 sample しか試していない＝極端に少ない側）。\n  - **MGSM-JA test set 250 問という小ささ**。±数ポイントの差は誤差範囲のはず。信頼区間を出していない。\n  - **JA-VLM-Bench-In-the-Wild が 42 画像 50 問**。著者ら自身が作ったベンチで自分のモデルが SOTA、というのは慣例上やむを得ないがサンプルが小さい。GPT-4V で QA を作って人手フィルタという作り方は LLaVA-Bench-In-the-Wild に倣っているとはいえバイアスの懸念は残る。\n  - **fine-tune baseline が「全 source の学習データを混ぜて base に SFT」を実装していない**（WizardMath/Abel/japanese-stablelm-base-gamma の学習データが非公開なため \"infeasible\" と明記）。これは公平だが、「100B token continued pretrain したモデルの知識を merging で安価に汲み出せる」という主張の真の比較対象は実は存在しない。\n  - **DFS の説明（\"subtract\" / \"add\"）が事後的な解釈**。layer #30 を抜くと改善という発見は面白いが、なぜその層が harmful かは theoretical には未解明。Discussion で「層間の permutation」仮説を述べるに留まる。\n  - **CMA-ES の hyperparam 探索の robustness** が示されていない。population size の \"default\" で 1 回ずつ走らせた結果のみ。複数 seed の分散が無い。\n  - **Sakana 自身の commercial interest**（EvoLLM-JP / EvoVLM-JP プロダクトのアピール）と研究主張の境目がやや薄い。\n- **次に試したいこと**:\n  - 同じ GPU 時間予算を横軸にとって、Evolutionary Model Merge vs. SFT vs. LoRA の pareto curve を引く（特に少データ側でどこまで詰められるか）。\n  - DFS の $W$ を hypernetwork で出力する設定（論文では言及のみ）で M を 100 層クラスに伸ばす実験。\n  - PS の最適解が「重み和 ≈ 2」になる現象を他言語ペア（韓国語 × 数学、ヒンディー × 数学）でも観察できるか。これが普遍なら正規化制約を外す設計指針になる。\n  - DFS で「skip すべき layer」を進化に頼らず影響度ベースで直接特定できないか。論文の「#30 を抜くだけで 10%」は probe 系手法でも到達できる可能性。\n  - factually flawed の問題に対し、merge 後に軽い RLHF / DPO を被せた版と pure merge 版の安全性比較。\n  - JA-VLM-Bench-In-the-Wild を CC-by 等で他研究者が拡張、もしくは中華圏・アラビア圏など別文化に同様の bench を整備して cross-cultural な merging が同様に効くか検証。\n\n## Notes / Quotes\n\n- \"model merging is considered by many to be a form of black art or alchemy, relying on the model maker's intuition and instincts\" (Introduction)\n- PS: TIES-Merging + DARE を layer-wise に張り、sparsification と weight mixing の 2 パラメータ × 3 source = 6 次元（最終モデル）を CMA-ES で最適化（§3.1, §4.3 Analysis）。\n- DFS: indicator array $\\mathcal{I}$（長さ T=192）+ scaling matrix $W$ を同時最適化、$\\mathcal{I}$ は model A 層が初手で出やすいよう $2\\sigma$ で初期化。\n- \"the sum of the weights exceeds 1 and is approaching 2 ... a combination method which amplifies the contributions of the models, rather than a simple interpolation, proved to be more effective.\" (§ Analysis)\n- \"eliminating them in the evolved model (e.g., by setting $W_{ij}=1$) led to a performance decline exceeding 20 percent\" (DFS analysis)\n- \"DFS-merged model decides to skip layer #30 from MetaMath-13B-V1.0 ... without any further modifications we found the performance increased to 10%.\" (§5 13B analysis)\n- distraction 実験: +0 irrelevant 50.0 / +1 46.8 / +2 46.8 / +4 48.4 / +8 40.8（MGSM-JA, Table 2 Distraction 部）。\n- VLM: Japanese cultural content（鯉のぼり、青信号、奈良の鹿、渋谷、原爆、日本の信号機）でケーススタディ（Appendix C）。「青信号」を \"青\" と正しく答えられたのは EvoVLM-JP のみ、LLaVA は \"green\"、Japanese-Stable-VLM は不安定（緑/緑白/白）。\n- Limitations（著者明記）: 出力に論理整合性を欠く例あり、instruction tuning / alignment 未実施で factually flawed 出力の可能性、merged model は source の限界も継承する。\n- License 注意: WizardMath が non-commercial license のため EvoLLM-JP も同条件。Apache 2.0 版として `EvoLLM-JP-A` (= shisa-gamma + Arithmo2-Mistral-7B + Abel-7B-002) を別途公開、MGSM-JA 52.4 / JP-LMEH 69.0。\n\n## Related Papers\n\n- Wortsman+ 2022 *Model Soups* — 重み平均 merging の出発点。\n- Ilharco+ 2022 *Task Arithmetic / editing with task vectors* — PS merging の基礎。\n- Yadav+ 2023 *TIES-Merging* — 干渉解消の 3 ステップ。本研究の PS の基盤。\n- Yu+ 2024 *DARE* — sparsification によるパラメータ干渉低減、本研究で TIES と組み合わせ。\n- Goddard+ 2024 / Labonne 2024 *mergekit / Frankenmerging* — 本研究のコミュニティ的背景、baseline 比較対象。\n- Hansen+ 2006 *CMA-ES* / Akiba+ 2019 *Optuna* / Tang+ 2022 *EvoJAX* — 最適化基盤。\n- Real+ 2019, So+ 2019, Zoph+ 2016, Stanley & Miikkulainen 2002 *NEAT*, Gaier & Ha 2019 *WANN* — Neural Architecture Search / morphology evolution の系譜。\n- Shi+ 2022 *MGSM* / Cobbe+ 2021 *GSM8k* — 数学評価。\n- shisa-gamma-7b-v1, WizardMath-7B-V1.1, Abel-7B-002, Mistral-7B-v0.1, LLaVA-1.6-Mistral-7B — source 系。\n- Labonne 2024 *Automerger* — 同時期の関連実験（leaderboard 上で SLERP/DARE-TIES をランダム適用）。著者は overfit を懸念。\n- Sun+ 2024 *Transformer layer swap analysis* — DFS のモチベーション（隣接層 swap で性能低下）の予備調査。\n";
+const MACROS = {"\\ja": "%\n  \\begin{CJK}{UTF8}{ipxm}#1\\end{CJK}%", "\\yujin": "\\textcolor{orange}{\\textbf{Yujin: }#1}", "\\takuya": "\\textcolor{cyan}{\\textbf{Takuya: }#1}", "\\makoto": "\\textcolor{blue}{\\textbf{Makoto: }#1}", "\\david": "\\textcolor{purple}{\\textbf{David: }#1}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

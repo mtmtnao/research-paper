@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Auto-Encoding Variational Bayes</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes/arXiv-1312.6114v11.md</code>
+  &nbsp;|&nbsp; macros: <code>76</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Auto-Encoding Variational Bayes\n\n- arXiv: https://arxiv.org/abs/1312.6114\n- source: ../papers/arXiv-1312.6114v11/\n- authors: Diederik P. Kingma, Max Welling (Universiteit van Amsterdam)\n- venue / year: ICLR 2014\n- tags: [variational-inference, generative-model, VAE, reparameterization, deep-learning]\n- read_date: 2026-05-12\n\n---\n\n## Summary（著者の主張）\n\n- **問題**: 連続潜在変数 $\\bz$ を持つ有向確率モデル $\\pT(\\bz)\\pT(\\bx|\\bz)$ で、(i) 周辺尤度 $\\pT(\\bx)=\\int \\pT(\\bz)\\pT(\\bx|\\bz)d\\bz$ が解析不可能、(ii) 真の事後 $\\pT(\\bz|\\bx)$ も解析不可能、(iii) 平均場 VB の期待値も解析的に解けない、という三重 intractable な状況を、大規模 i.i.d. データセットでも online で効率的に学習・推論したい。従来の Monte Carlo gradient（score-function 推定）は分散が大きすぎて使い物にならず（cf. [blei2012variational]）、wake-sleep は2つの目的関数を別々に最適化するため周辺尤度の下界に対応しない。\n- **手法**: 2つの貢献を組み合わせる。(1) **SGVB 推定量**: 変分下界 $\\LB{}{\\bxi} = -D_{KL}(\\qPhi(\\bz|\\bxi)||\\pT(\\bz)) + \\Exp{\\qPhi}{\\log \\pT(\\bxi|\\bz)}$ を、**reparameterization trick** $\\bz=\\gPhi(\\beps,\\bx),\\,\\beps\\sim p(\\beps)$（例: Gaussian なら $\\bz=\\bmu+\\bsigma\\odot\\beps,\\,\\beps\\sim\\mathcal{N}(\\bzero,\\bI)$）で書き換え、$\\bphi$ について微分可能な不偏推定量に変換する。Estimator A（生形）と Estimator B（Gaussian–Gaussian で KL を解析積分した低分散版）を提示。(2) **AEVB アルゴリズム**: 認識モデル（probabilistic encoder）$\\qPhi(\\bz|\\bx)$ を MLP でパラメタライズし、生成モデル $\\pT(\\bx|\\bz)$（Bernoulli or Gaussian MLP decoder）と $(\\bT,\\bphi)$ を SGD/Adagrad で**同時最適化**。これにより MCMC や per-datapoint の反復推論なしで ancestral sampling だけで posterior が得られる。Encoder MLP が Gaussian の場合が **Variational Auto-Encoder**。\n- **結果**: MNIST と Frey Face で実験。Encoder/decoder の隠れユニット数は MNIST 500、Frey Face 200。$M=100,\\,L=1$。\n  - **下界の比較 (Fig.2, `graph_lowbound`)**: MNIST は $N_\\bz \\in \\{3,5,10,20,200\\}$、Frey Face は $N_\\bz \\in \\{2,5,10,20\\}$ の各設定で、AEVB は wake-sleep より速く収束し最終下界も高い。次元を増やしても overfitting しない（下界の正則化効果）。\n  - **周辺尤度の比較 (Fig.3, `graph_marglik`)**: 100 hidden units, 3 latent dims で、wake-sleep / MCEM (HMC sampler) と比較。AEVB は wake-sleep より良い周辺尤度に達し、MCEM は小データセットでは競合するが MNIST 全体には適用困難（オンラインでないため）。\n  - **2D 潜在多様体の可視化 (Fig.4, appendix A)**: MNIST/Frey Face とも、prior $\\mathcal{N}(\\bzero,\\bI)$ の逆 CDF で並べた格子を decoder に通すと、滑らかに変化する手書き数字/顔の多様体が得られる。\n  - **サンプル品質 (Fig.5, appendix A)**: 潜在次元 2/5/10/20 で MNIST の random sample を提示。\n- **貢献**: (1) reparameterization により変分下界の低分散・微分可能な MC 推定量 (SGVB) を提示、(2) 認識モデルを使って posterior 推論を MLP の forward 1 回に押し込んだ AEVB を提示、(3) これらを連続潜在変数を持つ広いクラスの有向モデル（mean-field でも intractable な場合を含む）に適用可能にし、auto-encoder と有向確率モデルを理論的に橋渡しした。\n\n## Takeaway（自分にとっての要点）\n\n- **reparameterization trick の本質**は「$\\bphi$ に依存する分布からのサンプル」を「$\\bphi$ に依存しない noise からの決定論的変換」に書き換えること。score-function 推定の分散爆発を回避できる根拠は「$f$ に $\\nabla\\log q$ を掛ける」のではなく「$f\\circ g$ をそのまま微分する」点にある。\n- Gaussian–Gaussian の場合、KL 項は閉形式 $\\frac{1}{2}\\sum_j(1+\\log\\sigma_j^2-\\mu_j^2-\\sigma_j^2)$ なので、サンプリングが必要なのは reconstruction $\\log\\pT(\\bx|\\bz)$ だけ。これが現代の VAE 実装の標準形になっている。\n- recognition model $\\qPhi(\\bz|\\bx)$ を導入する旨味は「per-datapoint の MCMC や iterative inference を共通の MLP に amortize できる」こと。新しい $\\bx$ には encoder 1 回の forward で posterior が出る。\n- 「unregularized autoencoder = mutual information の下界最大化」「VAE = それ + KL 正則化」という対応関係が、関連研究の議論として明示されている。SGVB の KL 項は denoising/contractive autoencoder の「nuisance な正則化ハイパラ」を不要にする、と主張。\n- 実装上の細部: $L=1$ で十分（minibatch $M=100$ で平均化されるため）、Adagrad の global stepsize は $\\{0.01,0.02,0.1\\}$ から train 数イタで選択、初期化は $\\mathcal{N}(0,0.01)$、prior $p(\\bT)=\\mathcal{N}(0,\\bI)$ に対応する弱い weight decay。\n- 周辺尤度の estimator（appendix）は importance-sampling 系で「posterior を HMC で叩いて $q(\\bz)$ をフィット → harmonic-mean 風の式に代入」。**5 次元以下でないと unreliable** と著者自身が認めている。Fig.2 の比較が 3 latent dims に限られているのはこの制約のため。\n- 同時期に Rezende+ 2014 (DLGM) が独立に同じ reparameterization trick に到達している、と Related work で明記。VAE は単独発明でなく「並行発見」だった。\n\n## Critical Thoughts（評価・疑問）\n\n- **強み**:\n  - reparameterization trick 1 つで「変分下界の微分」「encoder の amortization」「auto-encoder との接続」を同時に解決した、極めて kernel が小さい論文。実装も MLP 2 本 + 解析的 KL なので明日から書ける。\n  - 当時主流だった wake-sleep（2 目的関数）/ MCEM（per-datapoint sampling）に対して、**1 つの下界を 1 つの SGD で最適化**する設計はシンプル過ぎるほど。Fig.2 でほぼ全設定で wake-sleep を圧倒。\n  - 潜在次元を増やしても overfitting しないという観察は KL 項が自動的に「使わない次元は prior に潰す」ことを示唆しており、その後の posterior collapse 議論の起点になっている。\n  - reparameterization が適用可能な分布クラス（inverse CDF / location-scale / composition）を3類型で列挙しており、Gaussian 以外への拡張余地を明示している。\n- **弱み / 疑問**:\n  - 実験が MNIST + Frey Face の2データセットのみ。当時の標準とはいえ、画像複雑度・モダリティの広がりは検証されていない。\n  - 周辺尤度評価が 3 latent dims でしか信頼できない、と著者自ら認めている。Fig.3 の優位性は低次元レジームに限った主張で、Fig.2 の高次元（MNIST 200 dim）での「実際の test log-likelihood」は提示されていない（下界の比較のみ）。\n  - 離散潜在変数には適用不可（reparameterization が成立しないため）。Related work で「wake-sleep の利点は離散にも適用可能なこと」と認めており、Gumbel-Softmax / REBAR 等の後続研究を呼ぶ伏線になっている。\n  - Encoder の表現力は MLP 1 隠れ層に固定。posterior が真にガウシアン（対角分散）でない場合の影響は議論されていない。著者は脚注で「これは簡便さのための選択で手法の制約ではない」と逃げているが、normalizing flow 等を使わない限り mode-covering の問題は残る。\n  - Wake-sleep 比較で encoder アーキテクチャを揃えている点は fair だが、MCEM との比較は HMC のチューニング次第で結果が変わるはずで、HMC 設定（leapfrog 10 step, acceptance 90%）が最適かどうかは不明。\n  - 「KL が正則化として機能する」ことの定量的検証（KL の値、有効次元数の測定）はなく、観察レベル。\n- **次に試したいこと**:\n  - SGVB Estimator A（KL を解析せず両項とも MC）と Estimator B（解析 KL）の分散を、同じ MNIST 設定で実測してどれだけ差があるか。\n  - Bernoulli decoder の入力を normalize MNIST にしたときと、Gaussian decoder にしたときの test log-likelihood の差。\n  - 潜在次元を 200 まで増やしても下界が下がらない件について、「使われていない次元」を $\\bsigma_j\\approx 1, \\bmu_j\\approx 0$ で同定し、有効次元と test marginal likelihood の関係を可視化（posterior collapse の起点を確認）。\n  - 同じ AEVB 骨格で encoder を deep / convolutional に置き換えたとき、Fig.2 の収束カーブがどう変わるか（著者 Future work の (i)）。\n  - reparameterization が成立しないケース（Bernoulli latent）で score-function + control variate と比較し、どこまで variance を詰められるか。\n\n## Notes / Quotes\n\n- \"We show how a reparameterization of the variational lower bound yields a simple differentiable unbiased estimator of the lower bound.\" (introduction)\n- \"we make inference and learning especially efficient by using the SGVB estimator to optimize a recognition model that allows us to perform very efficient approximate posterior inference using simple ancestral sampling.\" (introduction)\n- Estimator B（解析 KL 版）: $\\LBT{B}{\\bxi} = -D_{KL}(\\qPhi(\\bz|\\bxi)||\\pT(\\bz)) + \\frac{1}{L}\\sum_l \\log \\pT(\\bxi|\\bzil)$ (eq. estimator2)\n- Gaussian–Gaussian の閉形式 KL（appendix B）: $-D_{KL} = \\frac{1}{2}\\sum_{j=1}^J(1+\\log\\sigma_j^2 - \\mu_j^2 - \\sigma_j^2)$\n- 実装デフォルト: $M=100,\\,L=1$、Adagrad stepsize $\\in\\{0.01,0.02,0.1\\}$、init $\\mathcal{N}(0,0.01)$（experiments）\n- \"Interestingly, superfluous latent variables did not result in overfitting, which is explained by the regularizing nature of the variational bound.\" (experiments)\n- 周辺尤度 estimator の制限: \"produces good estimates ... as long as the dimensionality of the sampled space is low (less then 5 dimensions)\"（appendix D 著者自身による limitation 認識）\n- MCEM 設定: HMC 10 leapfrog steps, acceptance 90%, 続いて 5 weight update（appendix E）。周辺尤度は train/test 各 1000 datapoint × 50 サンプル × 4 leapfrog。\n- (verified 2026-05-20) Fig 番号を TeX のレイアウト順 (Fig.1=graphical model, Fig.2=lowbound, Fig.3=marglik, Fig.4=2D manifolds, Fig.5=mnist samples) に合わせて全 Summary/Critical Thoughts でリナンバー (iclr14_sva.tex の各 figure 環境、iclr14_sva_appendix.tex)。\n- (verified 2026-05-20) Fig.2 (lowbound) の潜在次元集合を MNIST $\\{3,5,10,20,200\\}$ と Frey Face $\\{2,5,10,20\\}$ に修正（figs/graph_lowbound.pdf のサブプロットタイトルから直接確認）。\n- (verified 2026-05-20) Related Papers の Blei+ 2012 を \"Black-Box VI\" 表記から bbl 通り \"Variational Bayesian inference with Stochastic Search\" に修正、Ranganath+ 2013 を Black Box VI として明示 (main.bbl)。\n- (verified 2026-05-20) Rezende+ 2014 のタイトルを bbl 記載 \"Stochastic back-propagation and variational inference in deep latent gaussian models\" (arXiv:1401.4082) に揃えた。\n- 並行発見への言及: \"Even more recently, ~[rezende2014stochastic] also make the connection between auto-encoders, directed probabilistic models and stochastic variational inference using the reparameterization trick we describe in this paper. Their work was developed independently of ours.\" (related work)\n- Future work: (i) hierarchical / convolutional encoder-decoder, (ii) 時系列 (DBN), (iii) global parameters への SGVB 適用 (full VB, appendix F), (iv) latent 付き supervised model。\n\n## Related Papers\n\n- Hinton+ 1995, wake-sleep algorithm — 主たる baseline。連続潜在変数 online 学習の唯一の既存手法だが2目的関数で下界に対応しない。\n- Rezende+ 2014 \"Stochastic back-propagation and variational inference in deep latent gaussian models\" (arXiv:1401.4082) — **独立並行発見**、同じ reparameterization。\n- Hoffman+ 2013, Stochastic Variational Inference — 大規模 VI の文脈の出発点。\n- Blei+ 2012 \"Variational Bayesian inference with Stochastic Search\" (ICML 2012), Ranganath+ 2013 \"Black Box Variational Inference\" — score-function 推定の control variate 系、SGVB の比較対照。\n- Salimans & Knowles 2013 — exponential family 用に類似 reparameterization を独立に使用。\n- Roweis 1998 — PCA = linear-Gaussian モデルの ML 解、線形ケースでの auto-encoder と確率モデルの古典的接続。\n- Vincent+ 2010, Stacked Denoising Autoencoders / Bengio+ 2013, Representation Learning — autoencoder 系列の文脈、infomax との関係。\n- Gregor+ 2013 (DARN) — 離散潜在変数の有向モデルに対する auto-encoding 法。\n- Bengio+ 2013, Generative Stochastic Networks — noisy auto-encoder で Markov chain transition を学習。\n- Salakhutdinov & Larochelle 2010 — Deep Boltzmann Machine への recognition model 適用、無向モデルでの先行例。\n- Duchi+ 2010, Adagrad — 最適化器。\n- Duane+ 1987, Hybrid Monte Carlo — MCEM baseline のサンプラー。\n";
+const MACROS = {"\\fix": "\\marginpar{FIX}", "\\new": "\\marginpar{NEW}", "\\algorithmicforall": "\\textbf{for each}", "\\bb": "\\mathbf{#1}", "\\bbb": "\\bb{b}", "\\bx": "\\bb{x}", "\\bxi": "\\bx^{(i)}", "\\bxl": "\\bx^{(l)}", "\\bt": "\\bb{t}", "\\by": "\\bb{y}", "\\bv": "\\bb{v}", "\\bw": "\\bb{w}", "\\bc": "\\bb{c}", "\\bd": "\\bb{d}", "\\bg": "\\bb{g}", "\\bh": "\\bb{h}", "\\br": "\\bb{r}", "\\bu": "\\bb{u}", "\\byl": "\\by^{(l)}", "\\bz": "\\bb{z}", "\\bzi": "\\bz^{(i)}", "\\bzl": "\\bz^{(l)}", "\\bzil": "\\bz^{(i,l)}", "\\bpa": "\\bb{pa}", "\\bT": "\\boldsymbol{\\theta}", "\\bTl": "\\boldsymbol{\\theta}^{(l)}", "\\balpha": "\\boldsymbol{\\alpha}", "\\bphi": "\\boldsymbol{\\phi}", "\\beps": "\\boldsymbol{\\epsilon}", "\\bepsl": "\\beps^{(l)}", "\\bepsil": "\\beps^{(i,l)}", "\\bzeta": "\\boldsymbol{\\zeta}", "\\bzetal": "\\zeta^{(l)}", "\\bsigma": "\\boldsymbol{\\sigma}", "\\bmu": "\\boldsymbol{\\mu}", "\\bzero": "\\bb{0}", "\\bL": "\\bb{L}", "\\bV": "\\bb{V}", "\\bW": "\\bb{W}", "\\bI": "\\bb{I}", "\\bR": "\\bb{R}", "\\bX": "\\bb{X}", "\\bO": "\\bb{O}", "\\btPa": "\\widetilde{\\bb{Pa}}", "\\btpa": "\\widetilde{\\bb{pa}}", "\\tz": "\\widetilde{z}", "\\tZ": "\\widetilde{Z}", "\\tf": "\\widetilde{f}", "\\btZ": "\\widetilde{\\bb{Z}}", "\\btz": "\\widetilde{\\bz}", "\\btT": "\\widetilde{\\bT}", "\\tPa": "\\widetilde{Pa}", "\\pT": "p_{\\bT}", "\\pTl": "p_{\\bT^{(l)}}", "\\pA": "p_{\\balpha}", "\\qT": "q_{\\bT}", "\\qPhi": "q_{\\bphi}", "\\fT": "f_{\\bT}", "\\fPhi": "f_{\\bphi}", "\\fTPhi": "f_{\\bT,\\bphi}", "\\gT": "g_{\\bT}", "\\gPhi": "g_{\\bphi}", "\\hPhi": "h_{\\bphi}", "\\Exp": "\\mathbb{E}_{#1}\\left[#2\\right]", "\\Ed": "\\mathbb{E}_\\bd", "\\eqnr": "\\addtocounter{equation}{1}\\tag{\\theequation}", "\\LB": "\\mathcal{L}^{#1}(\\bT,\\bphi; #2)", "\\LBT": "\\widetilde{\\mathcal{L}}^{#1}(\\bT,\\bphi; #2)", "\\argmax": "\\operatorname{argmax}", "\\factoredge": "%\n  %\n  \\foreach \\f in {#3} { %\n    \\foreach \\x in {#2} { %\n      \\draw[-,#1] (\\x) edge[-] (\\f) ; %\n    } ;\n    \\foreach \\y in {#4} { %\n      \\draw[->,#1] (\\f) -- (\\y) ; %\n    } ;\n  } ;", "\\edge": "%\n  %\n  \\foreach \\x in {#2} { %\n    \\foreach \\y in {#3} { %\n      \\draw[->,#1] (\\x) -- (\\y) ;%\n    } ;\n  } ;", "\\factor": "%\n  %\n  \\node[factor, label={[name=#2-caption]#3}, name=#2, #1,\n  alias=#2-alias] {} ; %\n  %\n  \\factoredge {#4} {#2-alias} {#5} ; %", "\\plate": "%\n  \\node[wrap=#3] (#2-wrap) {}; %\n  \\node[plate caption=#2-wrap] (#2-caption) {#4}; %\n  \\node[plate=(#2-wrap)(#2-caption), #1] (#2) {}; %", "\\gate": "%\n  \\node[gate=#3, name=#2, #1, alias=#2-alias] {}; %\n  \\foreach \\x in {#4} { %\n    \\draw [-*,thick] (\\x) -- (#2-alias); %\n  } ;%", "\\vgate": "%\n  %\n  \\node[wrap=#2] (#1-left) {}; %\n  \\node[wrap=#4] (#1-right) {}; %\n  %\n  \\node[gate=(#1-left)(#1-right)] (#1) {}; %\n  %\n  \\node[caption, below left=of #1.north ] (#1-left-caption)\n  {#3}; %\n  \\node[caption, below right=of #1.north ] (#1-right-caption)\n  {#5}; %\n  %\n  \\draw [-, dashed] (#1.north) -- (#1.south); %\n  %\n  \\foreach \\x in {#6} { %\n    \\draw [-*,thick] (\\x) -- (#1); %\n  } ;%", "\\hgate": "%\n  %\n  \\node[wrap=#2] (#1-top) {}; %\n  \\node[wrap=#4] (#1-bottom) {}; %\n  %\n  \\node[gate=(#1-top)(#1-bottom)] (#1) {}; %\n  %\n  \\node[caption, above right=of #1.west ] (#1-top-caption)\n  {#3}; %\n  \\node[caption, below right=of #1.west ] (#1-bottom-caption)\n  {#5}; %\n  %\n  \\draw [-, dashed] (#1.west) -- (#1.east); %\n  %\n  \\foreach \\x in {#6} { %\n    \\draw [-*,thick] (\\x) -- (#1); %\n  } ;%"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

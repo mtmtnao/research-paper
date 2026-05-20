@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Deep Residual Learning for Image Recognition</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes/arXiv-1512.03385v1.md</code>
+  &nbsp;|&nbsp; macros: <code>8</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Deep Residual Learning for Image Recognition\n\n- arXiv: https://arxiv.org/abs/1512.03385\n- source: ../papers/arXiv-1512.03385v1/\n- authors: Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun (Microsoft Research)\n- venue / year: arXiv 2015-12 / CVPR 2016 (ILSVRC & COCO 2015 winner entry)\n- tags: [CNN, image-classification, residual-learning, ILSVRC, deep-network, optimization]\n- read_date: 2026-05-12\n\n---\n\n## Summary（著者の主張）\n\n- **問題**: 深いネットが層を積めば積むほど精度が上がるという仮説に対し、実際は逆。BN や He init で gradient vanish/explode は概ね解決されたにもかかわらず、plain な VGG 風ネット（18 vs 34 層など）で **training error が深くしたほうが高くなる** \"degradation problem\" が観測される（Fig. fig:teaser、CIFAR-10 / ImageNet 両方）。「浅い解 + identity 層」という構成上の解が存在するのに、SGD ソルバはそれを見つけられない。これは overfitting ではない（training error 側で起こる）。\n- **手法**: 数層ブロックに目標写像 $\\mathcal{H}(x)$ を直接フィットさせるのではなく、残差 $\\mathcal{F}(x):=\\mathcal{H}(x)-x$ をフィットして $y=\\mathcal{F}(x)+x$ を出力する \"residual block\" を導入。$\\mathcal{F}+x$ の加算は **parameter-free な identity shortcut connection**（次元が合うとき）で実現し、次元増加時のみ (A) zero-padding か (B) $1\\times1$ 投影 $W_s x$ を使う。ImageNet 用には VGG 風の 3x3 中心の plain ネットに shortcut を挿入して 18/34 層、さらに $1{\\times}1{-}3{\\times}3{-}1{\\times}1$ の **bottleneck block** で 50/101/152 層を構成（Table tab:arch）。CIFAR では $6n+2$ 層の細身アーキテクチャを 20/32/44/56/110/1202 層まで。学習は SGD、BN、weight decay 1e-4、momentum 0.9、dropout 不使用。\n- **結果**:\n  - ImageNet val top-1 (10-crop): plain-34 28.54 → ResNet-34 (option A) 25.03、ResNet-152 21.43（top-5 5.71）。\n  - Single-model val (Table tab:single): ResNet-152 top-1 19.38 / top-5 4.49（既存単一モデルでは BN-inception の 5.81、PReLU-net の 5.71 を上回り、過去のアンサンブル結果すら超える）。\n  - 6 モデル（うち 152 層 2 個）のアンサンブルで ImageNet test top-5 **3.57%**（ILSVRC 2015 分類タスク 1 位、Table tab:ensemble）。\n  - shortcut option (A) parameter-free vs (B) 次元増加のみ projection vs (C) 全部 projection の比較で A<B<C だが差は小さく、(C) の改善はパラメータ増のため、と帰属。以後は B を採用しメモリ節約。\n  - CIFAR-10: plain は深いほど error 増、ResNet は単調改善。ResNet-110 で best **6.43%**（5 試行で 6.61±0.16）。ResNet-1202 層は training error <0.1% で最適化問題は無いが test 7.93% と 110 層に劣る（19.4M パラメータが小データセットに対し過大で overfitting と著者は解釈）。\n  - 層応答の std を比較（Fig. fig:std）すると ResNet のほうが小さく、深くするほどさらに小さい → 残差は実際に identity 近傍で小さくなる、という motivation を裏付け。\n  - 検出: Faster R-CNN のバックボーンを VGG-16→ResNet-101 に置換しただけで、PASCAL VOC07 73.2→76.4 / VOC12 70.4→73.8 mAP、COCO mAP@[.5,.95] 21.2→27.2（+6.0、**相対 28% 改善**）。box refinement + context + multi-scale testing + 3 ネットアンサンブルで COCO test-dev 37.4 mAP@[.5,.95]、ImageNet DET test 62.1 mAP（2 位を 8.5 ポイント絶対差で凌駕）、ImageNet localization test top-5 9.0%（VGG/GoogLeNet 比 64% 相対誤差削減）。\n- **貢献**: (1) plain net で起きる degradation 現象の明示と特性化、(2) identity shortcut という最小限の構造変更で 100 層超を最適化可能にする residual learning の提案、(3) bottleneck design による計算量効率（152 層 ResNet 11.3GFLOPs < VGG-19 19.6GFLOPs）、(4) 分類・検出・位置推定・セグメンテーションの 5 タスク同時 1 位という generalization の実証、(5) CIFAR-10 で 1202 層という当時前代未聞の規模を実際に最適化して見せたこと。\n\n## Takeaway（自分にとっての要点）\n\n- 「深いネットが学習できない」のは **vanishing gradient ではなく optimization の難しさ**、というのが BN 後の正しい問題設定。BN を入れても plain は劣化するので、これは別軸の現象として切り離して扱うべき。\n- 解決策はアーキテクチャ側で「**identity を fallback として確保する**」こと。これは新たな帰納バイアス: もし上層が無意味ならゼロにすればよく、ソルバが恒等写像を非線形層の合成で再現する必要がなくなる（preconditioning として機能、§3.1）。今後ネットを深くする時の標準パターン。\n- shortcut が parameter-free（option A）でも degradation はちゃんと解決される（plain-34 28.54 → ResNet-34 A 25.03）。projection は次元合わせのときだけで十分、というのは「効くのは projection そのものではなく恒等成分の保持」だという強い証拠。bottleneck では projection 全部にすると complexity 倍増するので尚更 identity が要る。\n- 152 層単一モデルが過去のアンサンブルより強い（4.49% top-5）という事実は、ensemble より depth 増のほうがコスト効率がよい場面があることを示している。\n- 検出側で「**VGG-16 を ResNet-101 に差し替えるだけで COCO +6 mAP**」というのは features の質がそのまま下流タスクに転送される教科書的サンプル。事前学習バックボーンを上げる投資効率の根拠としていまだに引かれる理由がわかる。\n- 1202 層が training error <0.1% で安定して学習できるという事実は応用より「最適化障害は本当に消えた」というメッセージとして強い。逆に test で劣化するのは regularization 設計の話に変わる、と問題が切り分けられる点が綺麗。\n\n## Critical Thoughts（評価・疑問）\n\n- **強み**:\n  - 提案が極めてシンプル（足し算 1 つ追加）で、現有の SGD / Caffe をそのまま使える。だから世界中で即再現された。\n  - 主張に対し対照実験が徹底している: plain vs ResNet を同じ depth/width/params で比較（option A）、shortcut の (A)(B)(C) アブレーション、深さスイープ（18/34/50/101/152、CIFAR 20/32/44/56/110/1202）、応答 std の可視化、複数タスクへの転移。\n  - 「3.57% top-5 で 1 位」だけでなく、検出・位置推定・セグメンテーション全部で 1 位という generalization が示されていて、結果が分類タスク特有のチューニング芸ではないことが裏付けられている。\n  - 著者自身、何でも肯定するのではなく「(C) の僅差は parameter 増のせい」「projection は本質ではない」「1202 層が 110 層に test で負けるのは overfitting」と慎重に解釈している。\n- **弱み / 疑問**:\n  - **plain net が最適化困難な根本原因が説明されていない**（§4.1 で「vanishing gradient ではない、conjecture: exponentially low convergence rate、Future Work」と本文中で明言）。residual の有効性は実証だが、なぜ identity を入れると loss landscape がそんなに変わるかは後続研究（Li+ 2018, Veit+ 2016 など）に委ねられている。\n  - 1202 層の overfitting は **maxout/dropout を入れていない** 状況での結論（§4.2）。「dropout を併用すれば改善するかも、future work」と自分で言っており、本当に depth が無駄かどうかは結論保留。\n  - shortcut option の比較が ResNet-34 のみ。bottleneck（50+ 層）で (A) を試していないため、深層での identity-only の挙動はこの論文では未検証（後の \"Identity Mappings in Deep Residual Networks\" (He+ 2016) で扱われるが、本論文では未決）。\n  - 検出側の improvement（box refinement / context / multi-scale）はバックボーン交換ゲインとは別の汎用技で、各 ablation の純粋効果はやや混ざる。「multi-scale training は時間がなくて未実施」と著者も限界を明記（§Appendix MS COCO の Multi-scale testing 節）。\n  - CIFAR-10 の評価は test set 直接（ResNet-110 のみ 5 回平均 6.61±0.16、他のサイズは単発）。1 試行の数値ぶれは ImageNet ほど厳しく検証されていない。\n  - ImageNet test set の本番提出は何回か（規定の提出回数）残されていないので、3.57% の信頼区間は不明。\n  - \"residual is closer to zero than non-residual\" の主張は std 比較（Fig. fig:std）のみで、定量的に「ほぼ identity」と言えるほどの zero 近接性は示されていない。\n- **次に試したいこと**:\n  - degradation の原因仮説（loss landscape のシャープネス、Jacobian の条件数、ensemble of shallow paths 説 など）を実験的に切り分け。具体的には ResNet と plain で Hessian の固有値分布や gradient confusion 指標を比較。\n  - identity 以外の固定 shortcut（例えば学習しない random projection や PCA 投影）でも degradation が消えるかを試して、「identity の何が効いているか」を分離。\n  - 1202 層に強い regularization（CutMix / stochastic depth / dropout）を入れて、test error が 110 層を超えるかを再評価。stochastic depth はまさに後発で実装され、効くことが分かっている。\n  - bottleneck の $1{\\times}1$ 圧縮率（256→64 など）と深さのトレードオフを Pareto curve として測り、現在の ConvNeXt / RegNet と並べて compute-accuracy 効率を比較。\n\n## Notes / Quotes\n\n- \"Deeper neural networks are more difficult to train.\" (Abstract)\n- \"Unexpectedly, such degradation is *not caused by overfitting*, and adding more layers to a suitably deep model leads to *higher training error*.\" (§1 Introduction)\n- \"if an identity mapping were optimal, it would be easier to push the residual to zero than to fit an identity mapping by a stack of nonlinear layers.\" (§1)\n- \"We argue that this optimization difficulty is *unlikely* to be caused by vanishing gradients. These plain networks are trained with BN ...\" (§4.1 Plain Networks)\n- \"We conjecture that the deep plain nets may have exponentially low convergence rates ... The reason for such optimization difficulties will be studied in the future.\" (§4.1)\n- \"small differences among A/B/C indicate that projection shortcuts are not essential for addressing the degradation problem.\" (§4.1 Identity vs Projection Shortcuts)\n- \"Our method shows *no optimization difficulty*, and this $10^3$-layer network is able to achieve *training error* $<$0.1%.\" (§4.2 Exploring Over 1000 layers)\n- \"this is because of overfitting. The 1202-layer network may be unnecessarily large (19.4M) for this small dataset.\" (§4.2、著者自身による limitation 表明)\n- 単一モデル ResNet-152: top-1 19.38 / top-5 4.49（Table tab:single）\n- 6 モデルアンサンブル: ImageNet test top-5 **3.57%**（Table tab:ensemble）\n- Faster R-CNN のバックボーン VGG-16→ResNet-101 で COCO mAP@[.5,.95] 21.2→27.2（+6.0、相対 28%、§4.3 / Appendix）\n- ImageNet localization test top-5 9.0%（VGG/GoogLeNet 比 64% 相対削減、Table tab:localization_all）\n\n## Related Papers\n\n- Simonyan & Zisserman 2015, *VGG* — 比較対象 baseline、3x3 conv 哲学のベース。\n- Szegedy+ 2015, *GoogLeNet / Inception* — 同時期の \"very deep\" の代表、auxiliary classifier 経由の shortcut が部分的な前駆。\n- Srivastava+ 2015, *Highway Networks* — 同時期に gated shortcut を提案。本論文は parameter-free identity であることと、100+ 層でも精度向上を示した点で差別化。\n- Ioffe & Szegedy 2015, *Batch Normalization* — vanishing gradient を実用上潰し、本論文が \"degradation は別問題\" と言うための前提。\n- He+ 2015, *PReLU / He init* — 同一研究グループの直前の SOTA、本論文の初期化に採用。\n- Bengio+ 1994 / Glorot & Bengio 2010 — vanishing/exploding gradient の古典。\n- Krizhevsky+ 2012, *AlexNet*; Russakovsky+ 2014, *ImageNet* — タスク・データの基礎。\n- Ren+ 2015, *Faster R-CNN*; Girshick 2015, *Fast R-CNN*; Girshick+ 2014, *R-CNN* — 検出側の評価フレーム。\n- Lin+ 2014, *MS COCO*; Everingham+ 2010, *PASCAL VOC* — 検出データセット。\n- Krizhevsky 2009, *CIFAR-10*; Goodfellow+ 2013 *Maxout*; Lin+ 2013 *NIN*; Lee+ 2014 *DSN*; Romero+ 2015 *FitNet* — CIFAR の比較対象。\n";
+const MACROS = {"\\ve": "\\mathbf{#1}", "\\ma": "\\mathrm{#1}", "\\tabincell": "\\begin{tabular}{@{}#1@{}}#2\\end{tabular}", "\\arraystretch": "1.2", "\\blocka": "\\multirow{3}{*}{\\(\\left[\\begin{array}{c}\\text{3$\\times$3, #1}\\\\[-.1em] \\text{3$\\times$3, #1} \\end{array}\\right]\\)$\\times$#2}", "\\blockb": "\\multirow{3}{*}{\\(\\left[\\begin{array}{c}\\text{1$\\times$1, #2}\\\\[-.1em] \\text{3$\\times$3, #2}\\\\[-.1em] \\text{1$\\times$1, #1}\\end{array}\\right]\\)$\\times$#3}", "\\hl": "\\textbf{#1}", "\\ct": "\\fontsize{6pt}{1pt}\\selectfont{#1}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>
