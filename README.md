@@ -65,6 +65,26 @@ MODEL=claude-opus-4-6 python3 scripts/note.py
 
 ---
 
+## ノートプレビュー (`scripts/preview.py`)
+
+`notes/*.md` を KaTeX 付き HTML に変換してブラウザで開く。Python 依存ゼロ（標準ライブラリのみ）。
+
+```bash
+python3 scripts/preview.py notes/arXiv-1312.6114v11.md
+python3 scripts/preview.py notes/arXiv-1312.6114v11.md --watch    # ファイル変更を監視して再生成
+python3 scripts/preview.py notes/arXiv-1312.6114v11.md --no-open  # ブラウザを開かない
+python3 scripts/preview.py --publish                              # docs/ に全ノートを一括レンダリング (+ index.html)
+```
+
+- 個別プレビューは `/tmp/research-paper-preview.html` に書き出してブラウザで開く（下書き確認用）。
+- `--publish` は `docs/<stem>.html` を一括生成し、目次 `docs/index.html` を作る（公開用、GitHub Pages から配信）。`docs/` 配下のファイル名は `notes/<stem>.md` と 1 対 1 でリネーム不要。
+- GitHub Pages の有効化: リポジトリの **Settings → Pages → Source: `main` branch / `/docs`** を選ぶ。公開 URL は `https://<user>.github.io/research-paper/`（`index.html` がトップ、各論文ノートはそこからリンク）。
+
+- 対応する `papers/<folder>/*.tex` から `\newcommand` / `\DeclareMathOperator` 等の独自マクロを自動抽出して KaTeX に渡すので、`\bz` `\pT` のような論文固有マクロを含む数式も正しくレンダリングされる。
+- 本文（text mode）に残った LaTeX 制御命令も Markdown 等価物に自動変換する: `\textbf{X}`→`**X**`、`\emph{X}`→`*X*`、`\texttt{X}`→`` `X` ``、`\ref{tab:foo}`→`tab:foo`、`\citep{key}`→`[key]`、`\href{url}{text}`→`[text](url)`、`\%` `\$` `\&` `\#` `\_` → 素のリテラル、`\label{...}` `\input{...}` は削除、`WORD~\ref{X}` の非破壊空白 `~` は半角空白に。数式 (`$...$`, `$$...$$`, `\(..\)`, `\[..\]`) と code は無傷で通す。未対応の命令は触らず残るので、必要なら `TEXT_CMD_RULES` に追加する。
+
+---
+
 ## arXiv TeX ソースの読み方（参考）
 
 論文フォルダの中身は概ね以下のような構造になっている:
