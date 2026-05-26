@@ -12,9 +12,10 @@ Usage:
     python3 scripts/easy.py --publish                  # notes_easy/*.md → docs/easy/*.html
     python3 scripts/easy.py --all                      # 生成 → publish を続けて実行
     MODEL=claude-opus-4-7 python3 scripts/easy.py
+    AGENT=codex MODEL=gpt-5.5 python3 scripts/easy.py
 
 仕様:
-- `claude -p` ヘッドレスを subprocess で並列起動（note.py と同じ機構を踏襲）
+- `claude -p` または `codex exec` ヘッドレスを subprocess で並列起動（note.py と同じ機構を踏襲）
 - 既存 notes_easy/*.md は skip（冪等）
 - プラン制限を検出したら新規ワーカー起動停止 → 終了コード 2
 - HTML レンダリングは preview.py の純粋関数を import 経由で再利用（preview.py は改変しない）
@@ -51,19 +52,46 @@ NOTES_EASY_DIR = ROOT / "notes_easy"
 DOCS_EASY_DIR = ROOT / "docs" / "easy"
 LOGS_DIR = ROOT / "logs"
 
-# 最新の Opus。新版が出たらここを更新する。
-MODEL = os.environ.get("MODEL", "claude-opus-4-7")
+AGENT = os.environ.get("AGENT", "claude").strip().lower()
+DEFAULT_MODELS = {
+    "claude": "claude-opus-4-7",
+    "codex": "gpt-5.5",
+}
+MODEL = os.environ.get("MODEL", DEFAULT_MODELS.get(AGENT, ""))
 DEFAULT_PARALLEL = 3
 PER_PAPER_TIMEOUT_SEC = 60 * 60  # 1 時間
 
 TEMPLATE_REL = "notes_easy/_template.md"
 
 # プラン使用制限の検出パターン（note.py と同じ）
-LIMIT_RE = re.compile(r"You've hit your .*?limit", re.IGNORECASE)
+LIMIT_RE = re.compile(
+    r"(You've hit your .*?limit|usage limit|rate limit|quota exceeded)",
+    re.IGNORECASE,
+)
 LIMIT_HIT = threading.Event()
 
 
 # ============================== プロンプト ==============================
+
+def build_cmd(prompt: str) -> list[str]:
+    if AGENT == "claude":
+        return [
+            "claude", "-p", prompt,
+            "--model", MODEL,
+            "--allowed-tools", "Read,Write,Glob,Grep",
+            "--permission-mode", "acceptEdits",
+        ]
+    if AGENT == "codex":
+        return [
+            "codex", "exec",
+            "-C", str(ROOT),
+            "-m", MODEL,
+            "-s", "workspace-write",
+            "-a", "never",
+            prompt,
+        ]
+    raise ValueError(f"unsupported AGENT={AGENT!r} (expected 'claude' or 'codex')")
+
 
 def build_prompt(folder: str) -> str:
     notes_path = NOTES_DIR / f"{folder}.md"
@@ -196,12 +224,11 @@ def run_one(folder: str) -> tuple[str, bool, str]:
     if out_path.exists():
         return folder, True, "skip (already exists)"
 
-    cmd = [
-        "claude", "-p", build_prompt(folder),
-        "--model", MODEL,
-        "--allowed-tools", "Read,Write,Glob,Grep",
-        "--permission-mode", "acceptEdits",
-    ]
+    try:
+        cmd = build_cmd(build_prompt(folder))
+    except ValueError as e:
+        return folder, False, str(e)
+
     try:
         r = subprocess.run(
             cmd,
@@ -212,7 +239,7 @@ def run_one(folder: str) -> tuple[str, bool, str]:
         )
         log_path.write_text(
             f"# easy: {folder}\n"
-            f"$ claude -p <easy prompt> --model {MODEL} ...\n\n"
+            f"$ {AGENT} <easy prompt> --model {MODEL} ...\n\n"
             f"--- stdout ---\n{r.stdout}\n\n"
             f"--- stderr ---\n{r.stderr}\n"
         )
@@ -227,7 +254,7 @@ def run_one(folder: str) -> tuple[str, bool, str]:
         log_path.write_text(f"# easy: {folder}\nTIMEOUT after {PER_PAPER_TIMEOUT_SEC}s\n")
         return folder, False, "timeout"
     except FileNotFoundError:
-        return folder, False, "claude CLI not found in PATH"
+        return folder, False, f"{AGENT} CLI not found in PATH"
     except Exception as e:  # noqa: BLE001
         return folder, False, f"error: {e}"
 
@@ -235,6 +262,10 @@ def run_one(folder: str) -> tuple[str, bool, str]:
 def generate_all(parallel: int, only: str | None) -> int:
     LOGS_DIR.mkdir(exist_ok=True)
     NOTES_EASY_DIR.mkdir(exist_ok=True)
+
+    if AGENT not in DEFAULT_MODELS:
+        print(f"error: unsupported AGENT={AGENT!r} (expected 'claude' or 'codex')", file=sys.stderr)
+        return 1
 
     all_papers = sorted(p.name for p in PAPERS_DIR.glob("arXiv-*") if p.is_dir())
     if only:
@@ -248,6 +279,7 @@ def generate_all(parallel: int, only: str | None) -> int:
     else:
         todo = [f for f in all_papers if not (NOTES_EASY_DIR / f"{f}.md").exists()]
 
+    print(f"Agent: {AGENT}")
     print(f"Model: {MODEL}")
     print(f"Parallel: {parallel}")
     print(f"Total papers: {len(all_papers)}, missing easy notes: {len(todo)}")

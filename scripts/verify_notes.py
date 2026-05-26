@@ -8,10 +8,11 @@ Usage:
     python3 scripts/verify_notes.py --force          # 既に verify 済みでも再実行
     python3 scripts/verify_notes.py --only arXiv-2305.14325v1 arXiv-2404.19756v5
     MODEL=claude-opus-4-6 python3 scripts/verify_notes.py
+    AGENT=codex MODEL=gpt-5.5 python3 scripts/verify_notes.py
 
 仕様:
-- `claude -p` ヘッドレスを subprocess で起動（note.py と同じ流儀）
-- 各ワーカーは独立した Claude セッション
+- `claude -p` または `codex exec` ヘッドレスを subprocess で起動（note.py と同じ流儀）
+- 各ワーカーは独立したエージェントセッション
 - 冪等: logs/<folder>.verify.json に直近検証時のノート SHA256 を記録、
   ノートが変わっていなければ skip（--force で無効化）
 - stdout/stderr は logs/<folder>.verify.log に保存
@@ -35,18 +36,46 @@ PAPERS_DIR = ROOT / "papers"
 NOTES_DIR = ROOT / "notes"
 LOGS_DIR = ROOT / "logs"
 
-MODEL = os.environ.get("MODEL", "claude-opus-4-7")
+AGENT = os.environ.get("AGENT", "claude").strip().lower()
+DEFAULT_MODELS = {
+    "claude": "claude-opus-4-7",
+    "codex": "gpt-5.5",
+}
+MODEL = os.environ.get("MODEL", DEFAULT_MODELS.get(AGENT, ""))
 DEFAULT_PARALLEL = 3
 PER_PAPER_TIMEOUT_SEC = 60 * 60  # 1 時間
 
 TEMPLATE_REL = "notes/_template.md"
 EXAMPLE_REL = "notes/arXiv-2305.14325v1.md"
 
-LIMIT_RE = re.compile(r"You've hit your .*?limit", re.IGNORECASE)
+LIMIT_RE = re.compile(
+    r"(You've hit your .*?limit|usage limit|rate limit|quota exceeded)",
+    re.IGNORECASE,
+)
 LIMIT_HIT = threading.Event()
 
 # 行頭の `, *, > 等の装飾（マークダウンや引用記号）を許容して VERDICT を拾う
 VERDICT_RE = re.compile(r"^[`*_>\s]*VERDICT:\s*[`*_]*(OK|UPDATED|ISSUES)\b", re.MULTILINE)
+
+
+def build_cmd(prompt: str) -> list[str]:
+    if AGENT == "claude":
+        return [
+            "claude", "-p", prompt,
+            "--model", MODEL,
+            "--allowed-tools", "Read,Edit,Write,Glob,Grep",
+            "--permission-mode", "acceptEdits",
+        ]
+    if AGENT == "codex":
+        return [
+            "codex", "exec",
+            "-C", str(ROOT),
+            "-m", MODEL,
+            "-s", "workspace-write",
+            "-a", "never",
+            prompt,
+        ]
+    raise ValueError(f"unsupported AGENT={AGENT!r} (expected 'claude' or 'codex')")
 
 
 def sha256_of(path: Path) -> str:
@@ -173,12 +202,11 @@ def run_one(folder: str, force: bool) -> tuple[str, bool, str]:
     if not force and state.get("note_sha256") == before_sha:
         return folder, True, f"skip (already verified, verdict={state.get('verdict')})"
 
-    cmd = [
-        "claude", "-p", build_prompt(folder),
-        "--model", MODEL,
-        "--allowed-tools", "Read,Edit,Write,Glob,Grep",
-        "--permission-mode", "acceptEdits",
-    ]
+    try:
+        cmd = build_cmd(build_prompt(folder))
+    except ValueError as e:
+        return folder, False, str(e)
+
     try:
         r = subprocess.run(
             cmd,
@@ -189,7 +217,7 @@ def run_one(folder: str, force: bool) -> tuple[str, bool, str]:
         )
         log_path.write_text(
             f"# verify {folder}\n"
-            f"$ claude -p <prompt> --model {MODEL} ...\n\n"
+            f"$ {AGENT} <prompt> --model {MODEL} ...\n\n"
             f"--- stdout ---\n{r.stdout}\n\n"
             f"--- stderr ---\n{r.stderr}\n"
         )
@@ -228,7 +256,7 @@ def run_one(folder: str, force: bool) -> tuple[str, bool, str]:
         log_path.write_text(f"# verify {folder}\nTIMEOUT after {PER_PAPER_TIMEOUT_SEC}s\n")
         return folder, False, "timeout"
     except FileNotFoundError:
-        return folder, False, "claude CLI not found in PATH"
+        return folder, False, f"{AGENT} CLI not found in PATH"
     except Exception as e:
         return folder, False, f"error: {e}"
 
@@ -245,6 +273,10 @@ def main(argv: list[str]) -> int:
 
     LOGS_DIR.mkdir(exist_ok=True)
 
+    if AGENT not in DEFAULT_MODELS:
+        print(f"error: unsupported AGENT={AGENT!r} (expected 'claude' or 'codex')", file=sys.stderr)
+        return 1
+
     if args.only:
         todo = list(args.only)
     else:
@@ -253,6 +285,7 @@ def main(argv: list[str]) -> int:
             if (PAPERS_DIR / p.stem).is_dir()
         )
 
+    print(f"Agent:    {AGENT}")
     print(f"Model:    {MODEL}")
     print(f"Parallel: {args.parallel}")
     print(f"Force:    {args.force}")

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models（日本語パラフレーズ：「進化するメモ帳」で LLM を自己改善させる枠組み ACE）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2510.04618v3.md</code>
+  &nbsp;|&nbsp; macros: <code>64</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models（日本語パラフレーズ：「進化するメモ帳」で LLM を自己改善させる枠組み ACE）\n\n- arXiv: https://arxiv.org/abs/2510.04618\n- 一次ソース: ../papers/arXiv-2510.04618v3/\n- 正規ノート: ../notes/arXiv-2510.04618v3.md\n\n---\n\n## 一言で言うと\n\nLLM（後で説明）に渡す「指示書」を、まとめて書き直すのではなく **箇条書きを少しずつ足し引きして育てる** ことで、賢く・安く・自分で勉強し続ける AI を作る方法。\n\n## どんな問題を解こうとしてるの？\n\nまずはここで使う最重要キーワードを 1 行ずつ説明しておくよ。\n\n- **LLM**（Large Language Model、大規模言語モデル）… 大量の文章を読み込んで「次に来る言葉」を予測できるようにした AI。ChatGPT みたいなやつ。\n- **エージェント**（agent）… LLM が「ただ返事する」だけでなく、メールを送ったり、コードを実行したりと **道具を順番に使って仕事をこなす** モード。\n- **プロンプト**（prompt）… LLM に渡す「お願い文」。\n- **コンテキスト**（context）… LLM が答えを作るときに見ている全部の文章（お願い文＋これまでのやり取り＋参考資料）。\n\n### 現実の困りごと（身近な例えで）\n\n新しくバイトに入った高校生を想像してみて。最初の日に店長が「マニュアルこれね」と紙を渡す。ここで店長が取れる選択肢は 2 つ：\n\n1. **短くまとめたマニュアル**：「お客さんに笑顔で接客！」だけ書いてある。読みやすいけど、レジの打ち方も電子マネーの裏ワザも書いてない。困ったときに使えない。\n2. **分厚い手引き**：「PayPay が反応しないときはここを押す」「常連の田中さんはアイスコーヒー無糖」みたいな具体的なコツが全部書いてある。読むのは大変だけど、本番では超強い。\n\nいまの LLM への指示書も同じで、「短くまとめれば良い」って思われがちだけど、実は **LLM は分厚い手引きの方が強い**、というのがこの論文の出発点。\n\n### これまでのやり方の何が足りなかったか\n\n著者は既存手法に 2 つのダメな癖があると指摘している。\n\n- **簡潔バイアス**（brevity bias）… GEPA という有名な手法（後述）は「指示を短くまとめる」のが得意。でも短くしすぎて **ドメイン固有のコツ**（XBRL という金融書類のルール、API の細かい使い方など）が消えてしまう。\n- **コンテキスト崩壊**（context collapse）… Dynamic Cheatsheet という別の手法は、毎回 LLM に「これまでのメモ帳を全部書き直して」と頼む。すると、ある瞬間に LLM が「えーい、全部まとめて短くしちゃえ」と勝手に要約してしまい、貯めてきた知識が **一瞬で吹き飛ぶ**。\n  - 実際の数字：AppWorld というベンチマークで、60 ステップ目には 18,282 トークン（≒単語のかけら 18,282 個分）あって正解率 66.7% だったメモが、**次のステップで 122 トークンに圧縮されてしまい、正解率が 57.1% まで急落**。何もしないベースライン（63.7%）よりも下がる悲劇。\n\nつまり「LLM にメモを丸ごと書き直させる」のは危険。短くなりすぎて中身が消える。\n\n## どうやって解いたの？\n\n### コアアイデア\n\n提案するのは **ACE**（Agentic Context Engineering、エージェント型コンテキスト工学）という枠組み。コンテキストを **「進化するプレイブック」**（playbook：スポーツ用語で「作戦集」のこと）として扱う。\n\n例えるなら、**料理部の秘伝ノート** を 3 人の役割で育てていくイメージ：\n\n- **作る人**（Generator）… 実際に今日の料理を作る部員。レシピを試して「ここで火加減ミスった！」みたいな経験を残す。\n- **振り返る人**（Reflector）… 今日の料理を見て「この工程は良かった」「ここはこう直すべき」と **教訓を抽出する** コーチ役。\n- **整理する人**（Curator、curate＝展示物を整理する人）… 教訓を **1 行ずつカードに書いて、秘伝ノートの該当ページに差し込む** 司書役。\n\nポイントは「司書はノート全体を書き直さない」こと。**新しいカードを足す／古いカードのカウンタを増やす** だけ。これで「ある日まとめて短くされて知識が消える」事故を防ぐ。\n\n### 仕組み\n\nACE のサイクルを step に分けるとこう：\n\n- **step1**: ユーザーから新しい問題が来る。\n- **step2**: **作る人**（Generator）が、今のプレイブックを見ながら問題を解く。途中で「このカードは役立った／このカードに騙された」をメモする。\n- **step3**: 解いた結果（正解だったか／コードが動いたか）と途中経過を、**振り返る人**（Reflector）が読む。「このカードは正しい」「ここに新しいコツを足すべき」みたいな **lesson（教訓）** を文章で出す。Reflector はこの作業を最大 5 回くりかえして磨ける。\n- **step4**: **整理する人**（Curator）が、教訓を **デルタエントリ**（delta entry）という小さなカードに変換する。delta は数学っぽく聞こえるけど「差分」ぐらいの意味。\n- **step5**: できたカードを、プログラム（LLM ではなく普通のプログラム）が **決まったルールでプレイブックに差し込む**。ここで LLM が介入しないので、勝手に短くされる事故が起きない。\n- **step6**: たまにプレイブックを見直し、ほぼ同じカードがあれば 1 つにまとめる（**grow-and-refine**＝「育てて磨く」原則）。\n- **step7**: 次の問題に進む。これを繰り返してプレイブックを育てる。\n\nカード（bullet）の中身：\n\n- **メタデータ**：番号（id）と「何回役に立った／何回ミスリードしたか」のカウンタ。\n- **本体**：「こういう状況ではこう動け」という 1 つのコツ、または失敗パターン、または使えるコードスニペット。\n\nこれによって、\n\n- **局所修正できる**：関係あるカードだけ書き換える。\n- **細かく検索できる**：必要なときに該当カードだけ呼べる。\n- **並列で更新できる**：別々のカードは同時に直せる。\n\n### 使い方は 2 つのモード\n\n- **オフライン適応**（offline adaptation）… 学校で言う「予習」。**訓練データで先にプレイブックを作っておいて**、本番のテストではそれを使うだけ。\n- **オンライン適応**（online adaptation）… 学校で言う「実戦で学ぶ」。**本番中に 1 問解くたびに、その経験をプレイブックに足していく**。\n\n### 主要な数式\n\nこの論文は枠組みの設計が中心で、論文中に「これが核となる数式」と呼べるものはほとんど出てこない。なので無理に数式は出さず、**プレイブックを育てる更新ルール** を言葉で書いておく：\n\n- 新しいカード（新 id）→ プレイブックの末尾に **追加**（append）。\n- 既存カード（同じ id）→ その場で **書き換え or カウンタ更新**（in-place update）。\n- 似たカードが増えすぎたら → **意味の近さ**（semantic embedding：文章を数の並びに変えて近さを測る道具）で重複を消す。\n- カード全体の書き換えは **絶対にしない**。\n\nこれだけが ACE の更新規則の全てで、これが「LLM に丸ごと書き直させない」という安全装置になっている。\n\n## 何がすごいの？\n\n数字は全部 TeX のテーブル（Table 1, 2, 3, cost analysis）から拾ったもの。\n\n### AppWorld（エージェントのベンチマーク：メール・カレンダーなど 9 個のアプリを API 経由で操作するタスク）\n\n- ベース LLM は **DeepSeek-V3.1-671B**（オープンソースの巨大 LLM）。\n- 何もしないと（ReAct という標準実装で）平均 **42.4%**。\n- オフラインで ACE を使うと **59.4%**（**+17.0 ポイント**）。\n- ICL（46.0%）・GEPA（46.4%）にも大差で勝つ。\n- オンラインでも Dynamic Cheatsheet（51.9%）に対して **59.5%**（+7.6 ポイント）。\n- **正解ラベルが無くても** 実行が成功したかどうかだけで学習可能。それでも +14.8 ポイント。\n- AppWorld リーダーボード（2025-09-20 時点）で、**GPT-4.1 をエンジンに使う商用エージェント IBM-CUGA（60.3%）と平均でほぼ並ぶ**。難しい test-challenge では TGC（タスク完了率）で +8.4 上回る。\n\nここで出た用語：\n\n- **ReAct**（Reason + Act）… LLM に「考える → 行動する → 結果を見る」を繰り返させる古典的手法。AppWorld の標準実装。\n- **ICL**（In-Context Learning、文脈内学習）… 解き方の例題をプロンプトに何個か入れて、それを真似させるだけのシンプル手法。\n- **TGC / SGC**（Task / Scenario Goal Completion）… AppWorld の評価指標。タスクごと／シナリオごとの完了率（％）。\n- **GEPA**（Genetic-Pareto）… プロンプトを遺伝的アルゴリズムっぽく進化させる最適化手法。比較対象。\n- **MIPROv2** … DSPy というライブラリ製のプロンプト最適化器。ベイズ最適化（実験結果から効率よく次を試す統計手法）を使う。\n\n### 金融タスク（FiNER と Formula）\n\n- **FiNER** … 金融文書（XBRL という米国 SEC 提出書類フォーマット）のトークンに、139 種類の細かいラベルを付ける問題。\n- **Formula** … 金融用語と式を理解して、数値を計算する問題。\n- 何もしないと平均 **69.1%**。\n- オフラインで ACE：**81.9%**（**+12.8 ポイント**）。同条件の GEPA（72.5%）より +9.4 上。\n- Formula 単体では 67.5% → **85.5%**（**+18.0 ポイント**）。\n- **正直な弱点も論文が報告している**：正解ラベルも実行フィードバックも無い「online ラベルなし」設定では、ACE も Dynamic Cheatsheet も性能が下がることがある（FiNER で -3.4 ポイント）。\n\n### アブレーション（部品を 1 つずつ外して効果を測る実験）\n\n- フル ACE：**59.4%**\n- Reflector も multi-epoch も無し：55.1%\n- Reflector ありで multi-epoch 無し：56.8%\n- → **どの部品も効いている** ことを定量で確認。\n- オンラインでも、最初に offline で軽く準備（warmup）しておくと 56.1 → 59.5。\n\n### コスト・速度\n\nこれも論文の主張の柱。プレイブックは長くなるのに、なぜ速い／安いのか：\n\n- AppWorld オフラインで GEPA に対して **適応にかかる時間 -82.3%**（53,898 秒 → 9,517 秒）、**試行回数 -75.1%**（1,434 回 → 357 回）。\n- FiNER オンラインで Dynamic Cheatsheet に対して **時間 -91.5%**（65,104 秒 → 5,503 秒）、**トークン課金 -83.6%**（$17.7 → $2.9）。\n- 評価時はプレイブックが長くて生のトークン数は多いけど、**91.8% が KV cache（後述）から再利用** され、**請求額は生トークン換算より -82.6%**。\n\n### 著者の言う貢献（contribution）\n\nintroduction §1 末尾の箇条書きから：\n\n1. 簡潔バイアスと崩壊現象を **問題として明確化** し、AppWorld で具体的な数字で見せた。\n2. Generator / Reflector / Curator + デルタカード + grow-and-refine という **再利用しやすい枠組み** を提案。\n3. オープンソース LLM + ACE で、**GPT-4.1 を使う商用エージェントと並んだ**。\n4. **ラベル無しでも実行フィードバックだけで自己改善できる** ことを示した。\n5. 「長いコンテキスト = 高コスト」を否定し、**KV cache で実は安くなる** ことを実測。\n\n## キーワード辞典\n\n本文に出てきた順番で。\n\n- **LLM**（Large Language Model、大規模言語モデル）… 大量の文章で訓練された、文章を生成できる AI。\n- **エージェント**（agent）… LLM がツールを順番に使って仕事をするモード。\n- **プロンプト**（prompt）… LLM への入力文。\n- **コンテキスト**（context）… LLM が見ている全テキスト。\n- **コンテキスト適応**（context adaptation）… モデルの重み（中身の数値）を変えずに、入力テキストだけ工夫して性能を上げる方針。\n- **重み**（weights）… ニューラルネットの中で学習される「ツマミ」の数。重みを変える＝モデル自体を訓練し直すこと。\n- **ニューラルネット**（neural network）… 大量の「ツマミ」（重み）を持つ数式のかたまり。入力から出力を計算する仕組み。\n- **fine-tuning**（ファインチューニング）… 既存モデルの重みを少しだけ追加学習で書き換える手法。ACE は重みを **変えない**。\n- **prompt optimizer**（プロンプト最適化器）… プロンプトの文面を自動で書き換えて成績を上げるツール。GEPA や MIPROv2 がこれ。\n- **brevity bias**（簡潔バイアス）… 最適化が「短くまとめた指示」に収束してしまう癖。具体例が消えるのが弱点。\n- **context collapse**（コンテキスト崩壊）… メモを LLM が書き直し続けるうちに、ある瞬間に短すぎる要約に潰れる現象。\n- **playbook**（プレイブック）… スポーツ用語で「作戦集」。ACE はコンテキストをこれと見なす。\n- **Generator / Reflector / Curator** … ACE の 3 役。問題を解く人 / 教訓を抽出する人 / カードに整理して足す人。\n- **delta entry**（デルタエントリ）… 「差分カード」。新しい教訓 1 つ分のカード。id とカウンタと本体を持つ。\n- **bullet**（バレット、箇条書き 1 項目）… ACE のプレイブックを構成するカード 1 枚のこと。\n- **grow-and-refine**（育てて磨く）… 新カードを足す → 重複を embedding で消す、というメンテ方針。\n- **embedding**（埋め込み）… 文章を「数の並び」に変換したもの。近い数の並び同士は意味も近いとみなせる。\n- **ReAct**（Reason + Act）… 「考える → 行動する」を交互にやる古典エージェント設計。AppWorld のベース実装。\n- **AppWorld** … メール・カレンダーなどを操作させる難しいエージェントベンチマーク。\n- **TGC / SGC** … AppWorld の成功率指標（タスク単位 / シナリオ単位）。\n- **FiNER / Formula** … 金融文書を理解するベンチマーク。\n- **XBRL** … 金融書類を機械可読にする XML 系フォーマット。米国 SEC で使われる。\n- **ICL**（In-Context Learning）… 例題をプロンプトに入れて真似させるだけのシンプル手法。\n- **GEPA**（Genetic-Pareto）… プロンプトを遺伝的アルゴリズムで進化させる最適化器。\n- **MIPROv2** … DSPy 製のプロンプト最適化器。\n- **Dynamic Cheatsheet（DC）** … LLM が自分用メモを更新して使うテスト時学習手法。ACE が最大の比較対象で、かつ着想源。\n- **Reflexion / TextGrad** … 自然言語フィードバックでエージェントを改善する系譜の先行研究。\n- **pass@1** … 1 回答えて正解する確率。最も厳しい評価。\n- **multi-epoch**（多エポック）… 同じ訓練データを何周もする学習法。ここでは ACE が同じ問題でプレイブックを何回も育てること。\n- **offline warmup**（オフラインウォームアップ）… 本番に入る前に、訓練データで先にプレイブックを温めておくこと。\n- **rollout**（ロールアウト）… 1 回エージェントを走らせて完了させること。コストの単位。\n- **KV cache**（key-value cache、キーバリューキャッシュ）… LLM が前に計算した内部状態を保存しておく仕組み。**同じプロンプトの先頭部分は再計算せずに使い回せる** ため、長いコンテキストでも料金が膨らみにくい。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **なぜ「LLM に書き直させない」のが効くのか**：LLM は確率的にテキストを生成するので、何回か呼ぶうちに「短くまとめよう」モードに勝手に入ってしまうリスクがある。ACE は「カードを足す」操作だけを LLM に任せ、「マージするロジック」は普通のプログラム（決定的な処理）にしているので、要約事故が構造的に起こらない。\n- **「Reflector の質が ACE の上限を決める」**：論文の §5（limitations）で著者自身が認めている弱点。実行が成功／失敗ではっきり分かるタスク（コード実行など）では Reflector が強い教訓を出しやすいが、何が正解か判定しにくいタスク（FiNER の online ラベルなし）では Reflector が誤った教訓を抽出してしまい、プレイブックがむしろ汚染される。\n- **なぜ「長いコンテキスト = 高コスト」とは限らないのか**：商用 API（OpenAI など）は、同じプロンプトの先頭部分を再利用するキャッシュ（prompt caching）を持っている。ACE は同じ大きなプレイブックを毎問題の頭にくっつけて使うので、**頭の部分は 1 回計算すれば後はキャッシュから読むだけ**。論文では GPT-5.1 で 91.8% がキャッシュからヒットしたと実測している。\n- **ハイパーパラ**：Reflector の最大リファイン回数 = 5、オフライン最大エポック = 5、バッチサイズ = 1（1 問につき 1 枚デルタを作る）。\n- **同じ LLM を 3 役にあてる理由**：もし Reflector だけ別の強い LLM にすると「強い Reflector のおかげで弱い Generator も賢くなった」という疑いが出る。著者は **全部 DeepSeek-V3.1 で揃えて** 比較し、「ACE の効果は context の作り方そのものから来る」と示した。\n- **論文が認めている適用範囲の限界**：HotPotQA や Game of 24 のように「短い指示で十分」な単純タスクには ACE は不要。**ドメイン固有の知識や複雑なツール使用が要るタスク向け**。\n- **TeX 上の小ネタ**（正規ノートで verified）：本文 §2.1 で `krause2019dynamic` を Dynamic Cheatsheet として引用しているのは TeX 側の citation バグ。本来の Dynamic Cheatsheet は Suzgun ほか (`suzgun2025dynamic`)。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2510.04618v3/`\n- 正規ノート: `notes/arXiv-2510.04618v3.md`\n";
+const MACROS = {"\\fix": "\\marginpar{FIX}", "\\new": "\\marginpar{NEW}", "\\blfootnote": "%\n  \\begingroup\n  \\renewcommand\\thefootnote{}\\footnotetext{#1}%\n  \\addtocounter{footnote}{-1}%\n  \\endgroup", "\\thefootnote": "", "\\name": "\\textsc{ACE}\\xspace", "\\fillme": "{\\bf XXX}\\xspace", "\\eg": "{\\it e.g.,}\\xspace", "\\ie": "{\\it i.e.,}\\xspace", "\\etal": "{\\it et.~al}\\xspace", "\\bigO": "\\mathrm{O}", "\\cmark": "\\ding{51}", "\\xmark": "\\ding{55}", "\\lstb": "\\textbf{#1}", "\\lstem": "\\textit{#1}", "\\PromptCardFromFile": "%\n  \\begin{tcolorbox}[\n    colback=PromptBack, colframe=PromptFrame, boxrule=0.5pt,\n    arc=1.2mm, left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,\n    title={#2}, fonttitle=\\bfseries\\sffamily\\footnotesize,\n    colbacktitle=PromptTitleBack, coltitle=black,\n    #1\n  ]\n    \\lstinputlisting[style=promptstyle, xleftmargin=1.8em]{#3}\n  \\end{tcolorbox}", "\\figleft": "{\\em (Left)}", "\\figcenter": "{\\em (Center)}", "\\figright": "{\\em (Right)}", "\\figtop": "{\\em (Top)}", "\\figbottom": "{\\em (Bottom)}", "\\captiona": "{\\em (a)}", "\\captionb": "{\\em (b)}", "\\captionc": "{\\em (c)}", "\\captiond": "{\\em (d)}", "\\newterm": "{\\bf #1}", "\\train": "\\mathcal{D}", "\\valid": "\\mathcal{D_{\\mathrm{valid}}}", "\\test": "\\mathcal{D_{\\mathrm{test}}}", "\\tens": "\\bm{\\mathsfit{#1}}", "\\etens": "\\mathsfit{#1}", "\\pdata": "p_{\\rm{data}}", "\\ptrain": "\\hat{p}_{\\rm{data}}", "\\Ptrain": "\\hat{P}_{\\rm{data}}", "\\pmodel": "p_{\\rm{model}}", "\\Pmodel": "P_{\\rm{model}}", "\\ptildemodel": "\\tilde{p}_{\\rm{model}}", "\\pencode": "p_{\\rm{encoder}}", "\\pdecode": "p_{\\rm{decoder}}", "\\precons": "p_{\\rm{reconstruct}}", "\\laplace": "\\mathrm{Laplace}", "\\E": "\\mathbb{E}", "\\Ls": "\\mathcal{L}", "\\R": "\\mathbb{R}", "\\emp": "\\tilde{p}", "\\lr": "\\alpha", "\\reg": "\\lambda", "\\rect": "\\mathrm{rectifier}", "\\softmax": "\\mathrm{softmax}", "\\sigmoid": "\\sigma", "\\softplus": "\\zeta", "\\KL": "D_{\\mathrm{KL}}", "\\Var": "\\mathrm{Var}", "\\standarderror": "\\mathrm{SE}", "\\Cov": "\\mathrm{Cov}", "\\normlzero": "L^0", "\\normlone": "L^1", "\\normltwo": "L^2", "\\normlp": "L^p", "\\normmax": "L^\\infty", "\\parents": "Pa", "\\argmax": "\\operatorname{arg\\,max}", "\\argmin": "\\operatorname{arg\\,min}", "\\sign": "\\operatorname{sign}", "\\Tr": "\\operatorname{Tr}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

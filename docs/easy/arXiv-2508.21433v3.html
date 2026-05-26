@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>The Complexity Trap: Simple Observation Masking Is as Efficient as LLM Summarization for Agent Context Management（複雑さのワナ：エージェントのメモ管理は「LLM による要約」より「古い観察を消すだけ」で十分）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117;
+      --border: #30363d; --code-bg: #161b22; --link: #4493f8;
+    }
+  }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    max-width: 880px; margin: 2em auto; padding: 0 1.2em;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+                 "Yu Gothic", "Segoe UI", sans-serif;
+    line-height: 1.75; font-size: 16px;
+  }
+  h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; margin-top: 1.8em; }
+  h3 { margin-top: 1.4em; }
+  a { color: var(--link); }
+  pre, code { background: var(--code-bg); border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  code { padding: .15em .4em; font-size: 87%; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 4px solid var(--border); color: var(--muted); padding: 0 1em; margin: 1em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; }
+  th { background: var(--code-bg); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+  ul, ol { padding-left: 1.6em; }
+  li { margin: .25em 0; }
+  .katex { font-size: 1.02em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+  .meta-bar {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--muted);
+    margin-bottom: 1.5em;
+  }
+  .meta-bar code { background: transparent; padding: 0; }
+</style>
+</head>
+<body>
+<div class="meta-bar">
+  source: <code>notes_easy/arXiv-2508.21433v3.md</code>
+  &nbsp;|&nbsp; macros: <code>5</code> 件抽出
+  
+</div>
+<div id="content"></div>
+<script>
+const RAW = "# The Complexity Trap: Simple Observation Masking Is as Efficient as LLM Summarization for Agent Context Management（複雑さのワナ：エージェントのメモ管理は「LLM による要約」より「古い観察を消すだけ」で十分）\n\n- arXiv: https://arxiv.org/abs/2508.21433\n- 一次ソース: ../papers/arXiv-2508.21433v3/\n- 正規ノート: ../notes/arXiv-2508.21433v3.md\n\n---\n\n## 一言で言うと\n\nプログラム修正 AI の「メモ帳」を節約するなら、賢い要約をするより「古いログを消すだけ」で値段が約半分になり、性能もほぼ同じだった、という研究。\n\n## どんな問題を解こうとしてるの？\n\n- いまの AI（LLM、大きな言葉モデル＝大量の文章を読んで答えを作る AI）は、プログラムのバグ直しを「自分で考える → ファイルを開く → 結果を見る → また考える」というループで進める。これを **エージェント** と呼ぶ。\n- このループを 1 回まわすたびに、見たもの（ファイルの中身、テストの結果ログなど）を **全部メモ帳に書き足していく**。だんだんメモ帳が分厚くなる。\n- AI は「メモを 1 文字読むごとにお金がかかる」料金体系（トークン課金）なので、メモが厚くなるほど 1 回の質問が高くなる。著者の予備実験では、なにも工夫しないと値段が **2 倍以上** に膨らむ。\n- さらに、メモが厚すぎると AI は **「真ん中あたりに書いた大事なこと」を読み飛ばす** クセがある（\"lost in the middle\" 問題）。だから安くするだけじゃなく、性能も下がる。\n- 例え話：宿題ノートに「教科書のページ全部を毎日コピペして貼る」を続けていると、ノートが分厚くなって肝心の式が探せなくなる感じ。\n- 既存の解決法は 2 種類あった：\n  - **古い観察ログを「省略しました」の一言に置き換える**（シンプル。SWE-agent などが採用）\n  - **別の AI に古いログを要約させて短くする**（複雑だが賢そう。OpenHands や Cursor が採用）\n- でも「複雑な要約のほうが本当に得なの？」を **同じ条件で比べた研究がなかった**。これを調べたのが本論文。\n\n## どうやって解いたの？\n\n### コアアイデア\n\nSE エージェント（ソフトウェア・エンジニアリングのバグを直す AI）のメモ帳の中身を分解してみると、**約 84% が「環境からの観察ログ」**（ファイルの中身やコマンドの実行結果）だった。残りの 16% が AI の思考や行動指示。つまり、**観察ログだけを古い順にバッサリ消せば、要約なんかしなくても値段がほぼ半分になる** はず、というのが出発点。\n\n例え話：自分の勉強ノートが「先生の話を全文書き写し（観察）」と「自分のメモ（思考）」で 84:16 だとしたら、先生の話の古い部分にマジックで黒線を引いて読めなくするだけで、ノートの厚さが大幅に減る。要約しなくても十分。\n\n### 仕組み\n\n著者は次の 3 つの戦略を、**まったく同じ AI・同じ評価条件** で比べた：\n\n- **step1: Raw Agent（なにもしない）**：ループを進めるたびにメモ帳がどんどん長くなる。ベースライン（比較の基準）。\n- **step2: Observation Masking（古い観察を覆い隠す）**：直近 M ターン（本実験では M=10、つまり最新 10 ステップぶん）だけ観察ログをそのまま残し、それより古い観察は「Previous 8 lines omitted for brevity.（前の 8 行は短くするため省略）」みたいなプレースホルダ（差し替え文字列）に置き換える。**思考と行動はずっと残す**。\n- **step3: LLM-Summary（別 AI に要約させる）**：合計 N+M=31 ターン（N=21 + M=10）たまったら、古い方の 21 ターンぶんを「要約専門の AI」に渡して短い要約文を作らせ、それと最新 10 ターンを並べたメモ帳に作り直す。OpenHands の要約プロンプトをほぼそのまま使った。\n- step4: これらを **5 種類のモデル × SWE-bench Verified の 500 問** で動かして、「正解率（solve rate, %）」と「1 問あたりにかかった料金（$）」を測る。\n  - 使ったモデル：Qwen3-32B（思考モードあり/なし）、Qwen3-Coder-480B、Gemini 2.5 Flash（思考モードあり/なし）の 5 構成。\n  - **SWE-bench Verified** は「実在する Python ライブラリの本物のバグ 500 件を AI に直させる」テストセット。\n- step5: 95% 信頼区間（実験を何度もやり直したら、たぶんこの範囲に結果が入る、という幅）を bootstrap（くじ引きで何度もデータを取り直す統計手法）で出す。違いが偶然じゃないと言えたら † マークをつける。\n- step6: 別のエージェント枠（OpenHands）でも 50 件試して、結論が他にも当てはまるか確認。\n- step7: 「最初は安いマスキングで粘って、メモがどうしても膨らんだら要約に切り替える」という **ハイブリッド戦略** も提案。\n\n### 主要な数式\n\n#### 数式1：ループでメモ帳が伸びていく様子\n\n$$ \\tau_{t-1} = (o_{sys}, o_{user}, T_1, T_2, \\dots, T_{t-1}) $$\n\n**この式が言ってること**: 「t 回目のループに入る直前のメモ帳の中身」は、最初の指示書（システムプロンプト）と問題文（ユーザープロンプト）に、これまでの 1〜t-1 回ぶんの「ターン」を全部つなげたもの、という意味。要するに、何もしないとメモ帳が際限なく長くなることを式で表したもの。\n\n**記号の意味**:\n- $\\tau_{t-1}$ … ターン t に入る直前のメモ帳ぜんぶ（τ は「軌跡＝これまでの足跡」のこと）\n- $o_{sys}$ … 一番最初に AI に与える「あなたはこういう役目です」という指示書\n- $o_{user}$ … 「このバグを直してね」というお題の文章\n- $T_i$ … i 回目のターン 1 セット。「考えごと $r_i$ ＋ 行動 $a_i$ ＋ 観察 $o_i$」の 3 つでできている\n- $t$ … 今が何回目のターンかを表す数（1, 2, 3, ...）\n\n**身近な例え**: 学校の理科ノート。1 ページ目に「今日の実験テーマ」と「お題」を書いてから、観察 1 回ごとに「考えたこと→やったこと→見えた結果」をワンセットで書き足していく。提出までにページがどんどん増えていく感じ。\n\n#### 数式2：Observation Masking（古い観察を覆い隠す）\n\n$$ o'_i = \\begin{cases} p_i & \\text{if } i < t-M \\\\ o_i & \\text{if } i \\geq t-M \\end{cases} $$\n\n**この式が言ってること**: 「今から見て M ステップより前」に書いた観察ログは、ぜんぶ短いダミー文 $p_i$（「前のログは省略」みたいな一言）に置き換える。最新の M ステップぶん（本実験では 10）だけはそのまま残す。考えたことや行動は消さない。\n\n**記号の意味**:\n- $o'_i$ … 書き換えた後の、i 回目の観察ログ\n- $o_i$ … もとの本物の観察ログ\n- $p_i$ … プレースホルダ（差し替え文字列。例：「Previous 8 lines omitted for brevity.」）\n- $i$ … 何ターン目のログかを表す番号\n- $t$ … 今が何回目のターンか\n- $M$ … 「最新の何ターンぶんを残すか」を決める数。本実験では 10\n\n**身近な例え**: 1 週間ぶんの日記をつけているけど、ノートが厚くなりすぎるので「8 日前より古い日記」はぜんぶ「○月○日：略」に書き換えてしまう。考えたことや「やったこと」は残すから、自分が何をしてきたかの流れは追える。\n\n#### 数式3：LLM-Summary（要約 AI を呼ぶ）\n\n$$ s_t \\sim \\pi'(\\,\\cdot\\, \\mid o_{si}, \\mathcal{T}_{sum}) $$\n\n$$ \\tau'_{t-1} = (o_{sys}, o_{user}, s_t, T_{t-M}, \\dots, T_{t-1}) $$\n\n**この式が言ってること**: 古い 21 ターンぶんのメモを別の AI（要約担当）に渡して、短い「これまでのまとめ」$s_t$ を書いてもらう。それから、新しいメモ帳は「最初の指示書＋お題＋まとめ＋最新 10 ターン」だけで作り直す。古い細かいログは消える。\n\n**記号の意味**:\n- $s_t$ … ターン t の時点での「これまでのまとめ」文\n- $\\pi'$ … 要約専門の AI（パイ・プライム。本体の AI とは別物として扱う）\n- $\\sim$ … 「左側は右側の条件で AI が確率的に作る」という意味の記号\n- $o_{si}$ … 「これを要約して」と要約 AI に渡す指示書\n- $\\mathcal{T}_{sum}$ … 要約してもらいたい古いターンの束\n- $\\tau'_{t-1}$ … 要約後に作り直したメモ帳\n- $T_{t-M}, \\dots, T_{t-1}$ … 残しておく最新 M ターンぶん\n\n**身近な例え**: 1 ヶ月の自由研究ノートが厚くなったとき、お姉ちゃんに「最初の 3 週間のページを 1 ページにまとめて」と頼んでメモを書いてもらう。新しいノートは「テーマ＋まとめページ＋直近 1 週間の生ログ」だけ。お姉ちゃんに頼むぶん、お小遣い（API 料金）がかかる。\n\n## 何がすごいの？\n\n論文の主な結果（数字はぜんぶ TeX の Table 1 から）。\n\n- **どの戦略でも、何もしないより安くなる**：5 構成中 4 構成でコストが 50% 以上カット。1 つの例外（Qwen3-32B 思考モード）は、そもそも軌跡が短すぎてメモ帳が膨らまなかったケース。\n- **Qwen3-Coder 480B（一番強いモデル）**：\n  - Raw Agent: 正解率 53.4% / 1 問 $1.29\n  - Observation Masking: **正解率 54.8%（+1.4 ポイント）／ 1 問 $0.61（-52.7% †）**\n  - LLM-Summary: 正解率 53.8% / 1 問 $0.64（-50.4% †）\n  - → マスキングのほうが安くて正解率もちょい高い。差はわずか $0.03 だけど 500 問で $15 浮く。\n- **Gemini 2.5 Flash（思考なし）**：Raw 32.8% / $0.41 → Masking 35.6% / $0.18（-56.1% †）→ Summary 36.0% / $0.24（-41.5% †）。マスキングが圧倒的に安い。\n- **Gemini 2.5 Flash（思考あり）**：両戦略とも正解率が大きく下がる（マスキングで -9.9% †、要約で -22.3% †）。「思考しながら過去のメモに頼っている」モデルだと、メモを切ると壊れる傾向。\n- **観察トークンが平均 84%** をしめる、という予備実験の数字が、Masking が効く理由の根っこ。\n- **要約は「軌跡を伸ばす」副作用がある**（Figure: trajectory_lengths_boxplots）：要約された context を渡すと AI は「まだ続けてやれる」と思って、ターン数が Gemini で +15%、Qwen3-Coder で +15% 増える。\n- **要約自体の料金**（Table summary_instance_costs）も無視できず、1 問の料金の **0.65〜7.20% を占める**。とくに Gemini は「キャッシュにヒットすれば最大 1/10 の値段」料金体系なのに、要約は毎回ユニークな入力なのでキャッシュが効かず損する。\n- **ハイブリッド戦略**（SWE-bench Verified-50・Qwen3-Coder 480B）：「最初は Masking で粘り、メモがたまったら要約を発火」を N=43, M=W=10 で実装。コストは Masking 比 -7%、要約比 -11%、正解率は Raw 比 **+2.6 ポイント**。\n- **OpenHands でも汎化**（50 件・Gemini 2.5 Flash 思考なし）：ただし窓サイズ M を SWE-agent の 10 から **58** へ調整し直す必要があった（OpenHands は構文エラー再試行を履歴に残すクセがあるため）。\n- 著者が論文中で挙げている貢献は次の 4 点：\n  1. SWE-agent 上で Observation Masking と LLM-Summary を 5 モデル × 500 問でフェアに比較。\n  2. LLM-Summary が負ける原因を「要約料金」と「軌跡が伸びる効果」の 2 つに分解して定量化。\n  3. 新しいハイブリッド戦略を提案し、コスト -7%/-11%、正解率 +2.6 ポイント。\n  4. コード・データ・全実行ログを JetBrains-Research/the-complexity-trap で公開。\n\n## キーワード辞典\n\n- **LLM（Large Language Model）** … 大量の文章を読んで覚えた、文章で答える AI のこと。ChatGPT の中身もコレ。\n- **エージェント（agent）** … LLM に道具（コマンド実行、ファイル読み）を持たせて、自分で何回もループしながら問題を解かせる仕組み。\n- **SE エージェント** … 「Software Engineering エージェント」。プログラムのバグ直しをやる専門のエージェント。\n- **SWE-agent / OpenHands / Cursor** … 上の「SE エージェント」の有名な実装。本論文は SWE-agent をメインに、OpenHands でも追試している。\n- **SWE-bench Verified** … 「実在する Python ライブラリの 500 件の本物のバグを直せるか」を測る試験セット。人間が解けることを確認済み版。\n- **トークン（token）** … AI から見たときの「文字のかたまり 1 個」の単位。だいたい英語で 4 文字くらい。料金はトークン数で決まる。\n- **コンテキスト（context）／コンテキストウィンドウ** … AI に一度に渡せるメモ帳の上限サイズ。100 万トークンとか。\n- **ターン（turn）** … エージェントの 1 ループぶん。「考える→行動→観察」の 3 点セット。\n- **観察（observation）** … エージェントが「ls してファイル一覧を見た」「テストを走らせた」結果として返ってくるテキスト。長くなりがち。\n- **ReAct / CodeAct** … 「考える（Reasoning）→ 行動（Action）」を交互にやる、エージェントの基本ループの形。\n- **プロンプト（prompt）** … AI にお願いする文章。「あなたは XX です」「これを要約して」など。\n- **placeholder（プレースホルダ）** … 中身を消した代わりに入れる短いダミー文字列。\n- **rolling window（ローリングウィンドウ）** … 「最新 M ターンぶんだけ残して、それより古いのは捨てる」という方式。窓が時間とともにずれていくイメージ。\n- **lost in the middle** … 長いメモを渡すと、AI が「真ん中あたりに書かれた大事な情報」を読み飛ばしがちな現象。\n- **bootstrap / 95% 信頼区間** … 実験データから何度もくじ引きでサブセットを作って、結果のばらつきを推定する統計手法。\n- **† マーク** … 「Raw Agent との差は偶然じゃない（p<0.05）」と統計的に言えた、という印。\n- **KV キャッシュ（KV cache）** … LLM が過去に読んだ部分の計算結果を覚えておくしくみ。同じ入力を再利用すると安くなる。要約は毎回違う入力なので効きにくい。\n- **YaRN** … LLM のコンテキストウィンドウを後から拡張するテクニックの名前。Qwen3-32B でこれを使って 122K トークンまで延ばしている。\n- **vLLM** … LLM を自分のマシンで効率よく動かすためのソフト。\n- **scaffold（スカフォールド）** … エージェントの「骨組み」のこと。SWE-agent や OpenHands は別々のスカフォールド。\n- **critic** … 「もう一人の AI に答えを批評させる」役。Self-Refine 系で使う。本論文では「要約に批評を混ぜたら逆効果だった」という付録結果がある。\n\n## ちょっと深掘り（中学生は飛ばして OK）\n\n- **なぜマスキングが効くか**：本論文の根拠は「観察が context の 84%」という 1 点に尽きる。84% を消せば、料金もほぼ 84% 近く減る計算。要約 AI は「16% の思考＋行動部分」も多少圧縮するけど、消す部分の大きさで比べたら大した差にならない。\n- **なぜ要約が軌跡を伸ばすか**（著者の仮説）：要約された文章は「これまでうまく整理されてる感」を醸し出すので、エージェントが「まだ追加で試せる」と感じて打ち切らない。生のログだと失敗の痕跡が露骨に残るので、早めにギブアップしやすい。\n- **ハイブリッドの N=43 の決め方**：マスキングで Raw Agent の N=21 ターン時の context サイズ（約 30K トークン）に揃えたら、ちょうど 43 ターンになった。「同じ情報密度で比べたい」という理屈。素朴に N=21, M=W=10 にすると KV キャッシュ効率が悪くなって逆に高くなる（§5.3 末尾の ablation）。\n- **OpenHands で M=10→58 に上げないとダメな理由**：OpenHands は構文エラーで失敗した再試行ターンも履歴に残す設計なので、最新 10 ターンに「失敗だらけの再試行」しか入らずダメだった、と著者は推測している。同じアイデアでもエージェント枠ごとにチューニングが必要、という移植時の注意点。\n- **コストは値段表しだい**：Qwen3-32B は Alibaba 公式 API が「キャッシュ hit/miss を区別しない」料金なので、本論文の Qwen のコストは少し割高に出ている。Gemini は Vertex が区別するので、マスキングが特に有利。「どの戦略が一番安いか」は使う API の値段表に依存する。\n- **限界**（著者自身が §6 で記述）：\n  1. SE ドメインだけで実験している。観察が短くて思考が長いドメイン（数学推論など）では結論が変わる可能性。\n  2. マスキングは「ファイルを編集した直後にその古い読み込み結果を消してしまう」など、関連度を見ていない素朴ヒューリスティクス。\n  3. 別エージェント枠での汎化は 50 件・1 モデルだけで、決定的ではない。\n- **Critic を要約に混ぜる実験（§D.3）**：150 件・SWE-agent で試したが、正解率は伸びず、軌跡だけ余計に長くなった。「要約＝反省」と思って混ぜると裏目に出る、というネガティブ結果。\n\n## もとの論文・正規ノート\n\n- 論文 TeX: `papers/arXiv-2508.21433v3/`\n- 正規ノート: `notes/arXiv-2508.21433v3.md`\n";
+const MACROS = {"\\xxcomment": "\\textcolor{#1}{[$^{\\textsc{#2}}_{\\textsc{#3}}$ #4]}", "\\mart": "\\xxcomment{orange}{Y}{Z}{#1}", "\\good": "\\textcolor{ForestGreen}{#1}", "\\bad": "\\textcolor{red}{#1}", "\\sig": "\\textsuperscript{†}"};
+window.addEventListener('load', () => {
+  const md = window.markdownit({ html: false, linkify: true, typographer: false, breaks: false });
+  document.getElementById('content').innerHTML = md.render(RAW);
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true },
+      { left: '$',  right: '$',  display: false },
+      { left: '\\[', right: '\\]', display: true },
+      { left: '\\(', right: '\\)', display: false },
+    ],
+    macros: MACROS,
+    throwOnError: false,
+    errorColor: '#cc4444',
+    strict: 'ignore',
+  });
+  // スクロール位置を sessionStorage で保つ（--watch 時の auto refresh 対策）
+  const key = 'scroll:' + location.pathname;
+  const saved = sessionStorage.getItem(key);
+  if (saved) window.scrollTo(0, parseInt(saved));
+  window.addEventListener('scroll', () => sessionStorage.setItem(key, String(window.scrollY)));
+});
+</script>
+</body>
+</html>

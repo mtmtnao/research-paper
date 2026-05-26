@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""papers/arXiv-*/ に対して、対応する notes/*.md が無いものを並列に Claude で生成する。
+"""papers/arXiv-*/ に対して、対応する notes/*.md が無いものを並列に生成する。
 
 Usage:
     python3 scripts/note.py            # デフォルト 3 並列
     python3 scripts/note.py 5          # 並列度を変更
     MODEL=claude-opus-4-6 python3 scripts/note.py
+    AGENT=codex MODEL=gpt-5.5 python3 scripts/note.py
 
 仕様:
-- `claude -p` ヘッドレスを subprocess で起動
-- 各ワーカーは独立した Claude セッション（コンテキストは混ざらない）
+- `claude -p` または `codex exec` ヘッドレスを subprocess で起動
+- 各ワーカーは独立したエージェントセッション（コンテキストは混ざらない）
 - 既存ノートは skip（冪等）
 - stdout/stderr は logs/<folder>.log に保存
 """
@@ -27,9 +28,12 @@ PAPERS_DIR = ROOT / "papers"
 NOTES_DIR = ROOT / "notes"
 LOGS_DIR = ROOT / "logs"
 
-# 最新の Opus。新しい版が出たらここを更新する。
-# 2026-05-12 時点: claude-opus-4-7 (Anthropic 公式モデル一覧で確認済み)
-MODEL = os.environ.get("MODEL", "claude-opus-4-7")
+AGENT = os.environ.get("AGENT", "claude").strip().lower()
+DEFAULT_MODELS = {
+    "claude": "claude-opus-4-7",
+    "codex": "gpt-5.5",
+}
+MODEL = os.environ.get("MODEL", DEFAULT_MODELS.get(AGENT, ""))
 DEFAULT_PARALLEL = 3
 PER_PAPER_TIMEOUT_SEC = 60 * 60  # 1 時間
 
@@ -39,8 +43,31 @@ EXAMPLE_REL = "notes/arXiv-2305.14325v1.md"  # few-shot 用の手本ノート
 # プラン使用制限（session/weekly/Opus limit）の検出パターン。
 # 例: "You've hit your session limit · resets 3:45pm"
 # 検出したら以降のワーカー起動を止めて追加課金を避ける。
-LIMIT_RE = re.compile(r"You've hit your .*?limit", re.IGNORECASE)
+LIMIT_RE = re.compile(
+    r"(You've hit your .*?limit|usage limit|rate limit|quota exceeded)",
+    re.IGNORECASE,
+)
 LIMIT_HIT = threading.Event()
+
+
+def build_cmd(prompt: str) -> list[str]:
+    if AGENT == "claude":
+        return [
+            "claude", "-p", prompt,
+            "--model", MODEL,
+            "--allowed-tools", "Read,Write,Glob,Grep",
+            "--permission-mode", "acceptEdits",
+        ]
+    if AGENT == "codex":
+        return [
+            "codex", "exec",
+            "-C", str(ROOT),
+            "-m", MODEL,
+            "-s", "workspace-write",
+            "-a", "never",
+            prompt,
+        ]
+    raise ValueError(f"unsupported AGENT={AGENT!r} (expected 'claude' or 'codex')")
 
 
 def build_prompt(folder: str) -> str:
@@ -81,12 +108,11 @@ def run_one(folder: str) -> tuple[str, bool, str]:
     if note_path.exists():
         return folder, True, "skip (already exists)"
 
-    cmd = [
-        "claude", "-p", build_prompt(folder),
-        "--model", MODEL,
-        "--allowed-tools", "Read,Write,Glob,Grep",
-        "--permission-mode", "acceptEdits",
-    ]
+    try:
+        cmd = build_cmd(build_prompt(folder))
+    except ValueError as e:
+        return folder, False, str(e)
+
     try:
         r = subprocess.run(
             cmd,
@@ -97,7 +123,7 @@ def run_one(folder: str) -> tuple[str, bool, str]:
         )
         log_path.write_text(
             f"# {folder}\n"
-            f"$ claude -p <prompt> --model {MODEL} ...\n\n"
+            f"$ {AGENT} <prompt> --model {MODEL} ...\n\n"
             f"--- stdout ---\n{r.stdout}\n\n"
             f"--- stderr ---\n{r.stderr}\n"
         )
@@ -112,7 +138,7 @@ def run_one(folder: str) -> tuple[str, bool, str]:
         log_path.write_text(f"# {folder}\nTIMEOUT after {PER_PAPER_TIMEOUT_SEC}s\n")
         return folder, False, "timeout"
     except FileNotFoundError:
-        return folder, False, "claude CLI not found in PATH"
+        return folder, False, f"{AGENT} CLI not found in PATH"
     except Exception as e:
         return folder, False, f"error: {e}"
 
@@ -124,6 +150,11 @@ def main(argv: list[str]) -> int:
     all_papers = sorted(p.name for p in PAPERS_DIR.glob("arXiv-*") if p.is_dir())
     todo = [f for f in all_papers if not (NOTES_DIR / f"{f}.md").exists()]
 
+    if AGENT not in DEFAULT_MODELS:
+        print(f"error: unsupported AGENT={AGENT!r} (expected 'claude' or 'codex')", file=sys.stderr)
+        return 1
+
+    print(f"Agent: {AGENT}")
     print(f"Model: {MODEL}")
     print(f"Parallel: {parallel}")
     print(f"Total papers: {len(all_papers)}, missing notes: {len(todo)}")
