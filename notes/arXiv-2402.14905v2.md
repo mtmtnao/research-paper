@@ -23,27 +23,27 @@
 - GQA は 7B+ で KV-cache 圧縮のために使うイメージだったが、sub-billion でも「kv-head を共有して浮いたパラを embed dim に振る」weight 再利用テクとして効く（125M で +0.4）。
 - §3.5（KD）が negative result として記録されている点が嬉しい。LLaMA-v2 7B を teacher にしても 125M/350M では速度 2.6–3.2× 遅くなるだけで精度はほぼ同等 or 劣る。sub-billion での KD は割に合わないという根拠データ。
 - API calling で 350M が 7B と EM 同等という結果は「on-device で agent 化する」ロードマップを現実的に見せる。Rouge が低くても intent/structure が当たれば良い、というタスク特性も含めて応用先選定の参考になる。
-- AlpacaEval 48.20% は text-davinci-001 の自己勝率 50% にほぼ並ぶ、と著者は強調するが、GPT-4 採点バイアスの余地は残るので「self-win rate ≒ 50% との相対比較」を見るのが妥当。
+- AlpacaEval 48.20% は text-davinci-001 の自己勝率 50% にほぼ並ぶ、と著者は強調する。ただし評価者は GPT-4 であり、このノートでは「self-win rate ≒ 50% との相対比較」として読む（評者補足）。
 
 ## Critical Thoughts（評価・疑問）
 
 - **強み**:
   - 19 個の 125M/350M モデルを実際に学習して depth vs width を grid 評価しているので、scaling law へのカウンター主張が経験則として強い。Section 2.2.2 / Appendix C のテーブルが裏付けになっている。
   - 「アーキ → embedding 共有 → GQA → layer sharing」の寄与が appendix Table tab:appendix_roadmap（appendix §B、125M で +1.3/+0.9/-0.2/+0.4/+1.1 と分解）で逐次的に検証されており、貢献の切り分けが明確。
-  - on-device 実測（iPhone 13 ExecuTorch）まで踏み込んでいる点が、一般的な「精度だけ報告」のサブ B 系論文より一段強い。layer sharing は理屈上 SRAM フィットを根拠にしているので、それを実機の execute 時間（16.0 vs 29.0 ms）で示しているのは綺麗。
+  - on-device 実測（iPhone 13 ExecuTorch）まで踏み込んでいる。layer sharing は SRAM に共有重みを置けることを採用理由としており、それを実機の execute 時間（16.0 vs 29.0 ms）でも示している。
   - 1.5B まで同じレシピがスケールすることを appendix で示し「sub-billion 専用テク」ではないことに踏み込んでいる。
 - **弱み / 疑問**:
-  - 学習データの種類・出典が main text に明記されていない（TeX 中には明示されていない）。比較対象の OPT/Pythia/GPT-Neo はそれぞれ違うコーパスで学習されているので、「アーキ差で勝った」のか「データで勝った」のか厳密には分離できない。1T tokens で揃えたのは比較相手より多い可能性が高い。
+  - 事前学習データの種類・出典が TeX 中に明記されていない。そのため、比較対象との精度差を「アーキ差」だけに分解できるかは、この TeX だけでは確認できない。
   - 「深さ > 幅」の主張は 125M/350M の範囲では強いが、1B 超の領域では同じ手法（grid）での比較は appendix にも見当たらず、結論は extrapolation にとどまる。
   - Layer sharing は accuracy も上がっているが、layer-sharing ablation table (tab:layer_share) では immediate block-wise (45.0) は repeat-all-over (45.2) にわずかに劣る。本文では「SRAM に収まるから immediate を採る」と言うが、その精度差自体の有意性（seed variance）の議論がない。
-  - 著者自身が認める limitation: **KD が効かない**（§3.5, appendix §G）。「pre-training に teacher を入れても 2.6–3.2× の slowdown でほぼ same/worse」という結果は、small LLM の蒸留に対する素朴な期待を否定する重要な negative result。
-  - AlpacaEval / MT-Bench は GPT-4 judge による評価で、verbosity bias など既知のバイアスがある。Chat 結果を「1B モデル超え」と読むには注意。
-  - API calling のデータセットは synthetic 5000/2500 を著者が生成しており、tool 呼び出しの分布が真の on-device 利用と一致する保証はない。
+  - 著者が報告する negative result: **KD が効かない**（§3.5, appendix §G）。「pre-training に teacher を入れても 2.6–3.2× の slowdown でほぼ same/worse」という結果は、small LLM の蒸留に対する素朴な期待を否定する重要なデータ。
+  - AlpacaEval / MT-Bench は GPT-4 judge による評価である。Chat 結果を「1B モデル超え」と読む際は、この評価設定に依存している点に注意（評者補足）。
+  - API calling のデータセットは synthetic 5000/2500 を著者が生成している。tool 呼び出しの分布が実利用と一致するかは TeX 中には示されていない。
 - **次に試したいこと**:
-  - 同じ学習トークン量・同じデータでアーキだけ変えた fair comparison（特に Pythia と完全同条件）を再現し、「アーキ寄与」を切り出す。
-  - immediate block-wise sharing の repeat 回数を 3〜4 にしたとき性能が落ちる現象（Appendix E）を、loss landscape / 表現の冗長性の観点から分析。
+  - 同じ学習トークン量・同じ事前学習データでアーキだけ変えた比較を再現し、「アーキ寄与」を切り出す（評者補足）。
+  - immediate block-wise sharing の repeat 回数を 3〜4 にしたとき、著者が「accuracy enhancement effect diminishes」と述べる現象（Appendix E）を、loss landscape / 表現の冗長性の観点から分析（評者補足）。
   - GQA の kv-head 数を mixture-of-experts や per-layer で可変にしたら更に精度／メモリの pareto が動くか。
-  - MobileLLM-350M を function-calling 専用に SFT した時、Llama-3-8B-Instruct とどこまで差が縮まるか。on-device agent の現実的下限を測る。
+  - MobileLLM-350M を function-calling 専用に SFT した時、より大きな instruction-tuned model とどこまで差が縮まるかを測る（評者補足）。
   - 蒸留が効かない原因（teacher logits の温度、batch 内 cross-entropy 形式）を変えて再検証。
 
 ## Notes / Quotes
@@ -61,6 +61,7 @@
 - (verified 2026-05-20) Table 番号を file 命名順から本文 \input 順に修正 → tab:main は 3 番目だが label 参照に統一 (main.tex 内 \input 順序)。
 - (verified 2026-05-20) Related Papers の SwiGLU 出典を `dauphin2017language` のみに訂正、未引用の Shazeer を除去 (main.bbl)。
 - (verified 2026-05-20) 60-layer non-shared の latency 増分を「+143%（load+init 合算）/ +86%（execute）」と paper 表記に揃え、個別値（+75%/+146%/+86%）も併記 (tables/9_latency.tex, main.tex §3.6)。
+- (verified 2026-05-27) GPT-4 judge bias、比較対象の事前学習データ、Llama-3 参照、Appendix E の layer repeat 解釈など TeX で直接確認できない／表とずれる記述を削除または評者補足として明示 (main.tex, appendix.tex, appendix/6_num_layer_repeat.tex, tables/6_chat.tex)。
 
 ## Related Papers
 

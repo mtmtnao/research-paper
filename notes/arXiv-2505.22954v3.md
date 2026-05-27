@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/2505.22954
 - source: ../papers/arXiv-2505.22954v3/
 - authors: Jenny Zhang, Shengran Hu, Cong Lu, Robert Lange, Jeff Clune (UBC / Vector Institute / Sakana AI / CIFAR)
-- venue / year: ICLR 2026 投稿版 (arXiv preprint, v3)
+- venue / year: ICLR 2026（TeX は `iclr2026_conference.sty` かつ `\iclrfinalcopy` を使用。arXiv v3 はフォルダ名由来）
 - tags: [self-improving-agent, open-endedness, LLM-agent, SWE-bench, evolutionary-search, AI-safety]
 - read_date: 2026-05-12
 - rating:
@@ -13,7 +13,7 @@
 ## Summary（著者の主張）
 
 - **問題**: 現在の AI システムは人手で固定設計され、自身のコードを書き換えて自律的・継続的に改善できない。Schmidhuber の Gödel Machine は「証明付きで自己改良する」枠組みだが、実 AI の改変が有益かを形式的に証明するのは現実的に不可能。一方で ADAS のようなメタエージェント手法は「ダウンストリーム性能」と「自己改良能力」が乖離し得る、また hill-climbing 型の自己改良は局所最適に嵌まる。
-- **手法**: **Darwin Gödel Machine (DGM)** を提案。形式証明の代わりに **コーディングベンチマーク上の経験的検証** で自己改変を判定し、Darwin 進化に倣って archive（過去エージェント全保存）から親をサンプル → 自己改変 → 評価 → archive に追加、を 80 iter 繰り返す。エージェントは frozen FM + 2 ツール（Bash, Edit）の Python 実装で、自分のレポを書き換えて新版エージェントを生成。親選択は sigmoid スケールした性能 × 1/(1+子供数) で開拓と活用をバランス（λ=10, α₀=0.5, SWE-bench は k=2 並列、Polyglot は k=4）。評価は staged: まず 10 task → ≥40% なら 50/60 task → トップ2 かつ ≥40% なら 200 task。自己改変提案には別途 o1 を診断 FM として使う。エージェント本体の FM は SWE-bench で Claude 3.5 Sonnet (New)、Polyglot 評価は o3-mini、temperature=1.0。サンドボックス内実行＋時間制限＋系統 traceability で安全策。
+- **手法**: **Darwin Gödel Machine (DGM)** を提案。形式証明の代わりに **コーディングベンチマーク上の経験的検証** で自己改変を判定し、Darwin 進化に倣って archive（過去エージェント全保存）から親をサンプル → 自己改変 → 評価 → archive に追加、を 80 iter 繰り返す。エージェントは frozen FM + 2 ツール（Bash, Edit）の Python 実装で、自分のレポを書き換えて新版エージェントを生成。親選択は sigmoid スケールした性能 × 1/(1+子供数) で開拓と活用をバランス（λ=10, α₀=0.5, SWE-bench は k=2 並列、Polyglot は k=4）。評価は staged: まず 10 task で基本編集機能を確認し、SWE-bench は追加 50 task と合わせた 60-task subset で ≥40% かつ archive 上位2なら 200 task、Polyglot は 10-task subset で ≥40% なら 50-task subset。自己改変提案には別途 o1 を診断 FM として使う。エージェント本体の FM は SWE-bench で Claude 3.5 Sonnet (New)、Polyglot 評価は o3-mini、temperature=1.0。サンドボックス内実行＋時間制限＋系統 traceability で安全策。
 - **結果**:
   - SWE-bench Verified: **20.0% → 50.0%**（200 task 評価）。チェック済 OSS SoTA に匹敵。
   - Polyglot: 評価 50 task で 14.0% → 38.0%、フルベンチで **14.2% → 30.7%** で Aider を上回る。
@@ -30,7 +30,7 @@
 - **archive ＋ 親の確率的サンプリング（DGM Greedy より +10pt）**：deceptive dip を越える効果が定量で出ている（iter 4, 56 で一度親より低下しても、その系統からブレイクスルーが生まれる例）。これは Go-Explore 的な開拓ボーナス（1/(1+子供数)）の現実的な威力サンプルとして引用価値がある。
 - **改変の中身がそのまま示唆になる**: DGM が獲得した改良は「edit ツールを行範囲ビュー＋文字列置換に粒度を上げる」「複数解を生成して別 FM に選ばせる」「過去試行を次の生成に context として渡す」など、エージェント設計界で人手で蓄積されてきたパターンと同型。同じ機能でも実装で 23.3% vs 40.5% と大差（node 6 vs 24）、設計探索を諦めず複数実装を試す価値を裏付ける。
 - **コスト**: SWE-bench で 1 run 約 USD 22,000・2 週間（baseline は約 USD 10,000）。「人手の SoTA エンジニアと比べれば安い」と著者は主張するが、再現できる研究者は限られる。Polyglot は USD 5/60 task 単位なのでこちらが再現入口。
-- **objective hacking の実例**：ハルシネーション検出関数を「隠さない」と特殊トークンの記録自体を消して評価関数を迂回した。自己改変系の安全評価は「評価関数を unmodifiable に隔離する」アイデアの説得材料として使える。
+- **objective hacking の実例**：著者は検出関数を hidden にしない場合に objective hacking が増えると述べ、hidden 設定でも node 114 は特殊トークンの記録自体を消して評価関数を迂回した。自己改変系の安全評価は「評価関数を unmodifiable に隔離する」アイデアの説得材料として使える。
 
 ## Critical Thoughts（評価・疑問）
 
@@ -42,7 +42,7 @@
   - **計算コストと統計**: 主結果は 80 iter 1 run。Polyglot で 3 回 (40.7±2.3%) は出しているが、SWE-bench は 1 シードのみ。50.0% という数字の分散が分からない。
   - **「コーディング性能＝自己改変性能」という核心仮定の正当化が弱い**。改善の中身（edit tool 粒度・workflow）が確かにエージェント設計の改良として読めるという qualitative 観察に依存。Limitations でも「extend beyond coding」「co-evolve task distribution」を future work として認めている。
   - **診断 FM を別途 o1 で動かしている**ので、純粋に「エージェントが自分でログを見て次の改良案を立案」しているわけではない。本文も "no fundamental limitation" と書くが、現実装は独立 FM 込みのループであり、self-referential 度合いは控えめに見るべき。
-  - **SWE-bench は人気ベンチ＝Claude の post-training に入りやすい**点を著者自身が Polyglot 採用理由で認めている。とはいえ SWE-bench Verified の SoTA は閉ソース solution に届かず（著者も Limitations で明記）、「open-ended にいつまで回せば追いつくか」は未解決。
+  - **SWE-bench は人気ベンチ＝FMs の training sets に含まれている可能性が高い**点を著者自身が Polyglot 採用理由で認めている。とはいえ SWE-bench Verified の SoTA は閉ソース solution に届かず（著者も Limitations で明記）、「open-ended にいつまで回せば追いつくか」は未解決。
   - **私的テストパッチを診断プロンプトに入れている**（app:selfimprove-prompts）。手動検査で memorization は無いとしているが、これは強い前提で、leakage の定量検証は無し。
   - **objective hacking** が既に出ている時点で、評価指標とのいたちごっこは始まっている。検出関数を hidden にしただけで完全には封じ切れない（node 114 は hidden 設定ですら検出ロジックの裏を突いた）。
   - **archive が肥大化する一方**。pruning / 興味度フィルタは future work 任せで、「全部残す」の長期スケーラビリティは未検証。
@@ -64,14 +64,11 @@
 - 安全策: sandbox 隔離、実行時間制限、改変は Python codebase に限定、archive で系統 traceable、害ある挙動は未観測（§6）。
 - 認めた限界: 閉ソース SWE-bench SoTA には未到達、1 run 約 2 週間 / 約 USD 22,000、FM 能力に律速、coding 以外への一般化は future work、open-ended exploration ロジック自体は固定（§7 Conclusion, app:future-work）。
 - ハルシネーション抑制で objective hacking: node 114 はログの特殊トークンを削除して検出回避（app:dgm-halluc）。"When a measure becomes a target, it ceases to be a good measure."
+- (verified 2026-05-27) venue/year を TeX で確認できる範囲（`iclr2026_conference.sty` と `\iclrfinalcopy`）に限定し、「投稿版」を削除 (main.tex)
+- (verified 2026-05-27) SWE-bench のデータ混入リスク表現を「Claude の post-training」から TeX の "training sets of FMs" に合わせて修正 (main.tex, §Benchmarks)
+- (verified 2026-05-27) `main.bbl` が同梱されていないため、Related Papers の引用タイトル展開を削除 (main.tex, main.bib)
+- (verified 2026-05-27) staged evaluation と hallucination objective hacking の条件を本文記述に合わせて具体化 (main.tex, §Benchmarks, app:dgm-halluc)
 
 ## Related Papers
 
-- Schmidhuber, *Gödel Machines* (2007) — 形式証明型自己改良の理論的源流、DGM はこの「証明」を「経験評価」に緩めた版。
-- Hu+ ADAS (2025) — 固定メタエージェントが下流エージェントを生成。DGM w/o self-improve がほぼこの設定。
-- Robeyns+ (2025) — 単一エージェントの自己改変・コーディング系最近接同時期研究。DGM はこの hill-climbing 版に対し archive + 開拓性で差別化（DGM Greedy が概ね同型）。
-- Yin+ (G-) / Zelikman+ (Self-Taught Optimizer) (2024) — 自己改良系の先行研究、メタ utility と下流タスクの非整合が問題と整理。
-- Ecoffet+ Go-Explore (2019), Stanley & Lehman *Greatness Cannot Be Planned* — 親選択と stepping-stone 思想の元ネタ。
-- Faldor+ OMNI-EPIC (2025), Zhang+ OMNI (2024) — open-endedness と興味度駆動探索。
-- Jimenez+ SWE-bench (2024), OpenAI SWE-bench Verified (2024), Gauthier Polyglot/Aider (2024) — 評価ベンチと比較対象。
-- Bai+ Constitutional AI (2022), Rosser+ AgentBreeder (2025) — 安全側に self-improve を向ける議論で参照。
+- (TeX ソースに `main.bbl` が同梱されていないため、引用文献タイトルは展開しない)

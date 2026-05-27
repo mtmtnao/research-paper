@@ -46,7 +46,7 @@
 - LLM-Summary には見落とされがちな 2 種類の hidden cost がある: (a) 要約生成自体の API コスト（最大 7.2%、しかも cache miss）、(b) 要約された context がエージェントに「まだやれる感」を与えて軌跡を伸ばすこと（+15% turn）。前者だけ気にしていると後者を見逃す。
 - "warm-up 期間中は安い戦略 (ObsMask)、本当に context が膨らんだら高い戦略 (LLM-Summary)" という遅延発火 hybrid が普通に効くのは応用しやすい。N の決め方が「ObsMask 下で Raw の N=21 相当の context 量に達する点」というのも実装指針として明快。
 - Rolling window サイズ M は scaffold-specific ハイパーパラメータ。SWE-agent では M=10 だが OpenHands では M=58 まで開けないとダメ。同じ「Observation Masking」でも scaffold が retry/失敗ターンをどう扱うかでチューニングが必要、というのは移植時の注意点。
-- Gemini 2.5 Flash thinking で両戦略とも solve rate が大きく落ちる (-9.9pp / -22.3pp) のは「reasoning が前の context に依存しているモデルでは context を切ると壊れる」ことを示唆。思考トレースが長いモデルには別戦略が必要そう。
+- Gemini 2.5 Flash thinking で両戦略とも solve rate が大きく落ちる（ObsMask: -4.0pp / 相対 -9.9%、LLM-Summary: -9.0pp / 相対 -22.3%）のは「reasoning が前の context に依存しているモデルでは context を切ると壊れる」ことを示唆。思考トレースが長いモデルには別戦略が必要そう。
 - Critic を要約に混ぜると軌跡が更に伸びるという negative result は、「要約 = 反省」という素朴な intuition の罠を示している。Self-Refine 系を context 管理に混ぜるのは要注意。
 
 ## Critical Thoughts（評価・疑問）
@@ -87,6 +87,7 @@
 - Critic-enhanced summary: "no improvement in solve rate over standard LLM-Summary ... critic-enhanced runs producing even longer trajectories than standard summarization" (§D.3 / Appendix `appendix:ablation:critic`)
 - (verified 2026-05-20) Gemini 2.5 Flash (thinking) と Qwen3-32B (non-thinking) の solve rate 変化を「pp」と「% (相対)」に分解して両方記載 (Table 1 と Table `tab:appendix_pvals_bootstrap` の整合) — 元の "-9.9pp / -22.3pp" は Table 1 の relative % を pp として誤記していた。
 - (verified 2026-05-20) Critic-enhanced LLM-Summary の節番号を §B.3 → §D.3 に訂正（\appendix 後の section ordering: A=Experimental Config, B=Short Trajectories, C=Detailed Main Results, D=Additional Studies。Critic-Enhanced は D.3）。150 サンプルでの実験条件も明記 (neurips_2025.tex `appendix:ablation:critic`)。
+- (verified 2026-05-27) Takeaway に残っていた Gemini 2.5 Flash (thinking) の "-9.9pp / -22.3pp" 誤記を、ObsMask -4.0pp / LLM-Summary -9.0pp と相対値 -9.9% / -22.3% に修正 (neurips_2025.tex Table `tab:main_results`, Table `tab:appendix_pvals_bootstrap`)
 
 ## Related Papers
 

@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/2507.13334
 - source: ../papers/arXiv-2507.13334v2/
 - authors: Lingrui Mei, Jiayu Yao, Yuyao Ge, Yiwei Wang, Baolong Bi, Yujun Cai, Jiazhi Liu, Mingyu Li, Zhong-Zhi Li, Duzhen Zhang, Chenlin Zhou, Jiayi Mao, Tianze Xia, Jiafeng Guo, Shenghua Liu
-- venue / year: arXiv preprint, 2025-07-21 (v2)
+- venue / year: TeX 中には明示なし（main.tex の Date は July 21, 2025）
 - tags: [survey, LLM, context-engineering, RAG, memory, tool-use, multi-agent]
 - read_date: 2026-05-12
 
@@ -21,7 +21,7 @@
 - 著者の中心命題は「prompt = 静的文字列」から「context = 動的に組み立てられる情報パイプライン」への視点転換。$C = \mathcal{A}(c_{\text{instr}}, c_{\text{know}}, c_{\text{tools}}, c_{\text{mem}}, c_{\text{state}}, c_{\text{query}})$ という分解は、自分が普段書いている agent コードのモジュール境界（system prompt / retriever / tool spec / chat history / state / user query）にそのまま対応するので、設計レビューのチェックリストに使える。
 - Retrieve を「$Y^*$ との mutual information $I(Y^*; c_{\text{know}} | c_{\text{query}})$ を最大化する写像」と書く定式化は、semantic similarity だけで retriever を評価しがちな実務に対する強い指針。「似ているが答えに寄与しない文書」を切る根拠になる。
 - 全体構造として「**Foundational Components** が部品、**System Implementations** がそれらを組み合わせた architecture」という二層分離はクリーンで、自分が論文を漁る時の引き出しになる。例えば Agentic RAG は RAG (system) ⊃ Context Retrieval (component) + Self-refinement (component) + Tool calling (system) という重ね合わせとして読める。
-- 著者が最大の open problem に据えたのが **comprehension-generation asymmetry**：理解側はベンチマーク満点に近づくのに、long-form 生成は coherence / factuality / planning で大きく崩れる。これは今後論文を読むときの観察軸として強力。
+- 著者が重要課題として据えたのが **comprehension-generation asymmetry**：理解側はベンチマーク満点に近づくのに、long-form 生成は coherence / factuality / planning で大きく崩れる。これは今後論文を読むときの観察軸として強力。
 - 評価まわりで BLEU / ROUGE / perplexity が context-engineered system の評価には根本的に不適、と明言（evaluation.tex §6.3.1 Methodological Limitations）。代わりに self-refinement の改善幅、tool 呼び出しの trajectory 全体、orchestration の transactional integrity を測れと言っている。
 - Multi-agent 通信プロトコルが Anthropic MCP / Google A2A / IBM ACP / ANP と既に乱立しており、相互運用性 + セキュリティが production の鍵になる、という記述は実務寄りの重要情報（future.tex §7.3.2 Large-Scale Multi-Agent Coordination）。
 - 「graph を language に変換するか、専用エンコーダを足すか」は未解決の二項対立として整理されており、GraphRAG / GraphGPT / GraphWiz / G1 の位置付けが俯瞰できる（future.tex §7.2.3 Complex Context Organization and Solving Graph Problems）。
@@ -69,6 +69,8 @@
 - (verified 2026-05-20) 「Figure 2: ce.pdf / Figure 1: tree.pdf」の誤った図番号付与を削除し、taxonomy forest（intro.tex）/ tree.pdf timeline / ce.pdf framework の 3 図構成として記述。
 - (verified 2026-05-20) "Table 5" の番号引用を削除し、TeX ラベル tab:x_webarena_leaderboard で参照に変更。
 - (verified 2026-05-20) "field-defining priority" → 原文 abstract の "defining priority for future research" に合わせて訂正。
+- (verified 2026-05-27) venue/year を TeX で確認できる範囲（main.tex の Date: July 21, 2025、掲載先明示なし）に限定。
+- (verified 2026-05-27) Related Papers の Xia et al. / Singh et al. の表記を main.bbl の実タイトルに合わせて修正。
 
 ## Related Papers
 
@@ -82,6 +84,6 @@
 - Wu et al. 2023 *AutoGen* / Hong et al. 2023 *MetaGPT* / Li et al. 2023 *CAMEL* / Chang et al. 2025 *SagaLLM* — Multi-Agent Systems。
 - Mialon et al. 2023 *GAIA* / Wang et al. 2024 *GTA* / Zhou et al. 2023 *WebArena* / Deng et al. 2023 *Mind2Web* / Jang et al. 2024 *VideoWebArena* / Bosse et al. 2025 *Deep Research Bench* — エージェント評価ベンチマーク。
 - Patil et al. 2025 *BFCL* / Chen et al. 2023 *T-Eval* / Li et al. 2023 *API-Bank* / Ye et al. 2025 *ToolHop* / Gao et al. 2025 *MCP-RADAR* — tool 利用評価。
-- Xia et al. 2025 *LongMemEval* / Kwon et al. 2025 *MEMENTO* / Kočiský et al. 2017 *NarrativeQA* — memory / 長期記憶評価。
+- Xia et al. 2025 *Minerva*（本文では LongMemEval 500 questions として説明）/ Kwon et al. 2025 *Embodied Agents Meet Personalization* / Kočiský et al. 2017 *NarrativeQA* — memory / 長期記憶評価。
 - Anthropic *MCP* / Google *A2A* / IBM *ACP* / *ANP* — agent 間通信プロトコル。
-- Gao et al. 2024 *Modular RAG* / Singh et al. 2025 *Agentic RAG* / Guo et al. 2024 *LightRAG* / Edge et al. 2024 *GraphRAG* / Sarthi et al. 2024 *RAPTOR* / Gutiérrez et al. 2024 *HippoRAG* — RAG architecture の進化系。
+- Gao et al. 2024 *Modular RAG* / Singh et al. 2025 *Agentic Reasoning and Tool Integration* / Guo et al. 2024 *LightRAG* / Edge et al. 2024 *GraphRAG* / Sarthi et al. 2024 *RAPTOR* / Gutiérrez et al. 2024 *HippoRAG* — RAG / agentic reasoning architecture の進化系。

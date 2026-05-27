@@ -44,8 +44,8 @@ EXAMPLE_REL = "notes/arXiv-2305.14325v1.md"  # few-shot 用の手本ノート
 # 例: "You've hit your session limit · resets 3:45pm"
 # 検出したら以降のワーカー起動を止めて追加課金を避ける。
 LIMIT_RE = re.compile(
-    r"(You've hit your .*?limit|usage limit|rate limit|quota exceeded)",
-    re.IGNORECASE,
+    r"^(?:error:\s*)?(?:You've hit your (?!\.\.\.)[^\n]*limit|usage limit[^\n]*|rate limit[^\n]*|quota exceeded[^\n]*)$",
+    re.IGNORECASE | re.MULTILINE,
 )
 LIMIT_HIT = threading.Event()
 
@@ -60,11 +60,10 @@ def build_cmd(prompt: str) -> list[str]:
         ]
     if AGENT == "codex":
         return [
-            "codex", "exec",
+            "codex", "-a", "never", "exec",
             "-C", str(ROOT),
             "-m", MODEL,
             "-s", "workspace-write",
-            "-a", "never",
             prompt,
         ]
     raise ValueError(f"unsupported AGENT={AGENT!r} (expected 'claude' or 'codex')")

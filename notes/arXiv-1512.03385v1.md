@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/1512.03385
 - source: ../papers/arXiv-1512.03385v1/
 - authors: Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun (Microsoft Research)
-- venue / year: arXiv 2015-12 / CVPR 2016 (ILSVRC & COCO 2015 winner entry)
+- venue / year: TeX 中には発表 venue 明示なし（cvpr.sty と \cvprfinalcopy を使用、ILSVRC & COCO 2015 competitions の 1 位結果を記載）
 - tags: [CNN, image-classification, residual-learning, ILSVRC, deep-network, optimization]
 - read_date: 2026-05-12
 
@@ -18,40 +18,39 @@
   - Single-model val (Table~\ref{tab:single}): ResNet-152 top-1 19.38 / top-5 4.49（既存単一モデルでは BN-inception の 5.81、PReLU-net の 5.71 を上回り、過去のアンサンブル結果すら超える）。
   - 6 モデル（うち 152 層 2 個）のアンサンブルで ImageNet test top-5 **3.57%**（ILSVRC 2015 分類タスク 1 位、Table~\ref{tab:ensemble}）。
   - shortcut option (A) parameter-free vs (B) 次元増加のみ projection vs (C) 全部 projection の比較で A<B<C だが差は小さく、(C) の改善はパラメータ増のため、と帰属。以後は B を採用しメモリ節約。
-  - CIFAR-10: plain は深いほど error 増、ResNet は単調改善。ResNet-110 で best **6.43%**（5 試行で 6.61±0.16）。ResNet-1202 層は training error <0.1% で最適化問題は無いが test 7.93% と 110 層に劣る（19.4M パラメータが小データセットに対し過大で overfitting と著者は解釈）。
+  - CIFAR-10: plain は深いほど error 増、ResNet は 20→110 層で改善。ResNet-110 で best **6.43%**（5 試行で 6.61±0.16）。ResNet-1202 層は training error <0.1% で最適化問題は無いが test 7.93% と 110 層に劣る（19.4M パラメータが小データセットに対し過大で overfitting と著者は解釈）。
   - 層応答の std を比較（Fig.~\ref{fig:std}）すると ResNet のほうが小さく、深くするほどさらに小さい → 残差は実際に identity 近傍で小さくなる、という motivation を裏付け。
   - 検出: Faster R-CNN のバックボーンを VGG-16→ResNet-101 に置換しただけで、PASCAL VOC07 73.2→76.4 / VOC12 70.4→73.8 mAP、COCO mAP@[.5,.95] 21.2→27.2（+6.0、**相対 28% 改善**）。box refinement + context + multi-scale testing + 3 ネットアンサンブルで COCO test-dev 37.4 mAP@[.5,.95]、ImageNet DET test 62.1 mAP（2 位を 8.5 ポイント絶対差で凌駕）、ImageNet localization test top-5 9.0%（VGG/GoogLeNet 比 64% 相対誤差削減）。
-- **貢献**: (1) plain net で起きる degradation 現象の明示と特性化、(2) identity shortcut という最小限の構造変更で 100 層超を最適化可能にする residual learning の提案、(3) bottleneck design による計算量効率（152 層 ResNet 11.3GFLOPs < VGG-19 19.6GFLOPs）、(4) 分類・検出・位置推定・セグメンテーションの 5 タスク同時 1 位という generalization の実証、(5) CIFAR-10 で 1202 層という当時前代未聞の規模を実際に最適化して見せたこと。
+- **貢献**: (1) plain net で起きる degradation 現象の明示と特性化、(2) identity shortcut という最小限の構造変更で 100 層超を最適化可能にする residual learning の提案、(3) bottleneck design による計算量効率（152 層 ResNet 11.3GFLOPs < VGG-19 19.6GFLOPs）、(4) 分類・検出・位置推定・セグメンテーションの 5 タスク同時 1 位という generalization の実証、(5) CIFAR-10 で 1202 層のネットワークを training error <0.1% まで最適化して見せたこと。
 
 ## Takeaway（自分にとっての要点）
 
 - 「深いネットが学習できない」のは **vanishing gradient ではなく optimization の難しさ**、というのが BN 後の正しい問題設定。BN を入れても plain は劣化するので、これは別軸の現象として切り離して扱うべき。
-- 解決策はアーキテクチャ側で「**identity を fallback として確保する**」こと。これは新たな帰納バイアス: もし上層が無意味ならゼロにすればよく、ソルバが恒等写像を非線形層の合成で再現する必要がなくなる（preconditioning として機能、§3.1）。今後ネットを深くする時の標準パターン。
+- 解決策はアーキテクチャ側で「**identity を fallback として確保する**」こと。これは新たな帰納バイアス: もし上層が無意味ならゼロにすればよく、ソルバが恒等写像を非線形層の合成で再現する必要がなくなる（preconditioning として機能、§3.1）。
 - shortcut が parameter-free（option A）でも degradation はちゃんと解決される（plain-34 28.54 → ResNet-34 A 25.03）。projection は次元合わせのときだけで十分、というのは「効くのは projection そのものではなく恒等成分の保持」だという強い証拠。bottleneck では projection 全部にすると complexity 倍増するので尚更 identity が要る。
 - 152 層単一モデルが過去のアンサンブルより強い（4.49% top-5）という事実は、ensemble より depth 増のほうがコスト効率がよい場面があることを示している。
-- 検出側で「**VGG-16 を ResNet-101 に差し替えるだけで COCO +6 mAP**」というのは features の質がそのまま下流タスクに転送される教科書的サンプル。事前学習バックボーンを上げる投資効率の根拠としていまだに引かれる理由がわかる。
+- 検出側で「**VGG-16 を ResNet-101 に差し替えるだけで COCO +6 mAP**」というのは、同じ Faster R-CNN 実装で gains can only be attributed to better networks と著者が述べる、features の質が下流タスクに転送される例。
 - 1202 層が training error <0.1% で安定して学習できるという事実は応用より「最適化障害は本当に消えた」というメッセージとして強い。逆に test で劣化するのは regularization 設計の話に変わる、と問題が切り分けられる点が綺麗。
 
 ## Critical Thoughts（評価・疑問）
 
 - **強み**:
-  - 提案が極めてシンプル（足し算 1 つ追加）で、現有の SGD / Caffe をそのまま使える。だから世界中で即再現された。
+  - 提案が極めてシンプル（足し算 1 つ追加）で、SGD / backpropagation で end-to-end 学習でき、Caffe などの common libraries で solver 改変なしに実装できると著者が述べている。
   - 主張に対し対照実験が徹底している: plain vs ResNet を同じ depth/width/params で比較（option A）、shortcut の (A)(B)(C) アブレーション、深さスイープ（18/34/50/101/152、CIFAR 20/32/44/56/110/1202）、応答 std の可視化、複数タスクへの転移。
   - 「3.57% top-5 で 1 位」だけでなく、検出・位置推定・セグメンテーション全部で 1 位という generalization が示されていて、結果が分類タスク特有のチューニング芸ではないことが裏付けられている。
   - 著者自身、何でも肯定するのではなく「(C) の僅差は parameter 増のせい」「projection は本質ではない」「1202 層が 110 層に test で負けるのは overfitting」と慎重に解釈している。
 - **弱み / 疑問**:
-  - **plain net が最適化困難な根本原因が説明されていない**（§4.1 で「vanishing gradient ではない、conjecture: exponentially low convergence rate、Future Work」と本文中で明言）。residual の有効性は実証だが、なぜ identity を入れると loss landscape がそんなに変わるかは後続研究（Li+ 2018, Veit+ 2016 など）に委ねられている。
+  - **plain net が最適化困難な根本原因が説明されていない**（§4.1 で「vanishing gradient ではない、conjecture: exponentially low convergence rate、Future Work」と本文中で明言）。residual の有効性は実証だが、なぜ identity を入れると最適化が容易になるかの機構説明はこの論文内では未解決。
   - 1202 層の overfitting は **maxout/dropout を入れていない** 状況での結論（§4.2）。「dropout を併用すれば改善するかも、future work」と自分で言っており、本当に depth が無駄かどうかは結論保留。
-  - shortcut option の比較が ResNet-34 のみ。bottleneck（50+ 層）で (A) を試していないため、深層での identity-only の挙動はこの論文では未検証（後の "Identity Mappings in Deep Residual Networks" (He+ 2016) で扱われるが、本論文では未決）。
+  - shortcut option の比較が ResNet-34 のみ。bottleneck（50+ 層）で (A) を試していないため、深層での identity-only の挙動はこの論文では未検証。
   - 検出側の improvement（box refinement / context / multi-scale）はバックボーン交換ゲインとは別の汎用技で、各 ablation の純粋効果はやや混ざる。「multi-scale training は時間がなくて未実施」と著者も限界を明記（§Appendix MS COCO の Multi-scale testing 節）。
   - CIFAR-10 の評価は test set 直接（ResNet-110 のみ 5 回平均 6.61±0.16、他のサイズは単発）。1 試行の数値ぶれは ImageNet ほど厳しく検証されていない。
-  - ImageNet test set の本番提出は何回か（規定の提出回数）残されていないので、3.57% の信頼区間は不明。
   - "residual is closer to zero than non-residual" の主張は std 比較（Fig.~\ref{fig:std}）のみで、定量的に「ほぼ identity」と言えるほどの zero 近接性は示されていない。
 - **次に試したいこと**:
-  - degradation の原因仮説（loss landscape のシャープネス、Jacobian の条件数、ensemble of shallow paths 説 など）を実験的に切り分け。具体的には ResNet と plain で Hessian の固有値分布や gradient confusion 指標を比較。
-  - identity 以外の固定 shortcut（例えば学習しない random projection や PCA 投影）でも degradation が消えるかを試して、「identity の何が効いているか」を分離。
-  - 1202 層に強い regularization（CutMix / stochastic depth / dropout）を入れて、test error が 110 層を超えるかを再評価。stochastic depth はまさに後発で実装され、効くことが分かっている。
-  - bottleneck の $1{\times}1$ 圧縮率（256→64 など）と深さのトレードオフを Pareto curve として測り、現在の ConvNeXt / RegNet と並べて compute-accuracy 効率を比較。
+  - degradation の原因仮説（loss landscape のシャープネス、Jacobian の条件数など）を実験的に切り分け。具体的には ResNet と plain で Hessian の固有値分布や gradient confusion 指標を比較（評者補足）。
+  - identity 以外の固定 shortcut（例えば学習しない random projection や PCA 投影）でも degradation が消えるかを試して、「identity の何が効いているか」を分離（評者補足）。
+  - 1202 層に著者が future work として挙げる strong regularization（maxout / dropout）を組み合わせ、test error が 110 層を超えるかを再評価。
+  - bottleneck の $1{\times}1$ 圧縮率（256→64 など）と深さのトレードオフを Pareto curve として測り、compute-accuracy 効率を比較（評者補足）。
 
 ## Notes / Quotes
 
@@ -67,6 +66,11 @@
 - 6 モデルアンサンブル: ImageNet test top-5 **3.57%**（Table~\ref{tab:ensemble}）
 - Faster R-CNN のバックボーン VGG-16→ResNet-101 で COCO mAP@[.5,.95] 21.2→27.2（+6.0、相対 28%、§4.3 / Appendix）
 - ImageNet localization test top-5 9.0%（VGG/GoogLeNet 比 64% 相対削減、Table~\ref{tab:localization_all}）
+- (verified 2026-05-26) venue/year を TeX で確認できる範囲（cvpr.sty / \cvprfinalcopy 使用、ILSVRC & COCO 2015 competitions の記載）に限定 (residual_v1_arxiv_release.tex)
+- (verified 2026-05-26) 「CVPR 2016」「世界中で即再現」「後続研究 Li+/Veit+ / He+ 2016」「本番提出回数」など TeX 根拠のない記述を削除または TeX 根拠のある表現へ修正 (residual_v1_arxiv_release.tex, residual_v1_arxiv_release.bbl)
+- (verified 2026-05-26) 1202 層・regularization の記述を TeX の maxout/dropout future work に合わせて修正 (residual_v1_arxiv_release.tex §4.2)
+- (verified 2026-05-26) 検出の Takeaway を、同じ Faster R-CNN 実装で gains can only be attributed to better networks という本文記述に合わせて修正 (residual_v1_arxiv_release.tex §4.3)
+- (verified 2026-05-26) CIFAR-10 の「ResNet は単調改善」を 20→110 層の範囲に限定し、1202 層の test error 悪化と矛盾しない記述へ修正 (residual_v1_arxiv_release.tex Table 6)
 
 ## Related Papers
 
@@ -76,7 +80,7 @@
 - Ioffe & Szegedy 2015, *Batch Normalization* — vanishing gradient を実用上潰し、本論文が "degradation は別問題" と言うための前提。
 - He+ 2015, *PReLU / He init* — 同一研究グループの直前の SOTA、本論文の初期化に採用。
 - Bengio+ 1994 / Glorot & Bengio 2010 — vanishing/exploding gradient の古典。
-- Krizhevsky+ 2012, *AlexNet*; Russakovsky+ 2014, *ImageNet* — タスク・データの基礎。
+- Krizhevsky+ 2012, *Imagenet classification with deep convolutional neural networks*; Russakovsky+ 2014, *Imagenet large scale visual recognition challenge* — タスク・データの基礎。
 - Ren+ 2015, *Faster R-CNN*; Girshick 2015, *Fast R-CNN*; Girshick+ 2014, *R-CNN* — 検出側の評価フレーム。
 - Lin+ 2014, *MS COCO*; Everingham+ 2010, *PASCAL VOC* — 検出データセット。
 - Krizhevsky 2009, *CIFAR-10*; Goodfellow+ 2013 *Maxout*; Lin+ 2013 *NIN*; Lee+ 2014 *DSN*; Romero+ 2015 *FitNet* — CIFAR の比較対象。

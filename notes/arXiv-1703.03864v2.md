@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/1703.03864
 - source: ../papers/arXiv-1703.03864v2/
 - authors: Tim Salimans, Jonathan Ho, Xi Chen, Szymon Sidor, Ilya Sutskever (OpenAI)
-- venue / year: arXiv preprint, 2017 (v2)
+- venue / year: TeX 中には明示なし（PDF metadata の CreationDate は 2017-09-08）
 - tags: [evolution-strategies, RL, black-box-optimization, distributed, neuroevolution]
 - read_date: 2026-05-13
 
@@ -24,37 +24,36 @@
 
 ## Takeaway（自分にとっての要点）
 
-- ES の本質は「**action 空間ではなく parameter 空間にノイズを置く**」こと。policy gradient の勾配分散は ∇log p(a;θ) が T 個の項の和なので Var が T に比例して悪化するが、ES の ∇log p(θ̃;θ) は episode 長と独立 → 長い horizon・遅延報酬・ skip 不変性が「タダで」付いてくる（§3.1）。これは PPO/A3C を改良するより先に検討すべき設計選択だった。
-- **shared random seeds による分散** は神 trick。普通の data parallel SGD は gradient（=数百万次元ベクトル）を交換するが、ES は scalar F_i だけ。これだけで 1,440 並列が成立する。同じ発想は LLM の RL（GRPO 等）で worker 間 gradient sync を減らす設計に流用できそう。
+- ES の本質は「**action 空間ではなく parameter 空間にノイズを置く**」こと。policy gradient の勾配分散は ∇log p(a;θ) が T 個の項の和なので Var が T に比例して悪化するが、ES の ∇log p(θ̃;θ) は episode 長と独立 → 長い horizon・遅延報酬・ skip 不変性が付く（§3.1）。
+- **shared random seeds による分散** が実装上の核。policy gradient methods は entire gradients を通信する必要があるのに対し、ES は scalar return F_i と perturbation 生成に使う random seed だけで更新を再構築できる（§2.1）。これで 1,440 CPU cores の線形スピードアップを報告している（Figure 1）。
 - **virtual batch normalization** がないと Atari で ES が壊れる、は重要。「parameter perturbation が policy の出力分布を意味のある形で動かすかどうか」が ES の成否を決めるという観測で、policy parameterization の重要性に注意を促している。
 - 「**parameter 数ではなく intrinsic dimension**」の主張（§3.2）：x→(x,x) で特徴量を倍にしても問題は難しくならない（ノイズ σ と学習率を半分にすればよい）、という説明は ES の高次元への適用根拠として強い。実際に Atari で**大きい A3C ネットの方が ES の結果が良くなった**のは、KAWAGUCHI 2016 の「大ネットの方が local minima が少ない」と合致。
-- ES の「弱み」を素直に挙げているのが好印象：A3C より 3〜10x データを食う／51 game 中 28 game で負けた／Mujoco の一部 env では action 離散化が必要／σ 適応は効果なし／indirect encoding 未着手（future work）。
-- **計算予算をデータ効率と引き換えにする**設計：「データ効率は下がるが、その分 1 episode のコストが軽いし、何より wallclock を桁で短縮できる」というトレードオフを正面から主張している。これは現代の LLM RL/RLHF が直面する「scaling = parallelism」の議論の原型。
+- ES の「弱み」を素直に挙げているのが好印象：A3C より 3〜10x データを食う／51 game 中 28 game で負けた／MuJoCo の一部 env では action 離散化が必要／σ 適応は効果なし／indirect encoding 未着手（future work）。
+- **計算予算をデータ効率と引き換えにする**設計：「データ効率は下がるが、その分 1 episode のコストが軽いし、wallclock を桁で短縮できる」というトレードオフを正面から主張している。
 - TRPO で出ない異常歩行（横歩き、後ろ歩き）を ES が見つけるという観察は、parameter-space exploration が action-space exploration と**質的に違う**ことを示唆。multimodal な policy 分布を陽に持たなくても多様性が出る。
 
 ## Critical Thoughts（評価・疑問）
 
 - **強み**:
   - 主張がシンプルで再現容易（Algorithm 1/2 は 6 行で書ける）。分散側の novelty が「seed を共有して scalar だけ broadcast」というワンアイディアに集中していて美しい。
-  - 「ES vs PG はどちらが Monte Carlo gradient の分散が小さいか」を episode 長 T に対する依存性で議論した §3.1 が、後続の long-horizon RL の設計議論にそのまま使える理論的整理になっている。
+  - 「ES vs PG はどちらが Monte Carlo gradient の分散が小さいか」を episode 長 T に対する依存性で議論した §3.1 が、long-horizon / delayed rewards の設定で ES が有利になりうる条件を明確にしている。
   - サンプル効率を犠牲にしても wallclock が桁で速くなるという「軸の取り直し」を、Humanoid 657min→10min の具体数字で示している（Figure 1）。
   - ハイパラを env ごとに調整していない（Atari 全 env / MuJoCo はほぼ全 env で fix）という頑健性報告。
   - **論文自身が limitations を素直に書いている**点も評価できる：3-10x 多いデータが必要／51 game 中 28 game で A3C に負け／σ 適応は今回効かなかった／indirect encoding は future work。
 - **弱み / 疑問**:
   - **データ効率の劣化が「3-10x」というのは env 依存で実際はもっと悪い場合もあり得る**。Walker2d で 7.88x、Hopper で 6.94x は「ぎりぎり許容」だが、もっと長い horizon・もっと sparse な報酬の env で同じ比が維持されるのかは未検証。
   - **Atari の 23 勝 28 敗は微妙**。Table 2 を見ると ES が大勝している env (Atlantis, Kangaroo, Frostbite) と完敗している env (Beam Rider, Demon Attack, Q*Bert) が極端で、なぜそうなるのかの分析が薄い。
-  - **virtual batch normalization が「無いと壊れる」程度に効いているのに、その depend がアブレーションされていない**。ES の成功がアルゴリズムの本質なのか、policy parameterization の trick なのかが切り分けられない。
+  - **virtual batch normalization と policy reparameterization が "greatly improve the reliability" とされているのに、その寄与のアブレーションは本文中に見当たらない**。ES の成功がアルゴリズムの本質なのか、policy parameterization の trick なのかが切り分けにくい。
   - **σ を固定にしている**（CMA-ES や NES 系の本来の売りである共分散適応を捨てている）。"did not see benefit from adapting σ" と書かれているが、どの env で何を試したかの詳細が無い。
-  - 「intrinsic dimension が支配的でパラメータ数に依存しない」という主張は §3.2 の x→(x,x) 例で directional には正しいが、**実問題で intrinsic dimension が小さいかどうか**は仮定でしか無い。一般の MDP では成り立たない可能性がある。
-  - 比較対象が TRPO / A3C で、**より新しい / 強い baseline**（PPO はこの時点で出ていない、SAC/IMPALA も後）への評価が当然ながら無い。今読むなら IMPALA や DD-PPO との比較が欲しい。
-  - **CPU 1,440 個という現実的でないリソース要件**（2017 年 OpenAI EC2）が、ES の良さを「scalable だ」と言い切る根拠の柱になっている。一般読者にとって 8 GPU の A3C の方が再現しやすく、wallclock 比較は不公平とも言える。
-  - "communication" が seed のみで済むので帯域は確かに小さいが、**1,440 worker 全員が** scalar を全員に broadcast（all-to-all）するコストは worker 数の二乗オーダー。最大規模 (1,440) でこの all-to-all がどれだけスケールするかの計測は無い。
+  - 「intrinsic dimension が支配的でパラメータ数に依存しない」という主張は §3.2 の x→(x,x) 例で方向性は説明されているが、**実タスクの intrinsic dimension がどの程度か**は本文中で直接測られていない。
+  - 比較対象は MuJoCo では TRPO、Atari では DQN / A3C / HyperNEAT / A2C。別の baseline との比較は TeX 中には示されていない。
+  - 1,440 CPU cores の Amazon EC2 実験が wallclock 短縮の根拠になっている一方、少数リソースでの使いやすさは主張の中心ではない。
+  - Algorithm 2 は "Send all scalar returns Fi from each worker to every other worker" と書く。本文では Algorithm 2 lines 9-12 が 1,440 workers でも total time の small fraction と述べるが、通信と再構成の内訳は表として分離されていない。
 - **次に試したいこと**:
-  - **同じ wallclock 予算で IMPALA / DD-PPO / GRPO** と並べた pareto curve（sample efficiency × wallclock）。
-  - **大規模 LLM の RL 後段** で ES を使えるか：policy gradient より gradient 通信を抑えられるなら、推論サーバを worker にしてしまえる利点が大きい。問題は intrinsic dimension が LLM パラメータでは小さいと仮定しにくいこと。
-  - **σ を per-coordinate / per-layer に分け、layer ごとの感度に応じてスケジュール**する（NES 本来の自動適応の軽量版）。固定 σ のままでも layer scale だけ調整する案。
-  - virtual batch normalization の代替（GroupNorm / LayerNorm）でも Atari ES が動くかのアブレーション。「ES の本質 vs parameterization の trick」の切り分け。
-  - **異常歩行（sideways/backwards walking）** が出る現象を、policy distribution の multimodality として定量化する（fitness landscape 上の basin 数 vs PG）。
+  - **同じ wallclock 予算で別の RL baseline と並べた pareto curve（sample efficiency × wallclock）**を確認する（TeX 中には未実施 / 評者補足）。
+  - **σ を per-coordinate / per-layer に分け、layer ごとの感度に応じてスケジュール**する。固定 σ のままでも layer scale だけ調整する案（TeX 中には未実施 / 評者補足）。
+  - virtual batch normalization 以外の normalization でも Atari ES が動くかのアブレーション。「ES の本質 vs parameterization の trick」の切り分け（TeX 中には未実施 / 評者補足）。
+  - **異常歩行（sideways/backwards walking）** が出る現象を、探索の多様性として定量化する（TeX 中には未実施 / 評者補足）。
 
 ## Notes / Quotes
 
@@ -68,18 +67,21 @@
 - 1,440 CPU 並列で 3D Humanoid を 10 分（Figure 1）。18 cores だと 657 分（11 時間）。
 - Future work（§6）: meta-learning（learning-to-learn）への応用、低精度 NN 実装との組み合わせ。
 - (verified 2026-05-20) §1 finding 1 の引用文を原文どおりの "Without these methods..." に訂正（元ノートは "[virtual batch normalization]" を埋め込んで "methods" を "reparameterizations" に置換していた）。根拠: es_arxiv_v2.pdf §1, finding 1。他は TeX (実体は es_arxiv_v2.pdf) との突合で全箇所裏取り済み: 著者名、Table 1 の MuJoCo 比、Table 2 の Atari スコア、Figure 1 (18→657min, 1440→10min)、Figure 2 (frame-skip 1-4)、Algorithm 1/2、§1 finding 3 (23-28 game, 3-10x データ, ~3x 計算節約)、§2.1 (shared seeds, σ 固定, antithetic, fitness shaping)、§2.2 (VBN, 10 bin 離散化)、§3.1 (Var の T 依存)、§3.2 (intrinsic dimension, larger network better, Kawaguchi 2016)、§6 (future work)、references。
+- (verified 2026-05-26) venue/year を TeX/PDF で確認できる範囲に限定し、"arXiv preprint, 2017 (v2)" を削除 (es.tex, es_arxiv_v2.pdf metadata)。
+- (verified 2026-05-26) Takeaway / Critical Thoughts から TeX 中に無い LLM RL、PPO、SAC、IMPALA、DD-PPO、GRPO、8 GPU A3C への外挿を削除または「評者補足」と明記 (es_arxiv_v2.pdf §3-§6)。
+- (verified 2026-05-26) Algorithm 2 の通信コストに関する批判を、本文の "small fraction" 記述と整合するよう修正 (es_arxiv_v2.pdf §2.1, Algorithm 2)。
 
 ## Related Papers
 
-- Wierstra et al., *Natural Evolution Strategies* (2008/2014) — 直接のアルゴリズム的源流。
+- Wierstra et al., *Natural Evolution Strategies* (2008/2014) — NES の先行研究。
 - Sehnke et al., *Parameter-exploring Policy Gradients* (2010) — 同じ「parameter space に noise」発想で著者らが "closely related" と認める先行。
 - Nesterov & Spokoiny, *Random Gradient-Free Minimization of Convex Functions* (2011) — ES の finite-difference 解釈の理論裏付け。
-- Williams, *REINFORCE* (1992) — score function estimator の起源、ES の gradient 推定と数式上同型。
-- Hansen & Ostermeier, *CMA-ES* (2001) — 共分散適応する ES の代表、本論文はあえて固定 σ で勝負。
-- Schulman et al., *TRPO* (2015) — MuJoCo の主 baseline。
-- Mnih et al., *DQN* (2015) / *A3C* (2016) — Atari baseline と CNN アーキの出所。
+- Williams, *Simple Statistical Gradient-Following Algorithms for Connectionist Reinforcement Learning* (1992) — score function estimator の出典。
+- Hansen & Ostermeier, *Completely Derandomized Self-Adaptation in Evolution Strategies* (2001) — CMA-ES の出典。
+- Schulman et al., *Trust Region Policy Optimization* (2015) — MuJoCo の主 baseline。
+- Mnih et al., *Human-Level Control through Deep Reinforcement Learning* (2015) / *Asynchronous Methods for Deep Reinforcement Learning* (2016) — Atari baseline と CNN アーキの出所。
 - Salimans et al., *Improved Techniques for Training GANs* (2016) — virtual batch normalization の出典。
 - Koutník et al. (2013), Hausknecht et al. (2014) — Atari への neuroevolution の先行（HyperNEAT 等）。
 - Brockman et al., *OpenAI Gym* (2016) — 評価環境。
 - Todorov et al., *MuJoCo* (2012) — 物理シミュレータ。
-- Stanley et al., *HyperNEAT* (2009) — indirect encoding の代表、本論文では future work 扱い。
+- Stanley et al., *A Hypercube-Based Encoding for Evolving Large-Scale Neural Networks* (2009) — indirect encoding の出典、本論文では future work 扱い。

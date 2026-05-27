@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/2306.03795
 - source: ../papers/arXiv-2306.03795v1/
 - authors: Julius Schöning, Niklas Kruse
-- venue / year: arXiv preprint, 2023（所属: Osnabrück University of Applied Sciences, Germany）
+- venue / year: TeX 中では `arXiv '2x` / `202x`（所属: Osnabrück University of Applied Sciences, Germany）
 - tags: [computer-vision, CNN, image-classification, logistics, industrial-AI, load-safety]
 - read_date: 2026-05-13
 - rating:
@@ -23,10 +23,10 @@
 ## Takeaway（自分にとっての要点）
 
 - 問題を「3 クラス分類」ではなく「最初に使えない画像を弾く + 中身の判定」に分けたのは現場発想として真っ当。Stage1 だけでも倉庫側で「撮り直し要求」を自動化できれば品管部門のボトルネックは解消するという論調で、**Stage2 が失敗していても production 価値はある**と切り分けて主張している。
-- Stage1 で LogisticNet（227x227 の AlexNet 派生）が深い ResNet101/InceptionV3 より良かったのが意外。タスクが「全景が写ってるか / 暗すぎないか / ぼけてないか」のような低周波・大域的な特徴なので、深く受容野の広いモデルは overkill で、むしろ過学習しやすかった、と読める。実応用で「タスクの本質が何か」を見極めれば軽量モデルで十分という典型例。
-- 解像度を上げる（native → 800x800）と Stage1 はわずかに精度が下がる（ResNet 94→92, Inception 94→93 Recall）。一方 Stage2 では高解像が改善寄与する（F1 0.43→0.52）。**「画像が使えるか」の判定は大域特徴、「安全かどうか」の判定は局所詳細が効く**、という直感に合う。
-- 著者が overfitting を「epoch 数で早期停止」だけで対処しているのは弱く、もっと根本的には dataset が 5712 枚と小さく、データ収集コストの壁にぶつかっている。著者自身も "hybrid dataset, a mixture of computer-generated and real-world images" を将来作業として明記。
-- Stage2 が崩れた根本原因として著者は **クラス I と II のラベル境界が曖昧（boundary cases）** だと正直に書いている。MCC が 0.2 を超えない事実は、モデル不足というより「人間の同じ写真への判定が一意でない」可能性を強く示唆。
+- Stage1 で LogisticNet（227x227 の AlexNet 派生）が深い ResNet101/InceptionV3 より良かったのが意外。TeX で確認できる事実は、LogisticNet が Stage1 で Recall 98% / Precision 95% と最良だったこと、および LogisticNet が「simple model でも解けるか」を見るための浅い AlexNet 派生として設計されたこと。
+- 解像度を上げる（native → 800x800）と Stage1 はわずかに精度が下がる（ResNet Recall 94→92, Inception Recall 94→93）。一方 Stage2 では InceptionV3 の F1 は 0.43→0.52、ResNet101 の F1 は 0.57→0.59 に上がる。**「画像が使えるか」の判定は大域特徴、「安全かどうか」の判定は局所詳細が効く**という解釈は評者補足。
+- 著者は overfitting が早期に起きるため epoch 数を短くして再学習している。データ追加は「significant effort」が必要で、将来作業として "hybrid dataset, a mixture of computer-generated and real-world images" を明記している。
+- Stage2 が崩れた理由について、著者は **クラス I と II の交差・boundary cases** を一因として挙げている。MCC が 0.2 を超えない点から、ラベル境界の曖昧さが性能上限に関わる可能性がある、という読みは評者補足。
 
 ## Critical Thoughts（評価・疑問）
 
@@ -35,20 +35,20 @@
   - 「Stage1 だけでも価値がある」と切り分けて主張する誠実さ。Stage2 で MCC 0.2 を「うまくいきました」と糊塗していない。
   - Conclusion で AI 単独運用ではなく "still need to be supervised by a human operator" と限界を明示しており、責任ある産業 AI の論調。
 - **弱み / 疑問**:
-  - 評価が **validation accuracy ベース**で、独立した test set 分割が明記されていない（Recall/Precision の算出根拠が train/val split のままなら過大評価の懸念）。
-  - Stage1 の「3 アーキテクチャ全部 90% 超」だけ示しているが、各アーキテクチャの inference cost / latency 比較が無いので「production で LogisticNet を選ぶべき」という決定的根拠は欠ける。
-  - Stage2 で F1=0.59 / MCC=0.20 という結果はほぼランダムに近く、これを「decision tree の第2段」として運用すると不安全画像を 4 割見逃す。にもかかわらず「Stage1 だけ実装すれば良い」とする論証は、Stage2 を human operator に丸投げするだけで元の「品管がボトルネック」問題が温存される。
-  - データ拡張が y 軸フリップ + 軽い回転 + 明度/色のみ。荷台の構造はフリップに対し対称でないので、フリップで意味的にずれが起きないかの議論が無い。
+  - 評価が **validation accuracy ベース**で、独立した test set 分割が明記されていない。Recall/Precision の算出母集団が別 test set かどうかは TeX 中に明示されていない。
+  - Stage1 の「3 アーキテクチャ全部 90% 超」だけ示しているが、各アーキテクチャの inference cost / latency 比較は TeX 中に無いので、「production で LogisticNet を選ぶべき」という決定的根拠は欠ける（評者補足）。
+  - Stage2 で最良の F1=0.59 / MCC=0.20 に留まるため、著者自身も safe / unsafe loaded cargo の認識は satisfactorily に解けなかったと結論している。Stage2 を運用するなら human operator の監督が必要という結論になる。
+  - データ拡張が y 軸フリップ + 軽い回転 + 明度/色のみ。TeX は「class を変えない」手法として列挙するが、y 軸フリップが荷台画像の意味を変えないかの個別検討は書かれていない。
   - Stage1 / Stage2 で同じ画像プールを 2 度使う構造だが、Stage2 学習時に使用不能画像をどう扱ったかの記述が薄い（Stage1 で除外された画像で Stage2 を訓練するのか、両方混ぜるのか）。
   - クラスバランスが I:1813 / II:2355 / III:1544 と中程度に偏っているのに、加重損失や resampling の話が無い。State of the Art 節で AbdElrahman2013, Kaur2019 を引いてバランスの重要性を語ってるのに本実験で対策していないのは肩透かし。
-  - 著者は Stage2 失敗の原因として「クラス境界の曖昧さ」を挙げているが、それなら inter-annotator agreement / Krippendorff α を出すべきで、定量根拠が無く感想に留まっている。
+  - 著者は Stage2 失敗の原因として「クラス境界の曖昧さ」を挙げているが、その根拠は manual inspection として書かれており、inter-annotator agreement のような定量評価は TeX 中に無い。
   - 表 1 の LogisticNet が「解像度を分けず Recall 98% / Precision 95% だけ書いてある」体裁が他モデルと違い読みにくい（表組みも実は Recall と Precision が左右に並んでいるのか他と意味が違うのか曖昧。TeX には `Recall: \textbf{98\%}` と `Precision: \textbf{95\%}` が 1 行で書かれている）。
 - **次に試したいこと**:
-  - Stage2 の難しさが「ラベル曖昧」か「モデル能力不足」かを切り分けるため、複数 annotator で再ラベルし inter-annotator agreement を測定 → 上限を可視化。
-  - 同じ画像から Stage1 用に低解像、Stage2 用にトラック前後左右の crop を取って Stage2 を局所的特徴の問題に再定義する。
-  - LogisticNet を Stage1 専任にして実機 inference 速度を測り、edge デバイス（倉庫の撮影端末）で動かす PoC。
-  - Stage2 を classification ではなく **「不安全な箇所を local 検出」する object detection / anomaly localization** に再定義（人が見ても 1 枚の写真への二択は無理ゲーなので）。
-  - 著者が将来作業として挙げた合成画像との hybrid データセットを実装し、合成画像比率と Stage2 精度の relationship を出す。
+  - Stage2 の難しさが「ラベル曖昧」か「モデル能力不足」かを切り分けるため、複数 annotator で再ラベルし inter-annotator agreement を測定 → 上限を可視化（評者補足）。
+  - 同じ画像から Stage1 用に低解像、Stage2 用にトラック前後左右の crop を取って Stage2 を局所的特徴の問題に再定義する（評者補足）。
+  - LogisticNet を Stage1 専任にして実機 inference 速度を測り、edge デバイス（倉庫の撮影端末）で動かす PoC（評者補足）。
+  - Stage2 を classification ではなく **「不安全な箇所を local 検出」する object detection / anomaly localization** に再定義（評者補足）。
+  - 著者が将来作業として挙げた合成画像との hybrid データセットを実装し、合成画像比率と Stage2 精度の relationship を出す（hybrid dataset は TeX 根拠あり、比率実験は評者補足）。
 
 ## Notes / Quotes
 
@@ -61,12 +61,15 @@
 - 著者自身の limitation: "recognizing safe and unsafe loaded cargo could not be solved satisfactorily in this work ... an intersection between the classes I) cargo loaded safely and II) cargo loaded unsafely was notable." (§Conclusion)
 - 著者自身の運用宣言: "AI can already support the assessment of load safety quite well but still need to be supervised by a human operator." (§Conclusion)
 - TeX 中には test set 分割の手順や random seed の記述は明示されていない。
+- (verified 2026-05-27) venue/year を TeX で確認できる `arXiv '2x` / `202x` に限定し、arXiv ID 由来の 2023 表記を削除 (AI-SupportedAssessmentLoadSafety.tex)
+- (verified 2026-05-27) Takeaway / Critical Thoughts の評者解釈・提案に「評者補足」を明記し、TeX 根拠より強い「4割見逃す」「ほぼランダム」等の表現を削除 (AI-SupportedAssessmentLoadSafety.tex, Table 2, Fig. 4, Conclusion)
+- (verified 2026-05-27) Related Papers の Inception/ResNet/AlexNet 関連説明を main.bbl で確認できる範囲に修正 (AI-SupportedAssessmentLoadSafety.bbl)
 
 ## Related Papers
 
-- Krizhevsky+ 2017 AlexNet — LogisticNet の土台。
-- Szegedy+ 2015/2017 InceptionV3 / GoogleNet — Stage1 best, Stage2 best の片方。
-- He+ 2016 ResNet — もう一方の baseline。
+- Krizhevsky+ 2017 "ImageNet classification with deep convolutional neural networks" — LogisticNet の土台。
+- Szegedy+ 2015 "Going deeper with convolutions" / Szegedy+ 2017 "Inception-v4, inception-ResNet and the impact of residual connections on learning" — InceptionV3 の参照元。
+- He+ 2016 "Deep residual learning for image recognition" — ResNet101 の参照元。
 - Simonyan+ 2014 VGG — State of the Art 節で参照される CNN 系譜。
 - Richter+ 2021/2022 — CNN receptive field 計算で入力解像度上限（ResNet101: 971, InceptionV3: 1311）の根拠。
 - Khalifa+ 2021, Taylor+ 2018, Shorten+ 2019 — data augmentation 手法のレビュー、本論文の augmentation 設計の根拠。

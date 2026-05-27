@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/2304.02643
 - source: ../papers/arXiv-2304.02643v1/
 - authors: Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer Whitehead, Alexander C. Berg, Wan-Yen Lo, Piotr Dollár, Ross Girshick (Meta AI Research, FAIR)
-- venue / year: ICCV 2023 (preprint 2023-04)
+- venue / year: ICCV 2023 style（`segany.tex` は `iccv.sty` + `\iccvfinalcopy`、Model Card の Date は 2023。arXiv 投稿日は TeX 中には明示なし）
 - tags: [segmentation, foundation-model, vision, zero-shot, prompt, dataset]
 - read_date: 2026-05-13
 
@@ -20,8 +20,8 @@
 
 - 「foundation model = 自己教師あり」という Bommasani+ の図式に対し、SAM は **MAE 初期化 + 大規模 supervised** で組む。data engine でラベルがスケールできる領域では supervised の方が有効、という具体例として実用上重要。
 - **3 マスク出力 + min-loss + IoU head** だけで曖昧性を吸収しているのが効いている（Single mask 版は human study でも mIoU でも一貫して劣る）。「複数 prompt 時は別の 4 つ目 token に切り替えて 1 マスクだけ返す」という設計まで含めて、ambiguity-aware が本論文の MVP。
-- データエンジンの結論として「自動マスクのみで学習しても全データ学習とほぼ同等」「SA-1B の 1/10 でほぼ飽和」が出ているので、再現コミュニティが SA-1B 全量を要するわけではない。**1M 画像 + 100M マスクが実務 sweet spot** として明示されている。
-- AP では負けるが human rating では勝つ、という乖離（特に COCO）は重要。COCO/LVIS 系 benchmark の AP は annotation bias を吸えるモデルが有利、という long-standing な不健全さを SAM の "zero-shot だから bias を吸わない" 設定が裏返しに照明している。
+- データエンジンの結論として「自動マスクのみで学習しても全データ学習とほぼ同等」「SA-1B の 1/10 でほぼ飽和」が出ているので、再現コミュニティが SA-1B 全量を要するわけではない。著者は **1M 画像（約100M マスク）を practical setting** と書いている。
+- AP では負けるが human rating では勝つ、という乖離（特に COCO）は重要。著者は、ViTDet が COCO/LVIS の annotation bias を利用できる一方、zero-shot の SAM はそれを利用できない、という説明をしている。
 - prompt engineering で edge / proposal / instance / text → mask を解いてみせる構成は、後続研究が「SAM をどう composable に組み合わせるか」という流れを生む下敷きになる（実際 MCC や gaze-prompted system が言及）。
 - 14×14 windowed attention + 4 global block の ViT-H で 1024² 入力、image encoder は 1 回計算して使い回し、prompt 側は CPU 50ms。**インタラクティブ UX のためのコスト分割が architecture decision の中心**で、これは応用に乗せる時の制約として効く。
 - text-to-mask は「image embedding で学習 → 推論時 text embedding」という安価なトリックで動くが、本人たちも exploratory と認めている。
@@ -35,11 +35,11 @@
   - mask quality を inter-annotator IoU と比較し、自動マスクが人手と同等水準であることを定量化している。
 - **弱み / 疑問**:
   - 著者自身が limitations として挙げているもの: (a) fine structure を取りこぼし、小さな disconnected component を hallucinate、boundary が zoom-in 系より粗い、(b) 多点が与えられる interactive setting では専用手法に負ける、(c) image encoder が重く全体は real-time でない、(d) text-to-mask は exploratory で robust でない、(e) semantic / panoptic を prompt で簡潔に書く方法が未解決、(f) ドメイン特化ツールには各々の domain で負ける。
-  - SA-1B は「ライセンス画像」のため画像本体の二次配布や商用利用の制約が残り、reproducibility / community auditability に gap がある（geo-information も image provider 要請で release されない）。
+  - SA-1B は「研究目的」向けの license agreement / terms of use への同意が必要で、captions と inferred geo-location は image provider との合意により release されない。
   - RAI で「衣服 segmentation は perceived gender presentation で disjoint CI」と認めている bias は、下流で fashion / VTON など実応用に乗せる際に直接効くので軽視できない。
   - text-to-mask の image-embedding → text-embedding tricks は、CLIP の modality gap を考えると distribution mismatch をどこまで吸えているか定量評価がない。
-  - mask AP では ViTDet に明確に劣るのに human rating で勝つ、を「ViTDet が bias を学んだから」と説明しているが、では SAM を COCO/LVIS で軽く fine-tune すれば AP も上がるはずで、その実験はしていない。
-  - 数値スケーリングは ViT-H で頭打ち（ViT-L とほぼ差なし）、データも 1M で頭打ち、と "scale で殴る foundation model" の物語と内部矛盾がある。SAM はむしろ data curation の研究と読むのが正しい。
+  - mask AP では ViTDet に明確に劣るのに human rating で勝つ、を「ViTDet が bias を学んだから」と説明しているが、SAM を COCO/LVIS で fine-tune した実験は TeX 中には示されていない。
+  - 数値スケーリングは ViT-H で ViT-L からの gain が marginal、データも 1M で full SA-1B と comparable。少なくともこの ablation の範囲では、さらに scale する効果は強く示されていない。
   - 計算機資源（256 GPU、2 epoch、batch 256、1024² ViT-H）が要求するコストの記述が control 群との対比で出てこない。
 - **次に試したいこと**:
   - SAM を distillation の教師として、軽量 student（モバイル on-device）にどこまで蒸留できるか。image encoder が重いだけで decoder は軽いので image-encoder 蒸留が本筋。
@@ -63,6 +63,7 @@
 - "Further image encoder scaling does not appear fruitful at this time." (§7.6 Ablations)
 - 著者自身の Limitations: 「fine structures を取りこぼす / 小さな disconnected components を hallucinate / boundary が crisp でない / 多点 interactive では専用手法に劣る / image encoder が重く全体は real-time でない / text-to-mask は exploratory / semantic & panoptic 用 prompt の設計法は未解決 / domain-specific tools には負ける」(§Discussion "Limitations")。
 - RAI: 知覚 gender / skin tone の person segmentation はすべて 95% CI overlap、知覚 age では older vs middle のみ CI が disjoint（Table 2 = tab:rai_person）。一方 clothing segmentation は perceived gender で disjoint CI（masculine の方が高 mIoU）= bias あり（appendix Table app:tab:rai_clothing）。
+- (verified 2026-05-27) venue/year を TeX で確認できる範囲（`iccv.sty` + `\iccvfinalcopy`、Model Card Date 2023）に限定し、arXiv 投稿日の記述を削除。Takeaway / Critical Thoughts の "sweet spot"、商用利用・二次配布、fine-tune、scale 物語の記述を TeX 根拠より強くならないよう修正し、Related Papers の Cheng+ 表記を bbl の title に合わせた (segany.tex, segany.bbl, iccv.sty)。
 - (verified 2026-05-20) Edge 結果の HED/EDETR 比較を訂正 (tab:edges 値で SAM は R50 のみ HED 超え、ODS/OIS/AP は HED 未満)、データエンジン Stage 3 の crop 記述 (2×2/4×4 overlap windows 上の 16×16/8×8 点グリッド) と filter 閾値 (IoU≥88, stability≥95) を §app:dataset_generation から補正、4 つ目 output token の挙動を §app:model から追加、RAI の CI 説明を tab:rai_person 注釈に合わせて訂正、表・節番号を本文の番号 (Table 3/4/5, §7.x) に揃えた。
 
 ## Related Papers
@@ -71,7 +72,7 @@
 - Radford+ 2021 CLIP — text prompt の参照、text encoder の流用元。
 - He+ 2022 MAE — image encoder の self-supervised 初期化。
 - Dosovitskiy+ 2021 ViT, Li+ 2022 "Exploring plain ViT backbones for object detection" — image encoder 構造の元。
-- Carion+ 2020 DETR, Cheng+ 2021 MaskFormer — mask decoder の token / dynamic head 設計の元。
+- Carion+ 2020 DETR, Cheng+ 2021 "Per-pixel classification is not all you need for semantic segmentation" — mask decoder の token / dynamic head 設計の元。
 - Sofiiuk+ 2022 RITM, Liu+ 2022 SimpleClick, Chen+ 2022 FocalClick — interactive segmentation baseline。
 - Li+ 2022 ViTDet, He+ 2017 Mask R-CNN, Cai+ 2018 Cascade — instance segmentation baseline。
 - Gupta+ 2019 LVIS, Lin+ 2014 COCO, Zhou+ 2019 ADE20K, Open Images — 比較対象データセット。

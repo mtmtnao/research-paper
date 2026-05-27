@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/2510.04618
 - source: ../papers/arXiv-2510.04618v3/
 - authors: Qizheng Zhang, Changran Hu, Shubhangi Upasani, Boyuan Ma, Fenglu Hong, Vamsidhar Kamanuru, Jay Rainton, Chen Wu, Mengmeng Ji, Hanchen Li, Urmish Thakker, James Zou, Kunle Olukotun (Stanford / SambaNova / UC Berkeley)
-- venue / year: ICLR 2026 submission (preprint, v3)
+- venue / year: ICLR 2026（TeX は `\iclrfinalcopy` を使用し、style は "Published as a conference paper at ICLR 2026"）
 - tags: [LLM, context-engineering, agent, prompt-optimization, test-time-adaptation, self-improvement]
 - read_date: 2026-05-12
 - rating:
@@ -31,13 +31,13 @@
 
 ## Takeaway（自分にとっての要点）
 
-- **「prompt は短く一般化が良い」という直感を真っ向から否定**している。LLM 向けには人間向け要約と違って、ドメインヒューリスティクス・失敗例・コードスニペットを全部詰めた「playbook」のほうが効くという立場。長 context モデル + KV cache 時代だからこそ取れる戦略。
+- **短い要約だけではなく、詳細な playbook として context を保持するべき**という立場。TeX では「contexts should function not as concise summaries, but as comprehensive, structured playbooks」と明記し、ドメインヒューリスティクス・tool-use guidelines・common failure modes を圧縮で落とすことを問題視している。長 context モデル + KV cache reuse が practical になっている、という導入の議論にも支えられている。
 - 設計上の肝は「**LLM に context を書き直させない**」点。Curator は LLM だが、マージ自体は決定的ロジックで bullet を id 単位で append / counter 更新する。これによって rewrite 起因の崩落を遮断している。`delta entry = id + helpful/harmful counter + content` という構造は、それ自体が memory entry のフォーマットとして真似しやすい。
 - offline / online を同じ枠組みで扱える点が実装上ありがたい。offline warmup で初期 playbook を作ってから online で継続更新、という流れは AppWorld online で best (+17.1)。
 - ラベルなしでも執行フィードバック（コード実行成否）で動く＝ agent 系では実用的。逆に「実行で正解判定できない」ドメイン (FiNER no-label) では ACE 自身も劣化する、と論文が明示している。**「feedback signal の質」が ACE の上限を決める**、というのが正直な絵。
 - coverage が広く playbook が長くなる → 普通なら推論コストが膨らむ、が ACE は KV cache 前提で「reuse 91.8%」と数字を出してきている。同じ context を何度も叩く ICL ワークロードでは現実的にコストが乗らない、という議論はベンチに載せにくい点を丁寧に拾っている。
 - アブレーションで「Reflector + multi-epoch + offline warmup」が積み上げで効いていて、どれを抜いても -3〜+5 pt 変動するのが見える。Dynamic Cheatsheet の主要欠点 (rewrite + Reflector 無し) をピンポイントで補強する設計、という読み方ができる。
-- 「prompt 工学を捨てて RL/finetune に行くべき」という潮流に対して、cost と解釈性で押し返してくる種類の論文。selective unlearning や継続学習との接続も discussion で示唆されている。
+- context adaptation は weight update より安く、context が human-interpretable なので selective unlearning にもつながる、という discussion の位置づけがある。
 
 ## Critical Thoughts（評価・疑問）
 
@@ -50,18 +50,18 @@
 - **弱み / 疑問**:
   - 著者自身が limitations (§5) で書いている通り、**Reflector の質に強く依存**する。実行フィードバックが得にくいドメインでは context が "noisy or even harmful" になりうる、と明言（FiNER online no-label の -3.4 がまさにそれ）。
   - "context は長いほうが良い" を主張するが、HotPotQA や Game of 24 のように「短い指示で十分」なタスクでは ACE は不要だと自分でも認めている。**どこからが ACE 適用領域なのか、apriori に判別する基準は提示されていない**。
-  - playbook が膨張する一方で、grow-and-refine の de-duplication が semantic embedding 一発であり、**embedding が誤って同義と判定して有用 bullet を消す**ケースのアブレーションは本文では見えない（incremental update の効果は appendix）。
-  - AppWorld 以外の agent benchmark での評価は appendix と StreamBench（医療 DDXPlus / BIRD-SQL）に限定。**ベンチがドメイン特化系に偏っている**ので、open-ended な web agent や多モーダル系には外挿しにくい。
-  - "KV cache 再利用で長 context は高くならない" は OpenAI API の prompt caching に依存した主張で、**self-host (vLLM 等) でも同じ 80% 級の billed コスト削減が出るかは未検証**。
-  - GEPA との比較で auto="heavy" を使っているが、GEPA を ACE と同じ rollout 数で揃えた条件で打つとどうなるか（**iso-budget 比較**）が無い。GEPA は本来 sample-efficient を売っているので、彼らに「より多く回せた条件」を与えた場合の上限が気になる。
+  - playbook が膨張する一方で、grow-and-refine の de-duplication は semantic embeddings による比較であり、TeX 中では FiNER 上の deduplication threshold 感度分析（50% / 70% / 90%）はあるが、**有用 bullet を誤って prune する具体ケース分析**は見当たらない（評者補足）。
+  - agent benchmark として本文で評価しているのは AppWorld。追加評価は appendix の StreamBench 由来タスク（医療 DDXPlus / BIRD-SQL）で、open-ended な web agent や多モーダル系には外挿しにくい（評者補足）。
+  - "KV cache 再利用で長 context は高くならない" の実測は OpenAI API (GPT-5.1) の prompt-caching study。self-host serving でも同じ billed cost 削減が出るかは TeX 中では検証されていない（評者補足）。
+  - GEPA との比較で auto="heavy" を使っているが、GEPA と ACE の rollout 数を同一に揃えた **iso-budget 比較**は TeX 中には見当たらない（評者補足）。
   - "production-level agent IBM CUGA と並ぶ" の比較は本文 footnote 自身が「方法論的比較ではなく文脈参照」と但し書きしており、見出しほどフェアな勝利ではない（agent engineering の差を込みにした参考値）。
   - context は人間可読、と謳うが Figure 3 の例は部分表示で、実際に何百〜何千 bullet になった playbook の可読性・運用性（誰がレビューするのか）は議論されていない。
 - **次に試したいこと**:
-  - 同じ delta bullet 設計で **Reflector を蒸留**する（強い Reflector のフィードバックを weak Generator+Curator に flow させ続けるとどこまで base が引き上がるか）。
-  - playbook を **「diff 列」として保存**しておき、ある bullet を消したら spec の何が壊れるかを post-hoc に traceback できる仕組み（selective unlearning の具体実装）。
-  - iso-budget で GEPA / TextGrad / Reflexion を並べた **rollout 数 vs accuracy の pareto** を AppWorld 上で引く。
-  - reward が無い設定で、Generator の自信度 (logprob) や agent-self-judge を Reflector の代理シグナルとして使い、FiNER online no-label の劣化が回復できるかを検証。
-  - bullet ベースの context を **RAG index と同じインフラに載せる**（id + counter + content をベクトル DB に）と運用がどう変わるか。
+  - 同じ delta bullet 設計で **Reflector を蒸留**する（強い Reflector のフィードバックを weak Generator+Curator に flow させ続けるとどこまで base が引き上がるか）（評者補足）。
+  - playbook を **「diff 列」として保存**しておき、ある bullet を消したら spec の何が壊れるかを post-hoc に traceback できる仕組み（selective unlearning の具体実装）（評者補足）。
+  - iso-budget で GEPA / TextGrad / Reflexion を並べた **rollout 数 vs accuracy の pareto** を AppWorld 上で引く（評者補足）。
+  - reward が無い設定で、Generator の自信度 (logprob) や agent-self-judge を Reflector の代理シグナルとして使い、FiNER online no-label の劣化が回復できるかを検証（評者補足）。
+  - bullet ベースの context を **RAG index と同じインフラに載せる**（id + counter + content をベクトル DB に）と運用がどう変わるか（評者補足）。
 
 ## Notes / Quotes
 
@@ -74,19 +74,14 @@
 - "A limitation of ACE is its reliance on a reasonably strong Reflector: if the Reflector fails to extract meaningful insights from generated traces or outcomes, the constructed context may become noisy or even harmful." (discussion §5)
 - "ACE is most beneficial in settings that demand detailed domain knowledge, complex tool use, or environment-specific strategies that go beyond what is already embedded in model weights or simple system instructions." (discussion §5、ACE 不要なケースの裏返し)
 - 主要ハイパーパラ: Reflector refinement の最大 round = 5、offline epoch 最大 = 5、batch size = 1 (1 sample で 1 delta) (results §4.2)。
-- (verified 2026-05-20) Related Papers の "Suzgun & Krause" は誤り。Dynamic Cheatsheet (arXiv:2504.07952) の著者は Suzgun, Yuksekgonul, Bianchi, Jurafsky, Zou (iclr2026_conference.bib `suzgun2025dynamic` で確認)。本文の `krause2019dynamic` は別論文 (Krause+ "Dynamic Evaluation of Transformer Language Models", 2019) を指す TeX 側の citation バグ。
 - (verified 2026-05-20) Summary の「汎化: 5–12 pt」は Llama-3.3-70B (FiNER +2.4/+1.1) を含めると過大評価。GPT-OSS-120B / GPT-5.1 / Llama-70B それぞれの実測値（extended_results_CR.tex Table 4–7）に置き換えた。Reflector 質依存に関する主張は §5 で一般論として述べられているのみで Llama-70B 個別の解釈は TeX 上に明示なし、削除。
+- (verified 2026-05-27) venue/year を TeX の `\iclrfinalcopy` と `iclr2026_conference.sty` の final header に合わせて修正 (iclr2026_conference.tex, iclr2026_conference.sty)。
+- (verified 2026-05-27) bbl が TeX ソースに含まれていないため、Related Papers の論文タイトル・著者断定を削除し、本文で確認できる citation key のみの記録に変更 (iclr2026_conference.tex, sections/*.tex)。
+- (verified 2026-05-27) Takeaway / Critical Thoughts の TeX 根拠より強い表現を削除または「評者補足」と明示 (introduction_CR.tex, results_CR.tex, limitations_CR.tex, extended_results_CR.tex)。
 
 ## Related Papers
 
-- Suzgun, Yuksekgonul, Bianchi, Jurafsky & Zou, *Dynamic Cheatsheet* (arXiv:2504.07952, 2025) — ACE が直接の比較対象かつ着想源。rewrite 起因の context collapse を見せるための代表例。
-- Agrawal+ *GEPA* (2025) — reflective prompt evolution + genetic Pareto。brevity bias の代表例として批判される一方、offline の主 baseline。
-- Opsahl-Ong+ *MIPROv2* (2024, DSPy) — 共通 baseline (ベイズ最適化系)。
-- Shinn+ *Reflexion* (2023) / Yuksekgonul+ *TextGrad* (2024) — natural language feedback 系の系譜。
-- Yao+ *ReAct* (2023) — AppWorld の公式 agent 実装、ACE もこの上に乗る。
-- Trivedi+ *AppWorld* (2024) — メイン agent benchmark。
-- Loukas+ *FiNER* (2022) / Wang+ *FinLoRA / Formula* (2025) — 金融 domain benchmark。
-- Wu+ *StreamBench* (2024) / Fansi+ *DDXPlus* (2022) / Li+ *BIRD-SQL* (2023) — 追加ドメイン (医療 / text-to-SQL)。
-- Xu+ *A-Mem* (2025) / Suzgun+ *Dynamic Cheatsheet* — bullet 構造の memory framework として比較。
-- Gim+ 2024 / Yao+ *CacheBlend* 2025 / Liu+ *KIVI* 2024 — KV cache 再利用・圧縮の根拠付け文献。
-- Marreed+ *IBM CUGA* (2025) — leaderboard 比較用の production agent。
+- TeX ソースに `.bbl` が含まれていないため、参考文献のタイトル・著者名はこの検証では書かない。
+- 本文で ACE の比較対象・着想源として引用: `suzgun2025dynamic`, `agrawal2025gepa`, `opsahl2024optimizing`, `shinn2023reflexion`, `yuksekgonul2024textgrad`, `yao2023react`。
+- 本文で評価ベンチマークとして引用: `trivedi2024appworld`, `loukas2022finer`, `wang2025finlora`, `wu2024streambench`, `fansi2022ddxplus`, `li2023can`。
+- 本文で memory / cache / leaderboard 文脈として引用: `xu2025mem`, `gim2024prompt`, `yao2025cacheblend`, `liu2024kivi`, `AppWorldLeaderboard`, `marreed2025towards`。

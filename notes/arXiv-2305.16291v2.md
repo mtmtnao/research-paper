@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/2305.16291
 - source: ../papers/arXiv-2305.16291v2/
 - authors: Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Mandlekar, Chaowei Xiao, Yuke Zhu, Linxi "Jim" Fan, Anima Anandkumar (NVIDIA / Caltech / UT Austin / Stanford / UW Madison)
-- venue / year: arXiv 2023 (project page: https://voyager.minedojo.org)
+- venue / year: TeX 中には明示なし（ms.tex は neurips_2023.sty を preprint で使用、project page: https://voyager.minedojo.org）
 - tags: [LLM-agent, embodied, lifelong-learning, code-generation, Minecraft, GPT-4]
 - read_date: 2026-05-13
 
@@ -28,10 +28,10 @@
 ## Takeaway（自分にとっての要点）
 
 - **「コードをスキルの単位にする」設計の強さ**: 自然言語プランや低レベル軌道ではなく実行可能関数（`craftStoneShovel()` 等）にすることで、composability・retrieval・debugging・継続学習が同じインフラに乗る。エージェントの memory 設計の有力な雛形。
-- **Curriculum を LLM に外注する**: 報酬関数や手書きカリキュラム不要で、agent 状態を context に入れるだけで novelty search 風に動く（random curriculum で -93% なのが効果の証拠）。Minecraft 知識を prompt に書き込まずに済んでいる点が特に強い。
-- **Self-verification > 他の feedback**: ablation で最も効くのが「成功判定する別 LLM」。Reflexion 的 self-reflection と違って "成功したか" を別 critic が判断するので、curriculum の next task に進むかどうかの gating 信号として機能している。これは reward sparse な open-world で reward shaping 代わりに使える。
+- **Curriculum を LLM に外注する**: 報酬関数や手書きカリキュラム不要で、agent 状態・既達成/失敗タスク・GPT-3.5 による追加 context を入れて、GPT-4 が bottom-up に次タスクを出す。著者はこれを in-context novelty search と位置づけており、random curriculum では item 数が -93% 落ちる。
+- **Self-verification > 他の feedback**: ablation で最も効くのが「成功判定する別 LLM」。Reflexion 的 self-reflection と違って "成功したか" を別 critic が判断するので、curriculum の next task に進むかどうかの gating 信号として機能している（method §2.3 / experiments §4.4）。
 - **Skill library はモデル間で plug-and-play**: AutoGPT に挿しただけで成績が上がる。蓄積したコードが他 agent でも再利用できるので「LLM agent 用のオープンソース・スキルカタログ」を考える余地がある。
-- **GPT-3.5 では成立しない**: 5.7× 差は単なる精度差ではなく「コード生成が要求水準を満たすかどうか」の閾値問題に見える。同じアーキでも基盤 LLM の能力差で連続学習能力がガクッと崩れることがあるという定量的な参考値。
+- **GPT-3.5 では成立しない**: code generation を GPT-3.5 に置換すると GPT-4 版 Voyager は 5.7× 多く unique items を得る。著者は GPT-4 の code generation quality が必要だと述べている。
 - **temperature の使い分け**: 探索性は curriculum だけ 0.1、コード生成や critic は 0。多様性が必要な場所だけ温度を上げる、というのは多 agent 設計の実用パターン。
 
 ## Critical Thoughts（評価・疑問）
@@ -39,16 +39,16 @@
 - **強み**:
   - **3 モジュールが clean に分離**しており、各々を ablation で個別に倒している（curriculum -93%、self-verification -73%、GPT-4→3.5 で 1/5.7）。設計判断が「効くから残した」と説明可能。
   - **zero-shot 転移**: 新 world でも inventory ゼロから Diamond Pickaxe を 19±3 iter で達成 (3/3) は強い結果。スキルが world specific でないことを示しており、coding ベースのスキル表現の prediction を裏付ける。
-  - **完全 black-box**: 勾配不要・パラメータ非公開でも動く。発表時点で再現性が極めて高く、後続 follow-up が出やすい設計。
+  - **完全 black-box**: 勾配不要・パラメータ非公開で、GPT-4 への prompting / in-context learning によって動く。
   - **限界を著者自身が明示**（コスト・hallucination・自己検証ミス）しており、誇張がない。
 
 - **弱み / 疑問**:
-  - **コストの議論が定性的**: limitations で「GPT-4 は GPT-3.5 の 15×」と書くだけで、1 trial あたりの USD・トークン量が本文に出ていない（appendix にあるかもしれないが本文未提示）。Tech tree 比較で「prompting iteration 数」を指標にしているが、AutoGPT との iteration 1 回あたりの API コストは異なるはずで、コスト同条件の比較になっていない。
+  - **コストの議論が定性的**: limitations で「GPT-4 は GPT-3.5 の 15×」と書くだけで、1 trial あたりの USD・トークン量は TeX 中に見当たらない。Tech tree 比較で「prompting iteration 数」を指標にしているが、AutoGPT との iteration 1 回あたりの API コストを揃えた比較は TeX 中には示されていない。
   - **試行回数が少ない**: tech tree も downstream も 3 trials。Diamond は 1/3 で「unlock した」と書いているが、再現率 33% を SOTA と呼ぶのは弱い。標準偏差が大きい指標もあり（AutoGPT iron 135±103 など）、優位性の有意性検定はない。
   - **hallucination が curriculum 側にも残る**: "copper sword" 等の存在しない item を要求する事例を著者が認めており、curriculum LLM がドメイン知識を完全に持っていない。これを「後で再試行」で吸収する設計は spurious task に対して頑健か疑問。
   - **self-verification が誤検出する例**（spider string を spider 撃破の成功シグナルと認識しない）も明記。self-verification の信頼性が崩れると skill library に「失敗例」が紛れ込む経路があるはずで、long horizon でどれくらい蓄積するかは未分析。
   - **Mineflayer 高レベル API に依存**: 「3D 知覚も低レベル制御も対象外」と明示。論文の貢献は LLM のプランニング部分に閉じており、本物のロボットや視覚必須環境への拡張は別問題（broader impacts でも safety 制約が必要と認めている）。
-  - **比較ベースラインが NLP 由来**: ReAct / Reflexion / AutoGPT を Minecraft に「再解釈」して持ち込んでいる。元々 Minecraft 用に作られていない手法を低い土俵で比較しており、low-level pixel ベースの Minecraft agent（VPT, DreamerV3 等）とは「apple-to-apple でない」と自ら断っている。Voyager の貢献は確かだが「LLM agent カテゴリで一番」以上のことは言えない。
+  - **比較ベースラインが NLP 由来**: ReAct / Reflexion / AutoGPT を Minecraft に「再解釈」して持ち込んでいる。著者は、low-level pixel ベースの Minecraft agent（VPT, DreamerV3 等）とは「apple-to-apple でない」と自ら断っている。Voyager の主張は、Mineflayer の高水準 API を使う GPT-4 lifelong embodied agent として読むべき。
   - **skill library のサイズ管理がブラックボックス**: スキルが無制限に増えた場合の retrieval 精度・冗長性除去・「悪いスキル」の上書きについての言及が薄い。lifelong learning と呼ぶには寿命の長い実験が必要だが 160 iter 上限。
 
 - **次に試したいこと**:
@@ -74,6 +74,9 @@
 - skill library を AutoGPT に挿すと downstream で成績が上がる → ライブラリが plug-and-play（experiments §4.3, Table 2）
 - (verified 2026-05-20) Table 2 の AutoGPT w/ Skill Library 結果を 0–2/3 と訂正 (Lava Bucket は 0/3、Diamond Pickaxe / Golden Sword は 1/3、Compass は 2/3) (tables/downstream_table.tex)
 - (verified 2026-05-20) Related Papers の Plan4MC を Wang+ 2023 → Yuan+ 2023 に訂正、DEPS = Wang+ 2023 と分離 (ms.bbl, wang2023describe / yuan2023plan4mc)
+- (verified 2026-05-27) venue/year を TeX で確認できる範囲（neurips_2023.sty preprint 使用、project page 明記）に限定 (ms.tex)
+- (verified 2026-05-27) automatic curriculum の説明から「Minecraft 知識を prompt に書き込まずに済む」を削除し、GPT-3.5 self-ask/self-answer と optional wiki knowledge base の記述に合わせた (2-method.tex, appendix/1-method-appendix.tex)
+- (verified 2026-05-27) 再現性・コスト比較・baseline 評価で TeX 根拠より強い評者表現を削り、TeX 中に示された範囲へ限定 (3-experiment.tex, 4-discussion.tex)
 
 ## Related Papers
 

@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/2001.08361
 - source: ../papers/arXiv-2001.08361v1/
 - authors: Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B. Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, Dario Amodei
-- venue / year: OpenAI preprint, 2020-01
+- venue / year: TeX 中には明示なし（main.tex は nips_2018_wider_nonotice.sty を preprint で使用）
 - tags: [scaling-laws, language-models, transformer, power-law, compute-optimal]
 - read_date: 2026-05-12
 - rating:
@@ -34,32 +34,32 @@
 - **critical batch size の道具化**: $B_\mathrm{crit}(L)=B_\ast/L^{1/\alpha_B}$ で「実測の $C, S$」を「最小 compute / 最小 step」両方向に補正できる。これで実験条件の差を吸収して trend を綺麗にできるのがこの論文の地味な要点。
 - **オーバーフィットはほぼ $N^{0.74}/D$ だけで決まる**: あらゆる $(N,D)$ 設定で $\delta L$ がこの 1 変数に潰れる。dropout 10% を入れた前提だが、「データを増やす速度はモデルの 0.74 乗でよい」は実務 rule of thumb として使いやすい。
 - **転移はオフセット**: out-of-distribution は in-distribution validation との間に「一定の追加 loss」がつくだけで、伸び方は同じ。訓練分布性能を上げれば転移性能も同じ勢いで上がる。
-- **$L^\ast\!\sim\!1.7$ nats/token は「自然言語のエントロピー推定」かもしれない**、という discussion は強気だが面白い。WebText2 は 1.4 tokens/word, 4.3 chars/token なので、1 word ≒ 2.4 nats の下限を仮定的に与える。
+- **$L^\ast\!\sim\!1.7$ nats/token は「自然言語のエントロピー推定」かもしれない**、という discussion は強気だが面白い。WebText2 は 1.4 tokens/word, 4.3 chars/token なので、1 word あたり約 2.4 nats の粗い推定に対応する。
 
 ## Critical Thoughts（評価・疑問）
 
 - **強み**:
-  - 8 桁という前例のないダイナミックレンジで「すべて power law」を示し切った実証論文。それ以降の LLM 開発（GPT-3, Chinchilla, etc.）が依拠する基準点になった理由が読めば分かる。
+  - 8 桁の $C_\mathrm{min}$、6 桁の $N$、2 桁超の $D$ にわたり power law を示した実証論文。
   - 配分 $N\!\propto\!C^{0.73}, S\!\propto\!C^{0.03}$ を**実測**と**$L(N,S)$ からの解析的予測** $\alpha_C^\mathrm{min}/\alpha_N\!\approx\!0.71$ の両方で出して整合させた点が説得力を上げている。
-  - 形状・LSTM・転移・early stopping・critical batch・1-epoch 一致まで、関連する話題を 1 本の枠組みに統合してある。
+  - 形状・LSTM・転移・early stopping・critical batch まで、関連する話題を 1 本の枠組みに統合してある。
   - WebText2 という単一データセット・vocab に対する係数だと自覚的で、「$N_c, D_c$ には fundamental meaning はない」「指数だけが意味を持つ」と明言している点が良い。
 - **弱み / 疑問**:
-  - **データの質・分布を変えていない**: WebText2 のみ。trend がトークナイザや分布で再スケールされるとしか述べておらず、データ品質と $\alpha_D$ の関係は未検討。後年の Chinchilla / DeepSeek 等で「データ最適配分」が再評価される余地が残っている（事実、$D\propto C^{0.27}$ は Hoffmann+ 2022 で修正される）。
+  - **データの質・分布を変えていない**: 訓練は WebText2 のみ。trend がトークナイザや分布で再スケールされると述べており、データ品質と $\alpha_D$ の関係は未検討。
   - **正則化/データ拡張を最適化していない**と著者自身が caveat に書いている（§Caveats）。dropout 固定 10%、$L(N,D)$ fit は $D\!\approx\!2\times 10^7$ tokens では悪い（40 updates/epoch）。小データ域は別 regime の可能性。
   - **理論的根拠なし**: 著者自身「we do not have a solid theoretical understanding for any of our proposed scaling laws」と認めている。$1/D$ 展開を仮定する 3 番目の原則は "speculative"。
   - **$B_\mathrm{crit}(L)$ の外挿に自信なし**と明記。これがズレると $\alpha_C^\mathrm{min}$ もずれる。
   - **$C\!\approx\!6NBS$ 近似が $n_\mathrm{ctx}\gtrsim 12d_\mathrm{model}$ で破綻する**と自覚されており、long-context 時代には注意。
   - **学習率以外のハイパラ（init scale, momentum 等）を tune し切れていない**と認めている。最適 learning rate は target loss に依存し、短い run では大きい LR が良い可能性も未探索。
   - **$L^\ast\!\sim\!1.7$ nats/token を「自然言語のエントロピー推定」と読める、という conjecture** は指数のわずかな違いで桁が動く（自分で highly uncertain と書いている）。哲学的主張に近く、現状そのまま信じる根拠は弱い。
-  - 「サンプル効率が良い大モデル」は **訓練側** の議論で、推論コスト（メモリ・レイテンシ）への配慮はほぼ無い。実運用での意思決定には別軸が要る。
-  - $\alpha_N\!=\!0.076$ の小ささから、N を 10x 増やしても loss は $10^{-0.076}\!\approx\!0.84$ 倍にしかならない。ベンチマーク精度との橋渡しがないと「規模を上げ続けて得か」の判断はできない。著者は "more is different" と回避している。
+  - 「サンプル効率が良い大モデル」は **訓練側** の議論で、inference cost を含む目的関数は扱っていない。Appendix A.3 では小さいモデルが inference cost を考えると有用な場合がある、とだけ述べている。
+  - $\alpha_N\!=\!0.076$ の小ささから、N を 10x 増やしても loss は $10^{-0.076}\!\approx\!0.84$ 倍にしかならない。著者は discussion で、loss の滑らかな改善が関連する language tasks の改善に変換されるかは重要な未検討点だと述べている。
 - **次に試したいこと**:
   - 同じ枠組みを image / audio / video / RL の生成モデルで再現し、$\alpha_N, \alpha_D, \alpha_C$ がドメイン横断で universal か検証。
   - データ品質・重複・curation を変えて $D_c, \alpha_D$ がどう動くか測り、compute-optimal の $N(C)$ がどこまでデータ依存か可視化。
   - $\alpha_S\!=\!0.76$ の universality を Hessian スペクトルから説明する noisy quadratic / NTK 連結。
-  - $L^\ast$ の存在を、人間の bits-per-character 推定（Shannon experiments）と直接突き合わせる。
-  - 訓練ロス改善が downstream（few-shot, MMLU 等）にどう乗るかの emergence 解析（GPT-3 以降で実証された方向）。
-  - **推論コストを目的関数に入れた compute-optimal の再導出**（Chinchilla 路線）と、本論文の $N\propto C^{0.73}$ がどこで合流するか。
+  - $L^\ast$ が自然言語の entropy-per-token 推定として読めるか、WebText2 以外のデータ分布で確認する。
+  - 訓練ロス改善が downstream language tasks の改善にどう対応するかを調べる。
+  - inference cost を目的関数に入れた場合、Appendix A.3 の suboptimal model size 議論がどう変わるかを調べる。
 
 ## Notes / Quotes
 
@@ -72,14 +72,13 @@
 - 著者明示の限界（§Caveats）: 理論なし／$B_\mathrm{crit}$ の外挿に不安／小データ域と正則化を tune していない／$C\!\approx\!6NBS$ は $n_\mathrm{ctx}\gtrsim 12 d_\mathrm{model}$ で破綻／init・momentum 等の hyperparam tuning が不十分／LR は target loss 依存で短い run は未探索。
 - 「核となる scaling laws の数値は WebText2 / BPE tokenizer 依存。$N_c, D_c$ に fundamental meaning はなく、指数 $\alpha$ だけが意味を持つ」(§1.1)。
 - (verified 2026-05-20) Related Papers の Hestness+ 2019 の会議名を SC'19 → PPoPP'19 に修正（main.bbl: "Proceedings of the 24th Symposium on Principles and Practice of Parallel Programming, PPoPP '19"）。Summary／Takeaway／Critical Thoughts の数値・固有名は main.tex（abstract, §1.1, §3, Tables of $L(N,D)$ / $L(N,S)$ fits, App. A Tables, §Caveats, §5.3, footnote on WebText2 stats）と再照合し、その他は問題なし。
+- (verified 2026-05-27) venue/year の断定を TeX で確認できる preprint style 使用に限定し、TeX/main.bbl に無い Chinchilla/DeepSeek/GPT-3/MMLU/Hoffmann+ 2022 等の後年比較を削除 (main.tex, main.bbl)。
 
 ## Related Papers
 
 - McCandlish+ 2018 "An Empirical Model of Large-Batch Training" (arXiv 1812.06162) — critical batch size と gradient noise scale。本論文の $B_\mathrm{crit}$ の理論基盤。
-- Radford+ 2019 (GPT-2) — WebText の元データセット・BPE tokenizer・(48, 1600) baseline モデル。
+- Radford+ 2019 "Language Models are Unsupervised Multitask Learners" — WebText の元データセット・BPE tokenizer・(48, 1600) baseline モデル。
 - Hestness+ 2017/2019 (arXiv 1712.00409, "Beyond Human-Level Accuracy" PPoPP'19) — 最も近い先行研究。ただし彼らは super-linear な $D$-$N$ スケーリングを報告。本論文は sub-linear と逆の結論。
 - Rosenfeld+ 2019 (arXiv 1909.12673) — 同種の $L(N,D)$ ansatz を独立に提案（脚注で同時期と言及）。
 - Tan & Le 2019 EfficientNet (arXiv 1905.11946) — 画像でのスケーリング比較対象。
 - Vaswani+ 2017 (Transformer), Dehghani+ 2018 Universal Transformer (arXiv 1807.03819) — アーキテクチャ比較。
-- Hoffmann+ 2022 (Chinchilla) — 後年、$D\propto C^{0.27}$ を data-optimal 寄り（$N\!\propto\!C^{0.5}, D\!\propto\!C^{0.5}$）に修正した。本論文と直接対比される後継。
-- Kaplan+ 自身の続報・GPT-3 (Brown+ 2020) — 本論文の予測に従って実証された大規模 LM。

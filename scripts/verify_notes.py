@@ -49,13 +49,13 @@ TEMPLATE_REL = "notes/_template.md"
 EXAMPLE_REL = "notes/arXiv-2305.14325v1.md"
 
 LIMIT_RE = re.compile(
-    r"(You've hit your .*?limit|usage limit|rate limit|quota exceeded)",
-    re.IGNORECASE,
+    r"^(?:error:\s*)?(?:You've hit your (?!\.\.\.)[^\n]*limit|usage limit[^\n]*|rate limit[^\n]*|quota exceeded[^\n]*)$",
+    re.IGNORECASE | re.MULTILINE,
 )
 LIMIT_HIT = threading.Event()
 
-# 行頭の `, *, > 等の装飾（マークダウンや引用記号）を許容して VERDICT を拾う
-VERDICT_RE = re.compile(r"^[`*_>\s]*VERDICT:\s*[`*_]*(OK|UPDATED|ISSUES)\b", re.MULTILINE)
+# Markdown 装飾や説明文中の `VERDICT: UPDATED` も許容して拾う。
+VERDICT_RE = re.compile(r"VERDICT:\s*[`*_]*(OK|UPDATED|ISSUES)\b", re.MULTILINE)
 
 
 def build_cmd(prompt: str) -> list[str]:
@@ -68,11 +68,10 @@ def build_cmd(prompt: str) -> list[str]:
         ]
     if AGENT == "codex":
         return [
-            "codex", "exec",
+            "codex", "-a", "never", "exec",
             "-C", str(ROOT),
             "-m", MODEL,
             "-s", "workspace-write",
-            "-a", "never",
             prompt,
         ]
     raise ValueError(f"unsupported AGENT={AGENT!r} (expected 'claude' or 'codex')")
@@ -155,6 +154,7 @@ def build_prompt(folder: str) -> str:
    f. 1行目のタイトルが TeX の \\title{{...}} と一致しているか
    g. arXiv ID / authors / venue / year がメタ情報と一致しているか
 5. 問題があれば notes/{folder}.md を Edit / Write で修正:
+   - **問題が無ければ絶対に変更しない**。表現の好み・文体調整・網羅性向上だけを理由に編集しない。
    - **誤りは削除または訂正**。曖昧な記述で誤魔化さない。
    - **空欄は無理に埋めない**。TeX 根拠がある事だけを書く。
      根拠が薄いセクションは `- (TeX 中に明確な記述なし)` と書いて空欄を残す方が良い。

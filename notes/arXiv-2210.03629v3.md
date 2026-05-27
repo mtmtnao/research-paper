@@ -21,38 +21,38 @@
   - **Human study (HotpotQA 各 50 traj × 4)**: CoT の失敗の 56% が hallucination、ReAct は 0%。代わりに ReAct は reasoning error 47%（特に同じ thought/action のループ）と search 結果が non-informative 23% が主要失敗モード。
   - **Finetuning (HotpotQA, 3,000 traj)**: prompting だと PaLM-8/62B では ReAct が四手法中最低だが、finetune 後は最強。PaLM-8B finetuned ReAct > PaLM-62B prompting all、PaLM-62B finetuned ReAct > PaLM-540B prompting all。
   - **GPT-3 追試 (Appendix)**: HotpotQA EM 30.8、ALFWorld 78.4 と PaLM-540B（29.4 / 70.9）を上回る。
-- **貢献**: (1) reasoning と acting を交互に出す general prompting パラダイム ReAct を提案、(2) 4 つの異種タスク（HotpotQA / FEVER / ALFWorld / WebShop）で CoT・Act・IL・IL+RL 等の baseline を網羅比較、(3) sparse な thought / 内部 vs. 外部知識のハイブリッド / human-in-the-loop な thought 編集など decision making での分析、(4) prompting と finetuning でのスケーリング挙動を分離して提示。
+- **貢献**: (1) reasoning と acting を交互に出す general prompting パラダイム ReAct を提案、(2) 4 つの異種タスク（HotpotQA / FEVER / ALFWorld / WebShop）で reasoning-only / acting-only / IL / IL+RL 等の baseline と比較、(3) acting in reasoning tasks と reasoning in interactive tasks の ablation・分析、(4) prompting setup の limitation と HotpotQA finetuning 初期実験を提示。
 
 ## Takeaway（自分にとっての要点）
 
-- ReAct の核は「`Thought:` という出力フォーマットだけで action space を言語空間に拡張する」こと。新規モジュールも RL も不要で、prompt 構造だけで agent が立ち上がる。今の tool-use エコシステム（function calling、LangChain 系）の祖先がこの論文で、フォーマットの単純さこそが普及力の根源。
-- 「reasoning に強い CoT」と「外部 grounding に強い ReAct」を heuristic で切り替えるハイブリッドが最強、という結果は重要。ReAct ≥ CoT ではなく、**両者は相補的で内部知識が確信できないときだけ取りに行く**という設計指針が transferable。
-- ALFWorld で `ReAct-IM` (Inner Monologue 風に環境観測の再記述だけする thought) との比較 71 vs. 53 は、「思考＝観測の言い換え」ではダメで、サブゴール分解・常識・自己反省を入れて初めて効く、という ablation が綺麗。"thought とは何か" を定義する材料に使える。
-- prompting で最弱だった ReAct が finetuning で最強に転じるのは、in-context での容量不足が主原因という解釈で、現在の long-context モデルや SFT データセット作りの方向性（trajectory SFT）と整合する。
-- WebShop で human expert（SR 59.6）にまだ大差をつけられているのは、**explore と query 再定式化**の不足が原因と著者が明記。今の deep research 系エージェントの主戦場とほぼ同じ論点。
-- ReAct の主要失敗モードは reasoning error 47%（特に thought/action ループ）と検索が空 23%。これは greedy decoding の sub-optimal さと検索ツールの脆弱さに帰着しており、根本的な手法の欠陥ではないという主張。逆に言うと**ツール側の品質と decoding 戦略がこの手の agent の伸びしろ**。
+- ReAct の核は「action space を言語空間 $\mathcal{L}$ で拡張し、環境を変えない thought を context に足す」こと。主実験では frozen PaLM-540B に few-shot trajectory を与えるだけで、domain-specific action と free-form thought を生成させている。
+- 「reasoning structure は CoT が強く、factual grounding は ReAct が強い」という著者の観察から、heuristic で両者を切り替える hybrid が HotpotQA / FEVER の表中で最高値を出している。
+- ALFWorld で `ReAct-IM` (Inner Monologue 風の dense external feedback thought) との比較 71 vs. 53 は、環境フィードバック中心の thought だけでは不十分で、サブゴール分解・次サブゴール決定・commonsense による探索先推定が効いていることを示す ablation。
+- prompting で最弱だった ReAct が finetuning で最強に転じるのは、ReAct が PaLM-8/62B の in-context examples だけでは学びにくい一方、3,000 examples の finetuning では最も伸びる、という論文中の結果として重要。
+- WebShop で human expert（SR 59.6）にまだ大差をつけられている点について、著者は expert humans が prompting-based methods より significantly more product explorations and query re-formulations を行うと述べている。
+- ReAct の主要失敗モードは reasoning error 47%（同じ thought/action の反復を含む）と search result error 23%。著者は反復について greedy decoding の sub-optimal さを疑い、better decoding（例: beam search）を future work として挙げている。
 
 ## Critical Thoughts（評価・疑問）
 
 - **強み**:
-  - prompt フォーマットがシンプルで、後段の追試・派生が極めて容易（実際に reproducibility が高く、エコシステムの基礎になった）。
-  - reasoning-heavy（HotpotQA/FEVER）と action-heavy（ALFWorld/WebShop）を同じ paradigm で扱い、それぞれの baseline 群（CoT 系・IL/IL+RL 系）に対して fair 比較を組み立てた構成力。
-  - 「ReAct-IM」という Inner Monologue 風の控えめな ablation を入れて、**何が effective component なのか**を分離した点。abstract reasoning 無しでは ALFWorld が −18pt 落ちると示せている。
-  - prompting と finetuning の傾向が逆転（prompting で最弱 → finetune で最強）するという発見は、「ReAct が学べないのではなく in-context に詰め込めない」だけと言い切る上で説得力がある。
+  - prompt フォーマットがシンプルで、著者は使用 prompt を Appendix に載せ、GPT-3 追試と prompting code も reproducibility のために提示している。
+  - reasoning-heavy（HotpotQA/FEVER）と action-heavy（ALFWorld/WebShop）を同じ paradigm で扱い、reasoning-only / acting-only / IL / IL+RL などの baseline と比較している。
+  - 「ReAct-IM」という Inner Monologue 風の ablation を入れて、dense external feedback thought と sparse/flexible reasoning traces を分けて比較している点。ALFWorld の All success rate では ReAct best-of-6 71、ReAct-IM best-of-6 53。
+  - prompting と finetuning の傾向が逆転（PaLM-8/62B prompting で最弱 → finetune で最強）するという発見は、ReAct が追加 training data で改善する可能性を示す根拠になっている。
   - 人手で 200 trajectory にラベル付けした failure mode 分析を載せており、hallucination 0% を主張する根拠が定量化されている。
 - **弱み / 疑問**:
-  - HotpotQA 単体では CoT-SC (33.4) に ReAct (27.4) は負けており、ReAct が "勝つ" のは hybrid（35.1）のとき。タイトルの "synergy" は **ReAct と CoT のシステム的 hybrid** で初めて成立する、というのは abstract から少し控えめにしか読めない。
-  - ALFWorld の 71% は best-of-6 prompt の選択結果で、avg は 57%（Table 1）。ReAct 自体で avg→best-of-6 が 57→71 と 14pt 開いており、prompt 設計依存性は強そう（一方 ReAct-IM の avg→best-of-6 は 48→53、Act は Table 1 に best-of-6 のみで avg 値が報告されていない）。
+  - HotpotQA 単体では CoT-SC (33.4) に ReAct (27.4) は負けており、ReAct が prompting 表中で最高になるのは hybrid（ReAct→CoT-SC 35.1）のとき。少なくとも HotpotQA では、ReAct 単体の優位ではなく内部知識と外部知識の組み合わせが効いている。
+  - ALFWorld の 71% は best-of-6 prompt の選択結果で、avg は 57%（Table 1）。ReAct 自体で avg→best-of-6 が 57→71 と 14pt 開いている（一方 ReAct-IM の avg→best-of-6 は 48→53、Act は Table 1 に best-of-6 のみで avg 値が報告されていない）。
   - 著者自身 limitations として認めている点: (a) 複雑タスクで demonstration が in-context window を超える、(b) prompting だけだと ReAct は学びにくく finetuning が要る、(c) reasoning error 47%（同じ thought/action を繰り返すループ）が頻発し greedy decoding に起因と示唆、(d) supervised SoTA から大差（HotpotQA 35.1 vs. 67.5）。
-  - WebShop の比較は IL/IL+RL に対するもので、**token budget や計算コストの公正比較**にはなっていない（in-context prompting と数千～万 traj の学習が直接比較されている）。
-  - ReAct の thought はモデルが内部で自由に書くので、`finish[]` を呼ばずに延々と探索したり、`search` を繰り返すループに陥る挙動が頻繁。ハードな step 上限・FEVER で 5 step、HotpotQA で 7 step というのは経験的に決めただけで、原理的解決ではない。
-  - 比較する CoT の hallucination 失敗 56% は、ReAct が外部 grounding でカバーしている前提だが、HotpotQA は **そもそも Wikipedia ベースのタスク**で、ReAct に有利すぎる test bed。一般知識/未知ドメインでの hallucination 抑制効果は本論文単体では言えない。
+  - WebShop の比較は IL/IL+RL に対するもので、**token budget や計算コストの公正比較**にはなっていない（TeX 中には明示されていない / 評者補足）。
+  - ReAct には同じ thought/action を繰り返す失敗パターンがあり、HotpotQA では 7 steps、FEVER では 5 steps で ReAct→CoT-SC に back off している。step 上限は「more steps will not improve ReAct performance」という実験観察に基づく。
+  - HotpotQA は Wikipedia passage を前提にした multi-hop QA で、ReAct も Wikipedia API を使う。一般知識/未知ドメインで同じ hallucination 抑制効果が保てるかは本論文単体では示されていない（評者補足）。
 - **次に試したいこと**:
-  - 同じ token budget で CoT-SC（majority over 21）と ReAct→CoT-SC を pareto curve 上で並べる。ReAct のコスト効率の本当の優位を測りたい。
+  - 同じ token budget で CoT-SC（majority over 21）と ReAct→CoT-SC を pareto curve 上で並べる（評者補足）。
   - thought/action ループ問題に対し、beam search / temperature sampling / self-consistency over ReAct trajectory（trajectory レベルの voting）で何 pt 取り返せるか。著者も footnote で beam search を future work と言っている。
-  - ReAct trajectory を SFT データに distill して small model（7–8B クラス）が prompting ReAct-540B にどこまで近づくか。論文自身の finetuning 実験を現代モデルで再現する自然な延長。
-  - HotpotQA → 一般 web ドメイン（Wikipedia 以外）に拡張したとき、ReAct と CoT の hallucination 差が保てるか。
-  - thought の "edit" による人手介入（論文 §4 で軽く触れている）を定量化して、agent supervision の interface としてどれだけ workable か測る。
+  - ReAct trajectory を追加 training data として使う方向を、論文の PaLM-8B/62B finetuning 実験より広い設定で検証する（評者補足）。
+  - HotpotQA → 一般 web ドメイン（Wikipedia 以外）に拡張したとき、ReAct と CoT の hallucination 差が保てるか（評者補足）。
+  - thought の "edit" による人手介入（Appendix の human-in-the-loop behavior correction）を定量化して評価する（著者も more systematic study を future work としている）。
 
 ## Notes / Quotes
 
@@ -80,3 +80,4 @@
 
 - (verified 2026-05-20) Critical Thoughts の ALFWorld variance に関する記述を修正。Table 1（iclr2023/table/rl.tex）では Act は best-of-6 のみで avg が無く、ReAct-IM の avg→best-of-6 ギャップは 5pt（48→53）。「Act/ReAct/IM 全てが 10pt 以上のギャップ」という記述は誤りだったので、ReAct 単体の 14pt ギャップ（57→71）に絞って書き直し。
 - (verified 2026-05-20) Summary / Takeaway / Critical Thoughts の数値・固有名詞・引用文を text/abstract, text/intro, text/method, text/experiments_language, text/experiments_rl, text/discussion, table/reasoning, table/rl, table/human_study, table/gpt3 と突き合わせ、それ以外の記述は TeX 根拠が取れている事を確認。
+- (verified 2026-05-27) Takeaway / Critical Thoughts から TeX 外の現代エコシステム・現代モデルに関する断定を削除し、評者補足は明示した (iclr2023_conference.tex, text/method.tex, text/experiments_language.tex, text/experiments_rl.tex, text/discussion.tex, text/appendix.tex)

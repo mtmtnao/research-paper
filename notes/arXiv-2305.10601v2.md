@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/2305.10601
 - source: ../papers/arXiv-2305.10601v2/
 - authors: Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Thomas L. Griffiths, Yuan Cao, Karthik Narasimhan
-- venue / year: NeurIPS 2023 (preprint v2, 2023)
+- venue / year: TeX 中には明示なし（main.tex は neurips_2023.sty を [final] で使用）
 - tags: [LLM, reasoning, search, planning, prompting]
 - read_date: 2026-05-13
 
@@ -19,15 +19,15 @@
   - **5×5 Mini Crosswords**（GooBix 156 ゲーム中 index 1,6,…,96 の 20 ゲーム）: Letter/Word/Game 成功率は IO 38.7/14/0、CoT 40.6/15.6/1、**ToT 78/60/20**。oracle best state では 82.4/67.5/**35** (= 7/20 解ける)。ablation: −prune 65.4/41.5/5、−backtrack 54.6/20/5。
   - 付録: GSM8K IO 51 / CoT 86 / **ToT 90**、StrategyQA 73/82/**83**（zero-shot ToT-BFS、5 plan vote → 5 solution vote）。GPT-3.5 では Game of 24 ToT は 19% に留まるが Creative Writing は GPT-3.5+ToT > GPT-4+IO。GPT-4 gen + GPT-3.5 eval = 64%, 逆 = 31% → ボトルネックは思考生成側。
   - **コスト**: Game of 24 ToT は 5.5k generated / 1.4k prompt tokens, \$0.74/問（CoT best-of-100 \$0.47 と同オーダー）。Creative Writing で CoT の約 5 倍。
-- **貢献**: (1) LM 推論を木探索として一般化する ToT フレームワーク、(2) 思考生成 (Sample/Propose) × 状態評価 (Value/Vote) × 探索 (BFS/DFS) のモジュラーな組合せ提示、(3) GPT-4 でも難しい 3 つの新タスク（Game of 24、Creative Writing、5×5 Crosswords）と systematic ablation、(4) LM の "System 1" を古典 AI 由来の "System 2" で増強する概念的位置付け（Newell & Simon の探索木へのオマージュ）。
+- **貢献**: (1) LM 推論を木探索として一般化する ToT フレームワーク、(2) 思考生成 (Sample/Propose) × 状態評価 (Value/Vote) × 探索 (BFS/DFS) のモジュラーな組合せ提示、(3) GPT-4 でも難しい 3 つの新タスク（Game of 24、Creative Writing、5×5 Crosswords）と systematic ablation、(4) LM の "System 1" を古典 AI 由来の "System 2" で増強する概念的位置付け（Newell, Shaw, and Simon の探索木に基づく問題解決への参照）。
 
 ## Takeaway（自分にとっての要点）
 
 - ToT の本質は「**思考の粒度を problem-aware に決め、その粒度で LM 自身に valuation させる**」こと。Sample vs Propose、Value vs Vote の 2×2 を問題に合わせて選ぶのが設計指針。リッチな空間（Creative Writing 段落）は Sample + Vote、制約の強い空間（Game of 24 の式、Crosswords の単語）は Propose + Value。
 - Game of 24 で CoT が IO より悪い（4.0% < 7.3%）のは意外。中間式を逐次サンプルしても、最初の 1 step を誤ると詰むので逆効果になる場面がある。これは「CoT は常に効く」というナイーブな信念への反例として覚えておく。
 - BFS/DFS の選択は思考木の深さに依存：浅い木（T≤3）は BFS+b=5、深く局所評価困難な木（Crosswords は最大 10 step）は DFS + value 閾値で枝刈り + backtrack。Crosswords の −backtrack ablation が word 60→20% に崩れるのは backtrack 必要性の定量証拠。
-- GPT-3.5 ablation（gen=GPT-4 / eval=GPT-3.5 で 64%）は **生成は大モデル・評価は小モデル**という非対称配置でコスト最適化できる示唆。実装上はこちらが現実的。
-- IO/CoT/CoT-SC を ToT の特殊例として表現する図式（depth/breadth に縮退）は、self-consistency と debate と ToT を同じ座標系で比較する叩き台になる。
+- GPT-3.5 ablation（gen=GPT-4 / eval=GPT-3.5 で 64%）は、生成モデルと評価モデルを分けるとコストを下げつつ decent results を得られる可能性がある、という著者の示唆につながる。
+- IO/CoT/CoT-SC/self-refinement を ToT の特殊例として表現する図式（limited depth and breadth）は、既存 prompting 手法を同じ枠組みで比較するための整理になる。
 - iterative-refine（Self-Refine 系）は ToT と排他ではなく「思考生成方式の 3 つ目」として ToT に組み込める、と著者は明言（Creative Writing で ToT→7.91 を確認）。
 
 ## Critical Thoughts（評価・疑問）
@@ -35,16 +35,16 @@
 - **強み**:
   - "deliberate" を 4 つの質問（decompose / generate / evaluate / search）に分解した整理が clean で再現しやすい。コードと prompt が公開（GitHub: princeton-nlp/tree-of-thought-llm）。
   - Game of 24 / Crosswords で「best-of-N CoT との fair comparison」「ablation (−prune, −backtrack, +best state)」を出している点が同時期の prompting 論文に比べて誠実。特に CoT 失敗の 60% が first step で起きるという error analysis は ToT の必要性を直接裏付ける。
-  - thought の粒度・search algorithm を独立に動かせる modularity は、後続研究（RAP、Self-eval guided decoding 等）と組み合わせやすい。
+  - thought の粒度・search algorithm を独立に動かせる modularity は、著者が ToT の conceptual benefit として明示している。
 - **弱み / 疑問**:
-  - 著者自身が Discussion で認めているとおり、ToT は **GPT-4 が CoT で既に解ける多くのタスクには不要**で、API コストが大きい。GSM8K で 86→90 は誤差レベル。"deliberate" が要らない領域では割に合わない。
-  - Game of 24 / Crosswords 共に**評価ベンチが小さい**（各 100問・20問）。Crosswords 20 問で Game 成功率を 5% 単位で比較するのは noise が大きそう。
+  - 著者自身が Discussion で認めているとおり、ToT は **GPT-4 が既に得意な多くの既存タスクには不要かもしれず**、API コストが大きい。付録でも GSM8K / StrategyQA の ToT 改善は「only slightly」と述べている。
+  - Game of 24 / Crosswords 共に**評価ベンチが小さい**（各 100問・20問）。Crosswords 20 問で Game 成功率を比較する点は、サンプルサイズ上の不安が残る（評者補足）。
   - Crosswords は GPT-4 が知らない obsolete 語（例: ``agend''）で正解 state が impossible 判定されて pruning される、と著者が認めている。LM-as-heuristic の限界の典型例。
-  - state evaluator も LM 自身なので、**生成と評価が同じ failure mode を共有する**懸念。GPT-3.5 ablation でも gen 側がボトルネックと言いつつ、eval 側の校正は議論薄い。
-  - "thought" の粒度は手動設計（Game of 24=式、Crosswords=単語）。自動で粒度を決める手段が無く、結局タスクごとに prompt engineering が必要。一般性の主張と実運用コストにギャップがある。
-  - cost 比較表（Table tab:cost_game）は ToT(b=5) と CoT(best-of-100) のみで、CoT-SC(k=100) や IO+Refine との token 量を揃えた pareto curve は描かれていない。
+  - state evaluator も LM 自身なので、**生成と評価が同じ failure mode を共有する**懸念がある（評者補足）。GPT-3.5 ablation では Game of 24 の bottleneck が thought generation と述べられているが、eval 側の校正までは詳述されていない。
+  - "thought" の粒度はタスクごとに設計されている（Game of 24=式、Crosswords=単語）。自動で粒度を決める手段は TeX 中には示されていない。
+  - cost 比較表（Table \ref{tab:cost_game}）は IO(best-of-100) / CoT(best-of-100) / ToT の比較で、CoT-SC(k=100) や IO+Refine との token 量を揃えた pareto curve は示されていない。
 - **次に試したいこと**:
-  - 同じ token 予算で ToT-BFS / CoT-SC / Self-Refine / Multi-agent Debate (Du+ 2023) を並べた pareto curve。debate と ToT は orthogonal（debate は roll-out 全体、ToT は step-wise）なので組み合わせ実験が見たい。
+  - 同じ token 予算で ToT-BFS / CoT-SC / self-refinement を並べた pareto curve（評者補足）。
   - state evaluator を**別モデル**（小モデル, RM, 外部 verifier）に差し替えた時の精度／コスト変化。Game of 24 なら式の数値検算は決定的に判定可能で、LM eval は要らないはず。
   - Crosswords で外部辞書 retrieval を pruning ヒューリスティックに併用（``agend'' 問題への直接対処）。
   - 自動 thought-granularity 探索（粒度を 1 hyperparameter として ToT 自身に探させる）。
@@ -60,15 +60,17 @@
 - "we limit DFS search steps to 100, and simply render the deepest explored state ... into the final output." (Crosswords)。深さ優先で 100 step が予算。
 - 著者明記の **limitations**: (1) GPT-4 が既に解けるタスクでは ToT は不要、(2) API コストが大きい、(3) 3 タスクしか試していない、(4) off-the-shelf LM のみで、ToT-style fine-tuning は未検討、(5) Crosswords で稀な語を impossible 判定する pruning ミス（``agend'' の例）。
 - Broader Impact では「ToT は判断が高レベル自然言語で読める分、interpretability と人間整合の機会を増やす」と主張。
+- (verified 2026-05-27) venue/year を TeX で確認できる範囲（neurips_2023.sty を [final] で使用）に限定し、NeurIPS 2023 掲載・preprint v2 断定を削除 (main.tex)
+- (verified 2026-05-27) Critical Thoughts / Takeaway の推測的評価を「評者補足」と明示、または TeX 根拠のある表現に弱めた (main.tex)
+- (verified 2026-05-27) main.bbl に無い Du+ 2023 / Multiagent Debate の関連論文記述を削除し、関連論文タイトルを bbl で確認できる範囲に修正 (main.bbl)
 
 ## Related Papers
 
-- Wei+ 2022, *Chain-of-Thought Prompting* — ToT が一般化する直接の base。
-- Wang+ 2022, *Self-Consistency (CoT-SC)* — ToT 中で「solutions の bandit」として位置付けられる baseline。
-- Madaan+ 2023 *Self-Refine* / Shinn+ 2023 *Reflexion* — iterative refine を ToT の thought generation の 3 つ目として包含可能、と著者が明言。
-- Hao+ 2023 *RAP* (Reasoning via Planning) — 並行研究、MCTS で類似の枠組み。著者は「タスクが simpler で modularity に欠ける」と評価。
-- Xie+ 2023 *Self-eval guided decoding* — tree search + LM self-eval の隣接研究、ただし PAL（code）表現に依存。
-- Lu+ 2021 *NeuroLogic A\*esque decoding* — A\* 風 lookahead を beam-search に持ち込む先行例、文生成限定。
-- Newell, Shaw & Simon (1959, 1972) — 探索木としての問題解決という思想的源流。
-- Kahneman *Thinking, Fast and Slow* (System 1/2) — Discussion で参照される認知科学フレーム。
-- Du+ 2023 *Multiagent Debate* (arXiv:2305.14325) — 同時期の "LM 自身に推論を改善させる" 直交アプローチ。組合せ実験の余地大。
+- Wei+ 2022, *Chain of thought prompting elicits reasoning in large language models* — CoT の baseline / ToT が一般化する対象。
+- Wang+ 2022, *Self-consistency improves chain of thought reasoning in language models* — CoT-SC baseline。
+- Madaan+ 2023, *Self-refine: Iterative refinement with self-feedback* / Shinn+ 2023, *Reflexion: an autonomous agent with dynamic memory and self-reflection* — self-reflection 関連。
+- Hao+ 2023, *Reasoning with language model is planning with world model* — 並行研究、MCTS で類似の枠組み。著者は「タスクが simpler で modularity に欠ける」と評価。
+- Xie+ 2023, *Decomposition enhances reasoning via self-evaluation guided decoding* — tree search + LM self-eval の隣接研究、ただし PAL（code）表現に依存。
+- Lu+ 2021, *Neurologic a*esque decoding: Constrained text generation with lookahead heuristics* — A* 風 lookahead を beam-search / top-k sampling decoding に持ち込む先行例、文生成限定。
+- Newell, Shaw, and Simon (1959) / Newell, Simon, et al. (1972) — 探索木としての問題解決という思想的源流。
+- Kahneman 2011, *Thinking, fast and slow* — System 1/2 の認知科学フレーム。

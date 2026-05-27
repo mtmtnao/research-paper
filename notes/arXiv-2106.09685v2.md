@@ -13,9 +13,9 @@
 ## Summary（著者の主張）
 
 - **問題**: GPT-3 175B のような巨大事前学習モデルを各下流タスクごとに full fine-tuning すると、タスクごとに 175B パラメータの独立インスタンスを保存・配備する必要があり、ストレージとデプロイ両面で非現実的。既存の parameter-efficient 法は (a) adapter 系が **推論レイテンシを増やす**（直列に1ブロック追加するため hardware parallelism を活かしきれない）、(b) prefix tuning 系が **入力系列長を食う + 最適化が不安定で非単調**、というトレードオフを抱える。
-- **手法**: 事前学習重み $W_0 \in \mathbb{R}^{d\times k}$ を凍結し、その更新分を低ランク分解 $\Delta W = BA$（$B\in\mathbb{R}^{d\times r}$, $A\in\mathbb{R}^{r\times k}$, $r\ll \min(d,k)$）で表現する。forward は $h = W_0 x + BA x$。$A$ は Gaussian 初期化、$B$ はゼロ初期化なので学習開始時 $\Delta W = 0$。出力は $\alpha/r$ でスケール（$\alpha$ は最初に試した $r$ に合わせて固定、再チューニング不要）。Transformer 自己注意の $W_q, W_k, W_v, W_o$ のうち、本実験では **$W_q$ と $W_v$ だけ** に LoRA を当て、MLP/LayerNorm/bias は凍結。デプロイ時は $W = W_0 + BA$ をマージできるので **追加推論レイテンシゼロ**、タスク切替は $BA$ を引いて別の $B'A'$ を足すだけ。
+- **手法**: 事前学習重み $W_0 \in \mathbb{R}^{d\times k}$ を凍結し、その更新分を低ランク分解 $\Delta W = BA$（$B\in\mathbb{R}^{d\times r}$, $A\in\mathbb{R}^{r\times k}$, $r\ll \min(d,k)$）で表現する。forward は $h = W_0 x + BA x$。$A$ は Gaussian 初期化、$B$ はゼロ初期化なので学習開始時 $\Delta W = 0$。出力は $\alpha/r$ でスケール（$\alpha$ は最初に試した $r$ に合わせて固定、再チューニング不要）。Transformer 自己注意の $W_q, W_k, W_v, W_o$ のうち、多くの実験では **$W_q$ と $W_v$** に LoRA を当て、MLP/LayerNorm/bias は凍結。デプロイ時は $W = W_0 + BA$ をマージできるので **追加推論レイテンシゼロ**、タスク切替は $BA$ を引いて別の $B'A'$ を足すだけ。
 - **結果**:
-  - **GPT-3 175B**: trainable params を full FT の 10,000× 削減（350GB→35MB, $r=4$, $W_q/W_v$ のみ）、訓練 VRAM 1.2TB→350GB、訓練スループット 32.5→43.1 tokens/s/V100（25% 高速化）。WikiSQL 73.4 / MNLI-m 91.7 / SAMSum 53.8/29.8/45.9（LoRA 4.7M）で full FT（175,255.8M, 73.8 / 89.5 / 52.0/28.0/44.5）に **同等以上**、PreEmbed・PreLayer・BitFit・Adapter$^H$ をすべて上回る（Table 4）。
+  - **GPT-3 175B**: LoRA は trainable params を full FT の 10,000× 削減でき、実用例として $r=4$, $W_q/W_v$ のみでは checkpoint size が 350GB→35MB、訓練 VRAM が 1.2TB→350GB、訓練スループットが 32.5→43.1 tokens/s/V100（25% 高速化）。Table 4 では WikiSQL 73.4 / MNLI-m 91.7 / SAMSum 53.8/29.8/45.9（LoRA 4.7M）で full FT（175,255.8M, 73.8 / 89.5 / 52.0/28.0/44.5）に **同等以上**、PreEmbed・PreLayer・BitFit・Adapter$^H$ をすべて上回る。
   - **RoBERTa**: GLUE 平均で base LoRA 0.3M=87.2（FT 125M=86.4）、large LoRA 0.8M=89.0（FT 355M=88.9）。**DeBERTa XXL** LoRA 4.7M=91.3（FT 1.5B=91.1）（Table 2）。
   - **GPT-2 M (E2E NLG)**: LoRA 0.35M で BLEU 70.4 / NIST 8.85 / METEOR 46.8 / ROUGE-L 71.8 / CIDEr 2.53、FT 354.92M（68.2 / 8.62 / 46.2 / 71.0 / 2.47）と PreLayer 0.35M（69.7 / 8.81 / 46.1 / 71.4 / 2.49）を上回る。GPT-2 L (LoRA 0.77M) も同様に PreLayer 0.77M を 4/5 指標で上回る（Table 3）。
   - **レイテンシ**: GPT-2 medium, batch 1 / seq 128 で Adapter$^H$ は +30.3%, Adapter$^L$ +20.7% の遅延、LoRA は 0%（Table 1）。
@@ -39,21 +39,21 @@
 - **強み**:
   - 設計が **足し算で済み、構造的にレイテンシ 0**。実装も既存層に並列パスを追加するだけで、ライブラリ化が容易（実際公開されている）。
   - 評価が広い：エンコーダ系（RoBERTa, DeBERTa XXL）と デコーダ系（GPT-2, GPT-3 175B）、NLU（GLUE）と NLG（E2E/WebNLG/DART, WikiSQL, SAMSum）を一気通貫でカバーし、いずれも full FT 同等以上。
-  - **rank-deficiency を SVD overlap (Grassmann 距離) と Frobenius 射影で定量化**し、「なぜ $r=1$ でも動くのか」を経験的に裏付けている。手法論文として珍しく科学パートが厚い。
-  - **適用先・rank の ablation（Table 5/6）が明快**で、実務者はそのまま「$W_q,W_v$ に $r\in\{4,8\}$」をデフォルトに採用できる。
+  - **rank-deficiency を SVD overlap (Grassmann 距離) と Frobenius 射影で定量化**し、「なぜ $r=1$ でも動くのか」を経験的に裏付けている。
+  - **適用先・rank の ablation（Table 5/6）が明快**で、同じ 18M 予算では $W_q$ 単独より $\{W_q,W_v\}$ または $\{W_q,W_k,W_v,W_o\}$ が良いことを示している。
 - **弱み / 疑問**:
   - 著者自身が認める制限: (i) $A,B$ を $W$ にマージしてしまうと、**同一バッチ内に異なるタスクのサンプルを混ぜることが直接できない**（マージしない動的版は遅い）、(ii) 適用する重みの選び方は **ヒューリスティック**で原理化されていない、(iii) MLP/LayerNorm/bias は未探索で future work。
   - rank=1 で十分という主張は GLUE / WikiSQL / MNLI が中心。footnote では「事前学習と全く異なる言語のタスクでは小さい $r$ では足りないだろう」と注意書きがある（Sec. 7.2）が、定量検証はない。
   - **prefix-tuning が非単調**で性能ピークが見えにくいという指摘は、prefix 側のチューニング努力が LoRA と対称かどうかが気になる（PreLayer 20.2M vs LoRA 4.7M の比較は token 当たり fair か？）。
-  - GPT-3 の結果は random seed 1 個分の典型 std しか報告されていない（コスト理由は理解できるが、$\pm0.1$ オーダの優劣比較には弱い）。
+  - GPT-3 の結果は、コスト理由で各 entry ごとの標準偏差ではなく task ごとの typical standard deviation のみが報告されている。$\pm0.1$ オーダの優劣比較には弱い（評者補足）。
   - $\Delta W$ の amplification factor 21.5× の解釈は印象的だが、48 層目 1 つの $W_q$ に対する測定。層・行列横断で同じ傾向が出るかは appendix に断片的にしかない。
   - 計算コストの全体最適化（同じ予算で full FT 短時間 vs LoRA 長時間）は議論されていない。LoRA は **速いというより安い**手法であり、最終性能で full FT を上回る理由が「正則化的効果」か「単に運」かは未解明。
 - **次に試したいこと**:
-  - **MLP / LayerNorm / FFN への LoRA 適用**（後続の QLoRA, LongLoRA, DoRA でやられているが、自分でも当てて rank-overlap がどう変わるか SVD で見たい）。
-  - 異なる $r$ で学習した複数 LoRA を **線形合成 / SVD で統合** して 1 つの低ランク adapter にまとめる実験（タスク算術系の応用）。
+  - **MLP / LayerNorm / FFN への LoRA 適用**（著者が future work としている範囲）で rank-overlap がどう変わるか SVD で見る。
+  - 異なる $r$ で学習した複数 LoRA を **線形合成 / SVD で統合** して 1 つの低ランク adapter にまとめる実験（評者補足）。
   - $\Delta W$ の amplification 方向を SVD で取り出し、**事前学習中に "学んだが眠っていた" features** を解釈できるか可視化する。
   - rank=1 が成立する条件と崩れる条件（言語間転移、ドメイン跳躍）の境界を ablation。
-  - $\alpha/r$ スケールを学習可能にした版（LoRA+ / rsLoRA に近い）と固定版の比較。
+  - $\alpha/r$ スケールを固定せず学習可能にした版と固定版の比較（評者補足）。
 
 ## Notes / Quotes
 
@@ -70,6 +70,9 @@
 - (verified 2026-05-20) 著者名 "Edward J. Hu" → "Edward Hu" に修正（iclr2022_conference.tex \author{} に J. なし）
 - (verified 2026-05-20) 引用の出典 "Sec. 4.1" → "introduction" に修正（同一文言は line 123 の Introduction advantages リストにあり、Sec. 4.1 は別文言 "Critically, this guarantees..."）
 - (verified 2026-05-20) "GPT-2 M/L" → "GPT-2 M" に絞り、PreLayer 0.35M の数値（46.1 / 71.4 / 2.49）を Table 3 (expt.tex tab:gpt2_ft_results) から補完。GPT-2 L 側は別行として注記
+- (verified 2026-05-27) LoRA 適用先を「本実験では Wq/Wv だけ」から「多くの実験では Wq/Wv」に修正。Table 5/6 の ablation で他の attention weights も評価されているため (iclr2022_conference.tex Sec. 4.2, Sec. 7.1/7.2)
+- (verified 2026-05-27) TeX 中にない後続研究名・タスク算術表現を削除または評者補足として明示し、GPT-3 の standard deviation 記述を TeX の表現に合わせて修正 (expt.tex Sec. 5.4, iclr2022_conference.tex Sec. 8)
+- (verified 2026-05-27) GPT-3 の checkpoint size 35MB / $r=4$ の実用例と Table 4 の LoRA 4.7M 結果が混同されないよう、結果 bullet を分離して記述 (iclr2022_conference.tex Sec. 4.2, expt.tex Table 4)
 
 ## Related Papers
 
@@ -80,4 +83,4 @@
 - Aghajanyan+ 2020, Li+ 2018 (intrinsic dimension) — 低 intrinsic rank 仮説の出発点。
 - Mahabadi+ 2021 \textsc{Compacter} — Kronecker 積で adapter をさらに圧縮、LoRA と組み合わせ可能と示唆。
 - Brown+ 2020 GPT-3, Liu+ 2019 RoBERTa, He+ 2021 DeBERTa, Radford GPT-2 — 評価対象モデル。
-- Wang+ 2019 GLUE, WikiSQL, SAMSum, E2E, WebNLG, DART — 評価データセット。
+- Wang+ 2019 GLUE / Zhong+ 2017 WikiSQL / Gliwa+ 2019 SAMSum / Novikova+ 2017 E2E / Gardent+ 2017 WebNLG / Nan+ 2020 DART — 評価データセット。

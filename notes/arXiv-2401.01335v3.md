@@ -28,9 +28,9 @@
 
 ## Takeaway（自分にとっての要点）
 
-- **「SFT データの再利用」の枠組みとして実用的**: 追加データ収集が難しい場面（社内データ・規制データ）で、既に持っている SFT データから生成・自己判別だけで更に伸ばせるレシピが具体的なハイパラ込み（lr 5e-7→1e-7, β=0.1→5.0 at last iter, RMSProp, global batch 64, 2 epoch/iter）で書かれている。
-- **DPO 損失との形式的類似が示唆的**: SPIN の損失は DPO の損失で $\yb_w=\yb_\text{human}$, $\yb_l=\yb_\text{model生成}$ かつ $p_\text{ref}$ を毎 iter 自己更新したものと等価に近い。つまり「自分の出力＝loser、人手＝winner」と決めてしまえば preference label 不要、と読める。これは self-rewarding / iterative DPO 系（Yuan et al. 2024、Xu et al. 2023）と同じ近傍にある。
-- **$\beta$（=λ）を最終 iter で 0.1→5.0 に一気に上げる運用**: Theorem 2 から「収束近傍では λ 大の方が安定」というのを実装にそのまま反映している。これは他の iterative preference 法でもそのまま流用できそうな実用ノウハウ。
+- **「SFT データの再利用」の枠組みとして実用的**: 既に持っている SFT データから生成・自己判別だけで更に伸ばせるレシピが具体的なハイパラ込み（lr 5e-7→1e-7, β=0.1→5.0 at last iter, RMSProp, global batch 64, 2 epoch/iter）で書かれている。追加データ収集が難しい場面で使える可能性がある（評者補足）。
+- **DPO 損失との形式的類似が示唆的**: TeX は、logistic loss を選んだ場合に SPIN の目的関数が DPO と似る一方で、DPO は Bradley-Terry model と preference dataset $(\xb,\yb_w,\yb_l)$ に基づき、SPIN は IPM ベースで SFT pairs $(\xb,\yb)$ だけを使う、と明確に区別している。Xu et al. 2023 / Yuan et al. 2024 との違いも、SPIN は intermediate reward や preference feedback を要しない点として述べられている。
+- **$\beta$（=λ）を最終 iter で 0.1→5.0 に一気に上げる運用**: Theorem 2 から「収束近傍では λ 大の方が安定」というのを実装にそのまま反映している。他の iterative preference 法での流用可否は追加検証したい（評者補足）。
 - **生成コストが訓練コストに支配される**: A100×8 で 50k 生成が 1.45h、訓練が 4.32–8.64h（tab:times）。「self-play は重い」という直感とは逆で、ボトルネックは推論ではなく fine-tune 側。
 - **iterative であることが本質**: 同じ計算予算で iter 0 の epoch を伸ばしても iter 1 には届かないという ablation（fig:ablation_epoch）。「合成データの分布を更新しながら学ぶ」効果は単なる epoch 増加では再現できない。curriculum learning 的解釈（簡単→難しい識別へ）と整合。
 
@@ -46,14 +46,14 @@
   - **MMLU が iter 0 で 60.92→60.03 と微減**し、Winogrande も 74.19→72.30〜73.72 で頭打ち。「すべての軸で改善」ではなく、TruthfulQA / GSM8k / Arc に偏った伸びで、平均が押し上げられているように見える。タスク依存性の議論はほぼない。
   - **比較対象の DPO が zephyr-7b-dpo-full 1 種類のみ**。RLAIF や iterative DPO（Xu+ 2023, Yuan+ 2024）と直接の数値比較がない。Concurrent work 扱いで本文に記述はあるが、表での横並びはない。
   - **「自分の出力＝negative」と決め打つ学習が生む副作用**は議論されていない。SFT 直後の良い回答まで penalize する可能性、長期的に多様性が削られる可能性、自己ループでの mode collapse の可能性などは TeX 中には明示されていない。
-  - **データ汚染**：Ultrachat200k は OpenAI Turbo 由来の対話。事実上 GPT-3.5 の蒸留分布を $p_\text{data}$ として追っているとも言え、「human-annotated data」と呼ぶのは緩い。
-  - **`yb_g`** という変数が experiment setup の脚注（コメントアウト済 `\todoq` 含む）に残っており、本文との対応が一部曖昧（執筆の名残）。実害はないが、合成データ生成のプロンプト・サンプリング温度などの詳細が TeX 中で十分明示されていない（Appendix の hyperparams にも温度の記載は見当たらない）。
+  - **データ表現の曖昧さ**：TeX は Ultrachat200k を "human-annotated SFT dataset" として扱う一方、Experiment Setup では Ultrachat200k が OpenAI's Turbo APIs で作られた約 1.4M dialogues 由来の UltraChat corpus の 200k subset と説明している。この点は、"human-annotated data" という表現だけでは読み落としやすい。
+  - **合成データ生成の詳細不足**：Appendix には prompting template、first round のみを使うこと、Accelerate による distributed inference、global batch size 64 は書かれているが、sampling temperature などの生成設定は見当たらない。Experiment Setup にはコメントアウト済みの `\todoq{why $y_g$?...}` が残っており、TeX ソース上では執筆時の未整理箇所も見える。
 - **次に試したいこと**:
-  - 「自分の出力＝loser」と決め打ちせず、reward model や preference judge を挟む iterative DPO と、同じ計算予算で pareto curve を引いて SPIN の優位がどこから来ているか切り分ける。
-  - $\beta$（=λ）を iter ごとにスケジューリングする戦略の系統的研究（Theorem 2 が示唆する方向で、0.1→5.0 の jump を smooth schedule に置き換えると iter 3 の +0.19 が伸びるか）。
-  - target distribution を動かす拡張：iter ごとに $p_\text{data}$ を rewriter LLM で精錬する／別モデルの出力をミックスする、など Conclusion で言及された "dynamically changing target" の素朴な実装。
-  - SPIN 後のモデルで生成多様性（distinct-n, self-BLEU）と calibration（ECE）がどう変わるかの測定。本論文は accuracy 軸のみ。
-  - 同じ recipe を Mistral-7B 以外（Llama-3-8B、Qwen2-7B 等）で再現し、ベース SFT の質との依存性を見る。
+  - 「自分の出力＝loser」と決め打ちせず、reward model や preference judge を挟む iterative DPO と、同じ計算予算で pareto curve を引いて SPIN の優位がどこから来ているか切り分ける（評者補足）。
+  - $\beta$（=λ）を iter ごとにスケジューリングする戦略の系統的研究（Theorem 2 が示唆する方向で、0.1→5.0 の jump を smooth schedule に置き換えると iter 3 の +0.19 が伸びるか）（評者補足）。
+  - target distribution を動かす拡張：iter ごとに $p_\text{data}$ を rewriter LLM で精錬する／別モデルの出力をミックスする、など Conclusion で言及された "dynamically changing target" の素朴な実装（評者補足）。
+  - SPIN 後のモデルで生成多様性（distinct-n, self-BLEU）と calibration（ECE）がどう変わるかの測定。本論文は accuracy 軸のみ（評者補足）。
+  - 同じ recipe を Mistral-7B 以外の backbone で再現し、ベース SFT の質との依存性を見る（評者補足）。
 
 ## Notes / Quotes
 
@@ -67,6 +67,7 @@
 - "while DPO leverages more data from new sources, $\method$ based on the existing SFT data can already achieve comparable average performance to DPO training at iteration 0. From iteration 1, $\method$ even surpasses the performance of DPO" (experiments)。
 - (verified 2026-05-20) MT-Bench で vicuna-13b-v1.5 (6.57) を超えるタイミングを「iter 2」→「iter 1 時点で既に上回る」に修正 (main.tex tab:ablation_bbh で iter 0=6.46, iter 1=6.65, iter 2=6.78)。
 - (verified 2026-05-20) Big-Bench Hard 3 タスクと OpenBookQA を「単調改善」と書いていたが、tab:ablation_bbh の実値で BB-Sports (96.0→95.2→95.2→94.4) と BB-Formal (49.6→51.6→51.2→51.2) は単調でないため、TeX 本文「steady improvement ... with no significant degradation」に沿った表現へ修正。
+- (verified 2026-05-27) DPO との「等価」表現、OpenAI Turbo 由来データの GPT-3.5 推定、`yb_g` の「脚注」表現、Singh+ 2023 の ReST 表現、次に試したいことの未根拠な具体モデル名を TeX / main.bbl で確認できる範囲または評者補足に修正 (main.tex, main.bbl)。
 
 ## Related Papers
 
@@ -77,7 +78,7 @@
 - Silver+ 2017, AlphaGo Zero / AlphaZero — self-play の思想的源流。
 - Goodfellow+ 2014, GAN / Arjovsky+ 2017, Wasserstein GAN / Jolicoeur-Martineau 2018, Relativistic GAN — \eqref{eq:f-star} の構造的類縁。
 - Ho & Ermon 2016, GAIL — discriminator/policy を分離する従来法との対比。
-- Burns+ 2023 ("weak-to-strong generation") / Singh+ 2023 (ReST 系 self-training) — concurrent / 隣接設定の比較対象。
+- Burns+ 2023 ("weak-to-strong generation") / Singh+ 2023 (self-training with binary feedback) — concurrent / 隣接設定の比較対象。
 - Xu+ 2023, Pairwise Cringe / iterative DPO, Yuan+ 2024, Self-Rewarding LM — concurrent work、SPIN の「self-assessment is implicit」という差別化点の比較先。
 - Cheng+ 2023, APO (Adversarial Preference Optimization) — adversarial alignment の関連。
 - Open LLM Leaderboard 構成データセット: Clark+ 2018 ARC, Lin+ 2021 TruthfulQA, Sakaguchi+ 2021 Winogrande, Cobbe+ 2021 GSM8k, Zellers+ 2019 HellaSwag, Hendrycks+ 2020 MMLU。

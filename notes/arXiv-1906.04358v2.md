@@ -23,10 +23,10 @@
 
 ## Takeaway（自分にとっての要点）
 
-- 「重みを学習しない」の本質は重みを 1 個に共有して固定するだけ、という非常に身もふたもない簡素化。重みを定数化したことで「アーキ自体の性能」だけが残り、評価が一意になる ← この発想はそのまま他の構造探索にも転用可能。
+- 「重みを学習しない」の本質は、全結合に 1 個の共有重みを使って高次元の重み空間サンプリングを 1 次元化すること。著者は、重み学習を重みサンプリングに置き換えることで性能が topology の産物になる、と説明している。
 - 活性化関数の多様性（linear/step/sin/Gaussian/abs など）が WANN を成立させる肝。重みで自由度を稼げない分、関数形式で「対称性・周期・反転」などの関係を表現させている。著者自身は appendix で「ReLU や sigmoid だけでも実装は可能だっただろうが、多様な活性化のおかげで対称性・反復のような関係をよりコンパクトに表現できる」「線形活性のみでは可能と確信できない」とコメント。
 - 多目的化のうち 20% を `max performance` に振り替えるトリックは、「複数追加が揃って初めて性能が上がる」場面で stepping stone を残すための実装的工夫。NSGA-II ベースの NAS 全般で参考になる。
-- 共有重み 1 個 → 異なる値で複数インスタンス → アンサンブル、という self-ensemble は意外と効くので、「1 つのネットワーク、複数の重みでマルチタスク」みたいな設計（後の HyperNet / soft mask 系の前哨）として読める。
+- 共有重み 1 個 → 異なる値で複数インスタンス → アンサンブル、という self-ensemble は意外と効くので、「1 つの topology を複数の classifier として使う」設計として読める。
 - WANN が個別重みをランダムに振ると壊れる（CartPoleSwingUp で 57±121）こと、つまり「符号と相対関係に強く依存している」点は、「アーキは関係性をエンコードしている」という主張の裏側の制約として重要。
 
 ## Critical Thoughts（評価・疑問）
@@ -47,7 +47,7 @@
   - 活性化関数プールを段階的に削って性能曲線を取り、どの関数が必須かを切り分け（cosine/Gaussian を抜くと swingup の機構が再現できるか？）。
   - WANN を初期化として通常の SGD で学習させた場合の収束速度・最終精度を、ランダム初期化と比較（Baldwin effect の定量化）。
   - 共有重みではなく「数個のクラスタ共有重み」（K-shared）に拡張して、重み数 1 → 2 → 数個でどう性能が立ち上がるかを見れば、アーキ vs 重みの寄与分解がクリアになりそう。
-  - MNIST 以外、CIFAR-10 や音声系で同じ方法がスケールするかの実証（おそらく崩れる方に賭けるが、その崩れ方を見たい）。
+  - MNIST 以外の supervised learning domain で同じ方法がスケールするかの実証（評者補足）。
   - concurrent work の lottery ticket / supermask（zhou2019deconstructing）と直接合流させて、「pruning → WANN 化」「WANN → pruning」の双方向比較。
 
 ## Notes / Quotes
@@ -63,6 +63,7 @@
 - ハイパラ（appendix）: SwingUp pop=192/gen=1024、Biped pop=480/gen=2048、CarRace pop=64/gen=1024、MNIST pop=960/gen=4096。
 - Champion network 接続数（36_controlFig.tex）: SwingUp 52, Biped 210, CarRacing 245。
 - (verified 2026-05-20) 数値・固有名詞・引用先を main.tex / 21,23_method / 30,31_control / 32_controlTable / 34_class / 37_classDiagram / 40_discuss / 60_appendix / main.bbl で再確認。Takeaway の活性化関数記述を appendix 60_appendix.tex に合わせて「ReLU だけでは厳しい」→「線形活性のみでは可能と確信できない（ReLU/sigmoid なら可能）」へ訂正。
+- (verified 2026-05-27) TeX 根拠が薄い Takeaway の「評価が一意」「後の HyperNet / soft mask 系」および推測表現を削除・修正。Related Papers の Hinton & Nowlan 年を bbl に合わせて 1996 に修正 (21_methodOverview.tex, 34_class.tex, main.bbl)。
 
 ## Related Papers
 
@@ -74,4 +75,4 @@
 - Williams 1992, population-based REINFORCE — 個別重み tuning に使用。
 - Solomonoff / Kolmogorov / Rissanen — MDL/AIT の哲学的バックボーン。
 - Zador 2019 "A critique of pure learning" — 動物の innate behavior と本研究の motivation の橋渡し（Discussion で長々引用）。
-- Baldwin 1896 / Hinton & Nowlan 1987 — Baldwin effect、進化と学習の相互作用。
+- Baldwin 1896 / Hinton & Nowlan 1996 — Baldwin effect、進化と学習の相互作用。

@@ -47,23 +47,24 @@
   - 3 本以上の系統樹から作る display graph での chain 構造はノータッチ（最後に open として明記）。
   - Lemma `lem:alwaystight` の $G_2(t)$ 構成は clique $C$ をくっつけて treewidth を意図的に押し上げる人工的な例。実応用（phylogenetics）でこういう構造が現れるかの議論は無く、結果は「全 treewidth で tight」と言うための meta-statement に近い。
 - **次に試したいこと**:
-  - Discussion で示唆された **「各 square に高々 1 chord ある ladder」** バージョンを formal に書き下し、tight constant がいくつになるか確認する。
-  - 「distance-minimizing tree decomposition を取る」テクが、ほかの reduction rule（subtree reduction の別証、protrusion 系など）にも汎用的に使えないか試す。
-  - common chain reduction を実装に組み込んだうえで、Kelk 2017 系の display graph treewidth ベースの dissimilarity 計算パイプライン（[van2022embedding] など）で実速度がどれだけ落ちるか測る。
-  - 3 本以上の tree から作る display graph 上の chain/ladder 類似構造の formalization。
-  - bramble lower bound（Seymour-Thomas）に依らない、よりシンプルな tightness 証明（例えば forbidden-minor 直接構成）が `lem:alwaystight` に対しても可能か。
+  - Discussion で示唆された **「各 square に高々 1 chord ある ladder」** バージョンを formal に書き下し、tight constant がいくつになるか確認する（評者補足）。
+  - 「distance-minimizing tree decomposition を取る」テクが、ほかの reduction rule（subtree reduction の別証、protrusion 系など）にも汎用的に使えないか試す（評者補足）。
+  - common chain reduction を実装に組み込んだうえで、Kelk 2017 系の display graph treewidth ベースの dissimilarity 計算パイプライン（[van2022embedding] など）で実速度がどれだけ落ちるか測る（評者補足）。
+  - 3 本以上の tree から作る display graph 上の chain/ladder 類似構造の formalization（Discussion で open として提示）。
+  - bramble lower bound（Seymour-Thomas）に依らない、よりシンプルな tightness 証明（例えば forbidden-minor 直接構成）が `lem:alwaystight` に対しても可能か（評者補足）。
 
 ## Notes / Quotes
 
 - "Getting these *snakes* under control is where much of the hard work and creativity lies, and is the inspiration for the title of this paper."（Introduction）
 - "minimal forbidden minors for bounded treewidth graphs cannot contain long ladders."（Abstract / Introduction 末尾の系）
-- Theorem `thm:main3` の constant 4 は tight：Fig. `fig:prism`（treewidth 3、長さ 3 の ladder、伸ばすと treewidth 4。pentagonal prism が minor として現れることが理由として figure caption の hidden コメントに書かれている）。
+- Theorem `thm:main3` の constant 4 は tight：Fig. `fig:prism`（treewidth 3、長さ 3 の ladder、伸ばすと treewidth 4）。
 - Lemma `lem:alwaystight`：$G_2(t)$ は ladder の頂点 1–6 と $(t-1)$ 頂点の clique $\{7,8,\ldots,7+t-2\}$ からなる。頂点 1, 3 は clique 全体に、頂点 4, 6 は頂点 7 以外の clique 全体に隣接。tree decomposition は 5 bag、width $t$。$G_3(t)$ の lower bound は $|C|+5$ subgraph からなる bramble と minimum hitting set $H$（$|H|=t+2$）で示す（Seymour-Thomas）。
 - "Author's note 2"（Introduction）: Theorem `thm:main3` は独立に [almob2023]（WABI 2022 [wabi2022] が源流）で証明済み。本論文の独自貢献は (a) Theorem `thm:main` の $tw \geq 4$ への mild strengthening、(b) display graph 上の Theorem `thm:preserve2`、(c) 全 treewidth tightness の `lem:alwaystight`。
 - 証明の鍵: distance-minimizing tree decomposition と "reeling in (the snakes) $a$ and $b$" 操作（Subcase 3.2、Subcase 4.1）。
 - display graph 版で 1 短くできる根拠は、ladder の右端側にも biconnectivity 由来の cycle が "buffer" の役を果たすこと（Fig. `fig:buffercycle`）。
 - Discussion: proof は constructive にできる、各 square に高々 1 chord ある ladder にも proof technique は通る、低 pathwidth 再帰構造への一般化と $O(n^4)$ より速い ladder 検出は open、3 本以上の tree への一般化も open。
 - (verified 2026-05-20) Related Papers の [kelk2017treewidth] のタイトル・著者を訂正 ("A note on convex characters..." → "Treewidth distance on phylogenetic trees" by Kelk, Stamoulis & Wu, TCS 2018) — 根拠: afterALMOB.bbl の \bibitem{kelk2017treewidth}
+- (verified 2026-05-27) Fig. `fig:prism` の説明から TeX コメント内の pentagonal prism 理由を削除し、評者独自の次実験案に「評者補足」を明記 (afterALMOB.tex, Discussion and future work, Fig. `fig:prism`)
 
 ## Related Papers
 

@@ -19,46 +19,46 @@
   3. **条件付け**: UNet の中間表現に cross-attention $\text{softmax}(QK^T/\sqrt{d})V$ を挿入。$Q$ は UNet 側、$K,V$ はドメイン特化 encoder $\tau_\theta(y)$ から得る。$\tau_\theta$ はテキストなら BERT-tokenizer + 非マスク Transformer、レイアウトやセマンティクスマップなら spatial にもできる。クラス・テキスト・レイアウト・低解像度・マスクなど任意モダリティに統一的に対応。畳み込み的に評価すれば学習解像度を超えてメガピクセル合成も可能。
 - **結果**:
   - **無条件生成 (Tab. tab:fids)**: CelebA-HQ で **FID 5.11**（LDM-4, 500 DDIM）で先行 likelihood/GAN を上回り SOTA。FFHQ FID 4.98、LSUN-Churches 4.02（KL-LDM-8）、LSUN-Bedrooms 2.95。LSUN-Bedrooms では ADM (FID 1.9) には届かないが、**パラメータ半分・学習計算 1/4 (55 vs 232 V100 days)** で接近。
-  - **クラス条件 ImageNet (Tab. tab:imagenet_main_numbers)**: LDM-4 FID 10.56、classifier-free guidance ($s=1.5$) 付きの **LDM-4-G で FID 3.60 / IS 247.67**、400M params。ADM-G (FID 4.59, 608M) を上回る。学習計算 271 V100 days vs ADM の 916。
+  - **クラス条件 ImageNet (Tab. tab:imagenet_main_numbers / tab:compute_vs_fid)**: LDM-4 FID 10.56、classifier-free guidance ($s=1.5$) 付きの **LDM-4-G で FID 3.60 / IS 247.67**、400M params。ADM-G (FID 4.59, 608M) を上回る。学習計算は LDM-4-G 271 V100 days、ADM-G 962 V100 days。
   - **テキスト→画像 (Tab. tab:txt2img, MS-COCO val)**: LDM-KL-8 (1.45B params, LAION-400M 学習, 250 DDIM) で FID 23.31、cfg $s=1.5$ で **FID 12.63 / IS 30.29**。GLIDE (12.24, 6B) や Make-A-Scene (11.84, 4B) と同等で、**パラメータは 1/3〜1/4**。Conceptual Captions では FID 17.01（VQGAN+T 28.86, ImageBART 22.61 を凌ぐ、645M params, 3.9 samples/s）。
   - **超解像 (Tab. tab:srtable, ImageNet ×4)**: LDM-4 100 steps で **FID 2.8** (val split features)、SR3 (FID 5.2, 625M) を大きく上回り、**169M params** に縮小。PSNR/SSIM は image regression に劣るが、user study で pixel-DM 16.0% vs LDM-4 **30.4%** が GT より好まれる。
   - **インペインティング Places (Tab. inpaintingtable, 512²)**: LDM-4 big w/ ft で **FID 1.50, LPIPS 0.137**。LaMa (FID 2.21) や CoModGAN (1.82) を上回り SOTA。ピクセル拡散 (LDM-1) に対して**スループット 2.7× 以上、FID 1.6× 改善**。user study でも LDM-4 が LaMa を 68.1% vs 31.9% で凌ぐ。
   - **圧縮率の sweet spot**: LDM-1（=ピクセル DM）は学習が遅く、LDM-32 は情報損失で頭打ち。LDM-4〜LDM-16 がバランス良く、LDM-1 と LDM-8 で 2M steps 後の FID 差は約 38。
-- **貢献**: (i) 二段階圧縮を「universal autoencoder + 軽量 DM」に切り分ける構成で、CelebA-HQ で likelihood ベース SOTA、ImageNet class-cond で ADM-G 超え、テキスト・レイアウト・インペインティング・超解像で SOTA 級。(ii) cross-attention に基づく汎用 conditioning。(iii) LSGM のように encoder と prior を joint training せずに済み、reconstruction vs generative の重み付け問題を回避。(iv) 畳み込み的サンプリングで 1024² 級画像へ汎化。(v) 学習済み LDM/AE を公開し、CLIP guided synthesis などの再利用基盤を提供。
+- **貢献**: (i) 二段階圧縮を「universal autoencoder + 軽量 DM」に切り分ける構成で、inpainting と class-conditional image synthesis で new state-of-the-art、text-to-image / unconditional / super-resolution で competitive performance を報告。(ii) cross-attention に基づく汎用 conditioning。(iii) LSGM のように encoder と prior を joint training せずに済み、reconstruction vs generative の重み付け問題を回避。(iv) 畳み込み的サンプリングで 1024² 級画像へ汎化。(v) 学習済み LDM/AE を公開し、CLIP guided synthesis などの再利用基盤を提供。
 
 ## Takeaway（自分にとっての要点）
 
-- 「**perceptual compression と semantic compression を分離**」というメッセージが核。実用上 $f=4, 8$ が sweet spot で、$f=4$ なら R-FID 0.58（VQ）/0.27（KL）と reconstruction はほぼ無損失。これがあるので latent 側の DM は high-frequency の細部に容量を割かなくて済む。
-- text-to-image を 1.45B params、A100 1枚で動くレベルで COCO FID 12 台まで持っていけたのは「**潜在を浅く取って DM を厚くする**」設計の勝利。後続の Stable Diffusion はまさにこれを動かしている。
+- 「**perceptual compression と semantic compression を分離**」というメッセージが核。実験上 $f=4, 8$ が高品質合成に良い条件で、$f=4$ なら R-FID 0.58（VQ）/0.27（KL）。著者は $f=4$ autoencoding model の loss of image quality は very small と述べる。
+- text-to-image では 1.45B params の KL-regularized LDM を LAION-400M で学習し、MS-COCO validation で classifier-free guidance 付き FID 12.63 / IS 30.29 を報告している。TeX 上で確認できる主張は「250 DDIM steps で GLIDE / Make-A-Scene と同等、かつ parameter count を大きく削減」まで。
 - cross-attention は単なる実装詳細ではなく、「**条件モダリティを Q/K/V 行列だけで柔軟に差し替えできる**」点が肝。task-specific architecture を作らずに、テキスト・bbox・セマンティクスマップ・低解像度画像が全部同じ枠で動く。
-- LSGM のように encoder と prior を joint training すると重み付けに苦しむが、**固定された AE + 後付け DM** にすると独立に最適化できるので学習が安定。これは「VAE を固定して prior を別に学習」する古典的アプローチの強化版とも読める。
-- VQ-reg な latent の方が LDM のサンプル品質が時に良い（reconstruction では負ける）という観察は、**離散化が事前情報として効く**ことを示唆していて面白い。
-- 畳み込みサンプリング + classifier-free guidance + latent rescaling で 256² 学習モデルから 512²–1024² を出すノウハウは super-resolution や inpainting の高解像度版にも転用されており、実用 hack として価値が高い。
-- 学習コストの絶対量（ImageNet で 271 V100 days）は decent でこそあれ「small lab でも回せる」というほど安くはない点には注意。democratization は推論側でより劇的。
+- LSGM のように encoder と prior を joint training する先行研究に対して、著者は **固定された first stage + 後段 DM** により reconstruction quality と latent prior の重み付け問題を避ける、と位置づけている。
+- VQ-reg な latent の方が LDM のサンプル品質が時に良い一方、first stage の reconstruction capabilities は continuous counterpart に少し劣る、という観察がある。
+- 畳み込み的評価により、semantic synthesis / super-resolution / inpainting で $512^2$ から $1024^2$ の大画像を生成できると著者は述べる。text-conditional LDM-KL-8-G でも latent rescaling と classifier-free guidance による $>256^2$ 画像の直接合成例を示している。
+- 学習コストは ImageNet LDM-4-G で 271 V100 days と報告されており、ADM-G の 962 V100 days より小さい。ただし TeX は「limited computational resources」「accessibility」を主張する一方で、小規模研究室で十分可能かどうかの基準は示していない。
 
 ## Critical Thoughts（評価・疑問）
 
 - **強み**:
   - 「ピクセル空間で DM を回すと無駄が多い」という観察を rate-distortion 図 (Fig. perceptualcompression) で定量的に動機付けてから、$f$ を網羅的にスイープして sweet spot を見せる流れが説得力ある。実証研究としてキレイ。
-  - **5 つの異なる生成タスク**（無条件・クラス条件・テキスト・レイアウト・超解像・インペインティング）に同一フレームで取り組み、それぞれ SOTA か同等を出したという守備範囲の広さ。
-  - cross-attention 機構が後の multimodal DM（Stable Diffusion, ControlNet 等）の de facto baseline になった点で歴史的価値が高い。
+  - **6 つの生成タスク**（無条件・クラス条件・テキスト・レイアウト・超解像・インペインティング）に同一フレームで取り組み、inpainting と class-conditional synthesis で new state-of-the-art、text-to-image / unconditional / super-resolution で competitive performance と主張している守備範囲の広さ。
+  - cross-attention により、text / bounding boxes / semantic maps などの条件入力を LDM に接続できる点を、Sec. 3.3 と条件付き実験で示している。
   - autoencoder を公開し再利用可能にした副次的価値が大きい（CLIP guidance, downstream tasks）。
   - inpainting で**ピクセル DM の 2.7× 以上の高速化と 1.6× の FID 改善**を同時達成したのは、効率改善が品質を犠牲にしないという主張を裏付ける良い実験。
 - **弱み / 疑問**:
-  - **著者自身が認める limitations**: (i) sampling が逐次的で GAN より遅い、(ii) $f=4$ でも reconstruction が完全ではなく、**ピクセル精度が要る応用（医用画像、超解像など）ではボトルネック**になり得る、と明記。後続の SD でも高周波テクスチャの再現性は実際に課題。
+  - **著者自身が認める limitations**: (i) sampling が逐次的で GAN より遅い、(ii) $f=4$ でも reconstruction capability が fine-grained pixel-space accuracy を要するタスクのボトルネックになり得る、(iii) super-resolution models はすでにこの点で somewhat limited と明記。
   - **AE 自体は perceptual + GAN loss** で学習されているため、likelihood-based DM の理論的旨味（mode coverage）が AE 側で adversarial に毀損されている可能性。著者も discussion で "the extent to which our two-stage approach that combines adversarial training and a likelihood-based objective misrepresents the data remains an important research question" と認めている。
-  - LSUN-Bedrooms で ADM の FID 1.90 に対して 2.95 と**負けているケース**がある。"パラメータ半分・計算 1/4" は説得力あるが、計算等価点で比較すれば差が縮まるとは限らない。
-  - text-to-image は **LAION-400M**（学習に著作権・バイアス問題のあるデータ）。Societal impact のセクションでは触れているが、データ由来のバイアス・記憶（training data extraction）の定量評価は無い。
-  - 圧縮率 $f$ の選び方は実質ヒューリスティック（FID プロットを見て決める）。データセット依存で、新しいドメインに移す時に再探索が必要。理論的指針が欲しい。
-  - super-resolution の bicubic 前提が現実画像に効かないため LDM-BSR を作ったという報告は良いが、これは「BSR-degradation で学習しただけ」で本提案の貢献というより SR 一般の事情。
+  - LSUN-Bedrooms で ADM の FID 1.90 に対して 2.95 と**負けているケース**がある。著者は half parameters / 4-times less train resources と述べるが、計算量を揃えた比較は TeX 中には無い。
+  - text-to-image は **LAION-400M** で学習。Societal Impact では manipulated data / misinformation / spam、deep fakes、training data leakage、data bias の懸念を列挙するが、このモデルでの定量評価や対策は示していない。
+  - 圧縮率 $f$ は $f\in\{1,2,4,8,16,32\}$ の実験から LDM-4 / LDM-8 が高品質合成に良い条件と結論づけている。新しいドメインで同じ選択が最適かは TeX 中には示されていない。
+  - super-resolution の bicubic degradation は当該 pre-processing に従わない画像へ generalize しにくいと著者が述べ、その対策として BSR-degradation pipeline に基づく LDM-BSR を追加実験している。
   - "convolutional sampling で 1024² まで合成"の主張は qualitative example が中心で、定量評価は限定的（高解像度域での FID 比較が無い）。
-  - **deep fake・misinformation・training data leakage**の懸念を societal impact で正直に列挙しているが、対策は議論されていない（同時期の論文の標準的態度ではあるが、いまの基準だと不十分）。
+  - **deep fake・misinformation・training data leakage**の懸念を Societal Impact で列挙しているが、具体的な緩和策は TeX 中には明示されていない。
 - **次に試したいこと**:
   - 同じ学習 budget で（pixel DM vs LDM-4 vs LDM-8）を比較する pareto curve を ImageNet と FFHQ で引き、AE の事前学習コストも含めた fair な比較を見たい。
   - **AE を完全に likelihood-based**（KL-VAE / NVAE / VDVAE 等）に置き換えたときに sample quality がどう変わるか。adversarial loss を抜くと再構成が甘くなる vs DM が補う、のトレードオフを定量化したい。
   - cross-attention 以外の conditioning（FiLM、adaLN、Perceiver 風）と比較した ablation。今ある図表だけだと「cross-attention で十分」までしか分からない。
   - latent 空間の SNR/分散を rescale する話（Sec. suppsec:rescale）を**学習データに依存しない自動 calibration** にできるか。
-  - inpainting で SOTA 化したモデルを使った training data extraction 実験（Carlini らの手法）で、LAION 学習モデルにどの程度の漏洩があるか定量化。
+  - Societal Impact で挙げた training data leakage が、この LDM 設定でどの程度起きるかを定量化。
 
 ## Notes / Quotes
 
@@ -68,10 +68,14 @@
 - 損失: $L_\text{LDM} := \mathbb{E}_{\mathcal{E}(x),\epsilon,t}[\|\epsilon - \epsilon_\theta(z_t,t)\|_2^2]$（Eq. eq:ldmloss）、条件付きは $\tau_\theta(y)$ を cross-attention 経由で注入（Eq. eq:cond_loss）。
 - 第一段の正則化: **KL-reg**（VAE 風）と **VQ-reg**（量子化層を decoder に吸収。VQGAN 解釈）。
 - AE の R-FID/PSNR（Tab. tab:firststagetable, OpenImages 学習, ImageNet-Val 評価）: $f=4$ VQ → R-FID 0.58, PSNR 27.43、$f=4$ KL → 0.27, 27.53。$f=8$ VQ → 1.14, 23.07。$f=16$ → 5.15, 20.83。
-- ImageNet クラス条件: LDM-4 271 V100 days, ADM-G 962, ADM 916（Tab. tab:compute_vs_fid）。
+- ImageNet クラス条件: LDM-4 / LDM-4-G 271 V100 days, ADM 916, ADM-G 962（Tab. tab:compute_vs_fid）。
 - text-to-image 1.45B params model: BERT-tokenizer + Transformer 実装の $\tau_\theta$、UNet に multi-head cross-attention。
 - 著者自身の limitations: "their sequential sampling process is still slower than that of GANs"、"the use of LDMs can be questionable when high precision is required"、"superresolution models are already somewhat limited in this respect"。
 - Societal impact: deep fakes（特に女性が不均衡に影響を受ける）、training data extraction、データバイアスの増幅、を列挙。
+- (verified 2026-05-27) ImageNet class-conditional の計算量比較を ADM 916 から ADM-G 962 に修正し、ノート中の ADM-G 比較と整合させた (ms_tables_supp.tex, tab:compute_vs_fid)。
+- (verified 2026-05-27) Stable Diffusion / ControlNet / small lab / 著作権問題 / 医用画像など、TeX 中に明示されない外部知識・評価を削除または TeX 根拠のある表現に修正 (ms.tex, Limitations & Societal Impact; ms_tables.tex; ms_tables_supp.tex)。
+- (verified 2026-05-27) 生成タスク数と SOTA 主張を abstract / contributions の表現に合わせ、「6タスク」「inpainting と class-conditional synthesis で SOTA、その他は competitive」に修正 (ms.tex abstract, introduction)。
+- (verified 2026-05-27) Takeaway 内の「ほぼ無損失」「離散化が事前情報として効く」「計算等価なら」のような TeX 根拠より強い解釈を、TeX にある観察・未評価事項へ弱めた (ms.tex; ms_tables.tex; ms_tables_supp.tex)。
 
 ## Related Papers
 

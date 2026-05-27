@@ -40,7 +40,7 @@
 ## Critical Thoughts（評価・疑問）
 
 - **強み**:
-  - 「SSM と attention は半分離行列の異なる decomposition」という統一視点が強力で、Linear Attention (Katharopoulos 2020) を SMA に一般化する Thm 3.7（効率的自己回帰 ⇔ semiseparable mask）が綺麗。
+  - 「SSM と attention は半分離行列の異なる decomposition」という統一視点が強力で、Linear Attention (Katharopoulos 2020) を SMA に一般化する Theorem 5.2（`thm:ss-sma`, 効率的自己回帰 ⇔ semiseparable mask）が綺麗。
   - 速度比較が theoretical FLOP, wall-clock, scaling law, MQAR, zero-shot を全部出していてフェアに見える。特に scaling law と wall-clock の両方でパレート支配を主張している点。
   - Mamba-1 の architectural choice（head dim = 1, MIS）を後付けでなく「MVA に当たる」と再定義し、ablation で本当に MVA が勝つことを示したのは説得力がある。
   - Mamba-2 block の変更（parallel projection, GroupNorm）は TP 効率と直結しており、理論と systems が一貫している。
@@ -74,6 +74,7 @@
 - (verified 2026-05-20) "Thm 3.7" を実際の Theorem 5.2 (`thm:ss-sma`, structure/ssd.tex L81-85) に訂正。
 - (verified 2026-05-20) 章番号 §5.X/§6.X/§7.1 を arXiv 版実番号 §9.X/§10.X/§8.1 に修正（structure.tex の入力順 intro→background→ssm→attention→ssd→efficient→architecture→systems→experiments→related→conclusion より）。
 - (verified 2026-05-20) Related Papers から "Cobbe+ GSM8K" を削除（本論文 TeX に GSM8K / cobbe 出現なし、ベンチマークは LAMBADA/HellaSwag/PIQA/Arc-E,C/WinoGrande/OpenbookQA のみ。structure/experiments.tex Table `table:downstream_zeroshot`）。
+- (verified 2026-05-27) Critical Thoughts に残っていた "Thm 3.7" を Theorem 5.2 (`thm:ss-sma`) に修正 (structure/ssd.tex)。
 
 ## Related Papers
 

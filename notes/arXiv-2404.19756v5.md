@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/2404.19756
 - source: ../papers/arXiv-2404.19756v5/
 - authors: Ziming Liu, Yixuan Wang, Sachin Vaidya, Fabian Ruehle, James Halverson, Marin Soljačić, Thomas Y. Hou, Max Tegmark
-- venue / year: arXiv preprint, 2024 (v5)
+- venue / year: TeX 中には明示なし（main source は neurips_2023.sty を preprint で使用）
 - tags: [KAN, MLP-alternative, splines, interpretability, AI4Science, scaling-laws]
 - read_date: 2026-05-13
 - rating:
@@ -18,14 +18,14 @@
   - 元の定理は深さ 2 だが、KAN レイヤを行列 $\mathbf\Phi=\{\phi_{q,p}\}$ と再定義することで任意の width・depth に拡張: ${\rm KAN}(\mathbf x)=(\mathbf\Phi_{L-1}\circ\cdots\circ\mathbf\Phi_0)\mathbf x$。
   - **Grid extension**: 粗いグリッドで学習した spline を細かいグリッドに最小二乗で写しなおすことで、再学習なしにキャパシティを増やせる。
   - **解釈性のための簡略化**: L1 正則化に加え活性関数のエントロピー正則化（$\mu_1=\mu_2=1$, 全体係数 $\lambda$）→ ノード単位のプルーニング（incoming/outgoing $\max|\phi|_1>\theta=10^{-2}$）→ `fix_symbolic` で affine $y\approx cf(ax+b)+d$ に当てはめて記号化。
-  - 理論: 各 $\phi$ が $C^{k+1}$ なら $\|f-f_G\|_{C^m}\le CG^{-k-1+m}$（Theorem「KAT」）。**$G$ に対する誤差バウンドが $n$ に依存しない＝COD を回避**。スケーリング指数 $\alpha=k+1$、$k=3$（cubic）で $\alpha=4$。
+  - 理論: 各 $\phi$ が $C^{k+1}$ なら $\|f-f_G\|_{C^m}\le CG^{-k-1+m}$（Theorem「KAT」）。**$G$ に対する収束率は次元に依存しない**ため COD を回避できる、と著者は述べる。ただし定数 $C$ は表現に依存し、次元依存性の議論は future work。スケーリング指数 $\alpha=k+1$、$k=3$（cubic）で $\alpha=4$。
 - **結果**:
   - **Toy 5 例**（Bessel $J_0(20x)$ / $\exp(\sin\pi x+y^2)$ / $xy$ / 100D $\exp(\frac{1}{100}\sum\sin^2)$ / 4D ネスト）で KAN は理論線 $\alpha=4$ にほぼ到達、MLP は早期に頭打ち（Fig. model_scaling）。
   - **Special functions 15 個**（scipy.special, e.g. `ellipj`, `jv`, `yv`, `kv`, `iv`, `lpmv`, `sph_harm`）で KAN の Pareto frontier が一貫して MLP より上。例: `lpmv(0,x,y)` 最良 KAN test RMSE $5.25\times10^{-5}$ vs MLP $1.74\times 10^{-2}$（Table tab:special_kan_shape）。
   - **Feynman dataset**: Table tab:feynman_kan_shape の 27 方程式で KAN と MLP は平均ほぼ互角（"MLPs and KANs behave comparably on average"）。ただし auto-pruning が見つける KAN は人手で構成した KAN より小さくなることが多い（例: 相対論的速度合成 $\frac{u+v}{1+uv}$ で人手 5 層 [2,2,2,2,2,1] → auto 2 層 [2,2,1]、これは rapidity trick に対応）。
   - **PDE (Poisson, $u_{xx}+u_{yy}=f$ on $[-1,1]^2$)**: 2-Layer width-10 KAN が 4-Layer width-100 MLP より MSE で 100 倍精度良 ($10^{-7}$ vs $10^{-5}$)、パラメータも 100 倍少 ($10^2$ vs $10^4$)。
   - **Continual learning**: 5 Gaussian peaks の 1D 逐次学習で MLP は catastrophic forgetting、KAN は spline の局所性のおかげで forgetting なし。
-  - **Knot theory (DeepMind dataset)**: 18 不変量 → signature 予測タスクで $[17,1,14]$ KAN（約 200 params, $G=3, k=3$）が **81.6%** 精度。DeepMind の 4-layer width-300 MLP（約 $3\times 10^5$ params）の 78.0% を上回る。$\mu_r,\mu_i,\lambda$ への依存をアテンション手法不要で可視化のみで特定。さらに $\mu_r,\lambda$ のみ用いる新公式 F（77.8%）を発見。
+  - **Knot theory (DeepMind dataset)**: 17 knot invariants → signature 予測タスクで $[17,1,14]$ KAN（約 200 params, $G=3, k=3$）が **81.6%** 精度。DeepMind の 4-layer width-300 MLP（約 $3\times 10^5$ params）の 78.0% を上回る。$\mu_r,\mu_i,\lambda$ への依存を feature attribution 不要で可視化のみで特定。さらに $\mu_r,\lambda$ のみ用いる新公式 F（77.8%）を発見。
   - **Anderson localization (Mosaic / GAAM / MAAM)**: KAN が mobility edge を symbolic に抽出。GAAM では真公式 $\alpha E+2\lambda-2=0$（99.2% acc）に近い $21.06\alpha E+45.13\lambda-54.45=0$ を auto モードで取得（99.0%）。MAAM では人と KAN の対話的「step 2/3/4A/4B」で精度と簡潔さを段階的にトレードオフ。
 - **貢献**: (1) 元の 2 層 KA 表現を任意 depth/width に一般化した KAN アーキ、(2) スケーリング指数 $\alpha=k+1$ を保証する近似定理 KAT と経験的サチュレーション、(3) sparsification + pruning + symbolic snap という解釈性パイプライン、(4) PDE・continual learning・科学発見（結び目理論・Anderson 局在）での実証、(5) pykan として実装公開 (`pip install pykan`)。
 
@@ -56,7 +56,7 @@
     - mathematical foundation は $[n,2n+1,1]$ にしか厳密対応していない（一般の深さの KA 定理は無い）。
     - locality を高次元でどう定義するかは未解決（continual learning の一般化が不明）。
     - 解釈性は人間側に KAN の「言語」に対する慣れを要求する、と書かれている（Feynman KAN は "cute but not always interpretable"）。
-    - pruning が最適 KAN shape を必ず見つけられる保証はなく、Feynman 例で KAN が MLP より良くならないのはこのせいかもしれない、と言及。
+    - interpretability hyperparameters の appendix では、random seed や $\lambda$ や $G$ により pruned network の大きさ・解釈しやすさが変わる、とされている。
     - 解釈性とは別に "trade-off knob" の意味で精度と単純さの行き先がデータ依存（MAAM の Step 4A vs 4B）。
 - **次に試したいこと**:
   - **同じ params / 同じ wall-clock 予算**での KAN vs MLP の Pareto curve（特に PDE と Feynman）。10x slow を flat に揃えた時に PDE の 100x 精度差がどう変わるか。
@@ -76,10 +76,13 @@
 - Sparsification: $\ell_{\rm total}=\ell_{\rm pred}+\lambda(\mu_1\sum_l|\mathbf\Phi_l|_1+\mu_2\sum_l S(\mathbf\Phi_l))$、デフォルト $\mu_1=\mu_2=1$。
 - Pruning threshold $\theta=10^{-2}$（node-level、incoming/outgoing 双方が必要）。
 - Knot: $[17,1,14]$ KAN ($G=3,k=3$) で約 $2\times 10^2$ params, 81.6% acc / DeepMind 4 層 width-300 MLP ($3\times 10^5$ params) 78.0% acc。発表後、Shi Lab が 60 params MLP で 80% 達成 ＝ "AI + Science tasks may not be that computationally demanding"（Table tab:math-compare のキャプション内に明記）。
-- 既知の限界（discussion）: 数学的基礎が depth-2 までしかカバーしていない / 異なる活性関数がバッチ計算できないため遅い / locality の高次元定義不明 / Feynman で MLP に勝てない / pruning が最適形状を見つけられないかも。
+- 既知の限界（discussion / appendix）: 数学的基礎が depth-2 対応の KA 定理にしか厳密対応していない / 異なる活性関数がバッチ計算できないため遅い / locality の高次元定義不明 / Feynman では MLPs and KANs behave comparably on average / interpretability が random seed や $\lambda$ や $G$ に依存しうる。
 - (verified 2026-05-20) Feynman dataset 「26 方程式」→「27 方程式」に修正（Table tab:feynman_kan_shape を実際に数えると 27 行、kan.tex §3.3 末尾でも "all 54 pruned KANs"=27×2 と整合）。同箇所で人手/auto の shape [2,2,2,2,2,1]→[2,2,1] を明示。根拠: kan.tex Table tab:feynman_kan_shape 行 I.16.6、本文「resulting a total of 5 layers. However, the auto-discovered KANs are only 2 layers deep!」。
 - (verified 2026-05-20) Related Papers の Lai & Shen 2021 の引用タイトルを bbl の正式タイトル「The Kolmogorov superposition theorem can break the curse of dimensionality when approximating high dimensional functions」に修正。根拠: kan.bbl の \bibitem{lai2021kolmogorov}。
 - (verified 2026-05-20) Related Papers の "He & Xu 2018/2023" を bbl の著者名に合わせ「He, Li, Xu, Zheng 2018 / He & Xu 2023」に修正。根拠: kan.bbl の \bibitem{he2018relu} と \bibitem{he2023deep}。
+- (verified 2026-05-27) venue/year を TeX で確認できる範囲（neurips_2023.sty preprint 使用、明示 year なし）に限定し、KAT の次元非依存は「収束率」に修正して定数 $C$ の caveat を追加 (kan.tex title block, Theorem KAT paragraph)
+- (verified 2026-05-27) Knot supervised task を「18 不変量」から TeX 本文通り「17 knot invariants → signature」に修正し、feature attribution 不要という表現に合わせた (kan.tex §Application to Mathematics: Knot Theory, Table tab:math-compare)
+- (verified 2026-05-27) pruning 最適性に関する TeX 本文で確認しにくい断定を削り、appendix の hyperparameter/random seed 依存に置換 (kan.tex Appendix Dependence on hyperparameters)
 
 ## Related Papers
 
@@ -91,6 +94,5 @@
 - Davies et al. 2021 *Nature* "Advancing mathematics by guiding human intuition with AI" — Knot signature の DeepMind 研究。本論文 §3.5 のベースライン。
 - Ganeshan et al. 2015 / Wang et al. 2020 / Biddle et al. 2010 — GAAM / Mosaic / MAAM の閉形式 mobility edge。
 - Raissi et al. 2019 PINN, Karniadakis 2021 — PDE 比較対象。
-- Fakhoury et al. 2022 ExSpliNet — B-spline 活性で最も近い先行研究（2 層に留まる）。
+- Fakhoury et al. 2022 ExSpliNet — B-spline / learnable activation 関連の先行研究。
 - He, Li, Xu, Zheng 2018 (ReLU と finite elements) / He & Xu 2023 (deep neural networks and finite elements) — ReLU-k と spline、MLP と spline の橋渡し。
-- Madaan et al. 2023 Self-Refine 等は本論文では引かれていない。

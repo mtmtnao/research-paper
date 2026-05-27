@@ -22,9 +22,9 @@
 
 ## Takeaway（自分にとっての要点）
 
-- **Sign election が肝**: 単純平均がダメな本当の理由は magnitude 平均ではなく **符号の打ち消し**。total mass で多数決して、負け側を平均から除外する「disjoint mean」というワンフレーズで覚えられる。
-- **k=20% / λ=1 がそのまま使える**: PEFT 設定で探索した recipe を未調整のまま ViT・T5 のフル fine-tune に流用しても勝つ。validation set が無い実運用の merging ではまずこれを試すべき。
-- **冗長性の根拠が clean**: Fig.~\ref{fig:reset-bottomk}（top-k% 残しで k=20% でも性能維持）で「task vector はスパースに圧縮できる」を実測。これは pruning 文脈とも噛み合うし、merging 以外（分散学習・連合学習でのアップロード量削減）に転用できる。
+- **Sign election が肝**: 著者は、単純平均で失われる情報の一因として **符号の打ち消し**を強調している。total mass で多数決して、負け側を平均から除外する「disjoint mean」というワンフレーズで覚えられる。
+- **k=20% / λ=1 の固定 recipe**: PEFT 設定で探索した recipe を、著者は validation set なし設定として ViT・T5 のフル fine-tune に流用している。Table~\ref{tab:main} では T5-base を除き、validation なしの TIES が validation なし Task Arithmetic を上回る。
+- **冗長性の根拠が clean**: Fig.~\ref{fig:reset-bottomk}（top-k% 残しで k=20% でも性能維持）で「task vector は少数の high-magnitude parameters に性能が依存する」ことを実測している。pruning 文脈との接続は本文中でも述べられている。
 - **Oracle Sign 実験のメッセージ**: TIES 66.4 → Oracle Sign 72.0 → Multitask 73.1。**ギャップの大半は「正しい符号を当てられないこと」に集約**されている。次の研究の的が明確（few-shot で multitask sign を推定する、Appendix Table~\ref{tab:app_oracle} で 32 sample + mean init で +1.2〜1.3% 改善）。
 - **同タスク内でも符号衝突がある**（Appendix Fig.~\ref{fig:same_task_interference}）: 過剰パラメータ化 + 異なる SGD 経路で、同じ task の 10 checkpoint でも符号がばらつく。ModelSoups 系の robust averaging にも TIES が刺さる説明になっている。
 - **干渉はモデル数に対して単調増加**（Fig.~\ref{fig:num_tasks}）: 2 タスクなら TIES / Task Arithmetic がほぼロス無し（Simple Averaging は約 10% ロス）。タスク数が増えるにつれ Task Arithmetic の方が TIES より急速に劣化していく（TeX の主張）。「マージするモデル数」が手法選択のキー変数。
@@ -32,25 +32,25 @@
 ## Critical Thoughts（評価・疑問）
 
 - **強み**:
-  - **シンプルさ**: trim → elect → disjoint mean の 3 行で書ける。ハイパラ 2 個。実装は数行で済むはず（OSS あり）。
-  - **検証スコープが広い**: PEFT (IA)$^3$ / T5-base / T5-large / ViT-B/32 / ViT-L/14、in-domain / OOD、validation 有無、ModelSoups (BERT GLUE)、init としての利用、と論文 1 本でカバーしている範囲が広い。再現可能性が高そう。
+  - **シンプルさ**: trim → elect → disjoint mean の 3 ステップで書ける。ハイパラ 2 個。TeX には code available の footnote がある。
+  - **検証スコープが広い**: PEFT (IA)$^3$ / T5-base / T5-large / ViT-B/32 / ViT-L/14、in-domain / OOD、validation 有無、ModelSoups (BERT GLUE)、init としての利用、と論文 1 本でカバーしている範囲が広い。
   - **interference の 2 分類が解釈として綺麗**: 「redundancy で magnitude が薄まる」「sign disagreement で打ち消し合う」という診断軸が今後の merging 系の議論の語彙になる強さがある。
   - Oracle Sign 上限を示してくれているので「TIES の改善余地」が定量的に見える。
 - **弱み / 疑問**:
   - **著者自身が認めている限界**（Appendix \ref{sec:limitation}）: (1) weight interpolation がなぜ動くかの理論が乏しい、(2) 共通の初期化・アーキテクチャを前提とする、(3) merging は multitask 学習にまだ届かない、(4) マージ対象 checkpoint の選び方が分からない、(5) multitask sign を multitask モデル無しで推定する方法は未解決。
-  - **k=20 の根拠が PEFT 設定のみ**: Appendix sec:app_validation で (IA)$^3$ について $k\in\{10,20,30\}, \lambda\in[0.8,3.0]$ を grid し、k=20 と λ≈1 を選んでいる。これを未調整で ViT/T5 に転用しても効くのは結果論で、PEFT と full fine-tune では task vector の magnitude 分布が違うはず → k=20 が普遍とは限らない。Appendix Fig.~\ref{fig:hyperparams}（vs_k 図）を見ても k 依存はある（k が増えると性能が下がって saturate するとの記述）。
-  - **T5-base × validation 無しのケースで Task Arithmetic に負けている**（73.2 vs 69.7、Table~\ref{tab:main}）。「validation 無し recipe は万能」とは言い切れず、ここの説明は薄い。
+  - **k=20 の根拠が PEFT 設定のみ**: Appendix sec:app_validation で (IA)$^3$ について $k\in\{10,20,30\}, \lambda\in[0.8,3.0]$ を grid し、k=20 と λ≈1 を選んでいる。これを未調整で ViT/T5 に転用しているが、Appendix Fig.~\ref{fig:hyperparams}（vs_k 図）には、$k$ が増えると性能が下がって saturate し、この曲線は task vector の parameter value 分布に依存して変わり得る、と明記されている。
+  - **T5-base × validation 無しのケースで Task Arithmetic に負けている**（73.2 vs 69.7、Table~\ref{tab:main}）。固定 recipe が常に best baseline を上回るわけではなく、ここの説明は薄い。
   - **multitask 学習自体への到達はしていない**: Oracle Sign でも 72.0 < 73.1（multitask）。ギャップは小さいが「merging で multitask を完全に代替できる」とまでは言っていない。
-  - **計算コストの議論が薄い**: top-k 抽出はパラメータ数線形だが、フル fine-tune モデル × タスク数で task vector を全部メモリに乗せる前提。LLM スケール（数十 B）で n=10 タスクを同時に処理する現実性は別議論。
-  - **タスクの偏り**: NLP は GLUE/SuperGLUE 系の小タスクが中心、Vision も既存 task_vectors ベンチの 8 タスク。生成タスク（要約・コード生成・対話）での挙動は未検証。
-  - **「elected sign は mass の多数決」のロバスト性**: タスク数が偏ると、片側に大きな magnitude を持つ 1 タスクの符号が常勝してしまう懸念。タスク重み付け（weighted elect）は議論されていない。
+  - **計算コストの議論が限定的**: Appendix sec:app_compute には GPU / runtime / evaluation time はあるが、フル fine-tune モデルを多数マージする際の task vector 保持メモリについての議論は TeX 中には明示されていない（評者補足）。
+  - **タスクの範囲**: 本文の NLP 評価は rank classification で、classification / multiple-choice tasks に対応できると Appendix sec:app_training_details に書かれている。要約・コード生成・対話のような生成タスクでの結果は TeX 中には示されていない。
+  - **「elected sign は mass の多数決」のロバスト性**: task weighting や weighted elect の検討は TeX 中には明示されていない（評者補足）。
 - **次に試したいこと**:
-  - **few-shot で multitask sign を推定**するパスを Appendix Table~\ref{tab:app_oracle} より進める。32 sample / mean init が +1.2〜1.3% なら、合成サンプル（pre-trained で自己生成）でどこまで近づくか。
-  - **LoRA で同じことを**: (IA)$^3$ は scale 系 PEFT。LoRA の low-rank 行列に対する top-k は意味が変わるはず（rank 単位 vs 要素単位）。要素単位で TIES するか、特異値ベースで trim するかの比較。
-  - **タスク数を更にスケール**（20〜100 タスク）: Fig.~\ref{fig:num_tasks} の延長で TIES もどこかで折れるはず。$k$ をタスク数と連動させる必要があるか。
-  - **生成タスク（要約・コード）での merging**: rank classification ベンチではなく ROUGE/pass@k で見る。
-  - **elect を soft 化**: 多数決ではなく $\gamma_m^p = \tanh(\beta \sum_t \hat{\tau}_t^p)$ 的な連続版にすると、僅差の符号 election での感度がどう変わるか。
-  - **マージ checkpoint 選択**: 著者が限界として挙げている (4)。task embedding を使って merging に有益な subset を選ぶ問題は実用上重要。
+  - **few-shot で multitask sign を推定**するパスを Appendix Table~\ref{tab:app_oracle} より進める。32 sample / mean init が +1.2〜1.3% なら、合成サンプル（pre-trained で自己生成）でどこまで近づくか（評者補足）。
+  - **LoRA で同じことを**: TeX では LoRA は PEFT method の例として Background に出るが、実験対象は (IA)$^3$。LoRA での TIES は未検証（評者補足）。
+  - **タスク数を更にスケール**（20〜100 タスク）: Fig.~\ref{fig:num_tasks} は T5-Large の 7 tasks（Appendix sec:app_num_tasks）までなので、それ以上の task 数での挙動は TeX 中には示されていない（評者補足）。
+  - **生成タスク（要約・コード）での merging**: rank classification ベンチではなく ROUGE/pass@k で見る（評者補足）。
+  - **elect を soft 化**: 多数決ではなく $\gamma_m^p = \tanh(\beta \sum_t \hat{\tau}_t^p)$ 的な連続版にすると、僅差の符号 election での感度がどう変わるか（評者補足）。
+  - **マージ checkpoint 選択**: 著者が限界として挙げている (4)。task embedding を使って merging に有益な subset を選ぶ問題は実用上重要（評者補足）。
 
 ## Notes / Quotes
 
@@ -67,6 +67,7 @@
 - (verified 2026-05-20) T5-large in-domain の "RegMean 73.2 比 +3.6" は実際は best baseline が Task Arithmetic 73.3 なので "Task Arithmetic 73.3 比 +3.6" に訂正（tab:main）。
 - (verified 2026-05-20) num_tasks 図に関する「5 タスクを超えると Task Arithmetic が崩れる」という具体的閾値は TeX にないため削除し、「タスク数が増えると Task Arithmetic の方が急速に劣化」という TeX の表現に揃えた（experiments.tex, fig:num_tasks）。
 - (verified 2026-05-20) Appendix tab:app_oracle の +1.3% は本文中の数値、表中の表示は +1.2 なので "+1.2〜1.3%" と併記（appendix.tex sec:app_estimating_multitask_sign）。
+- (verified 2026-05-27) Takeaway / Critical Thoughts の TeX 根拠を越えた推測表現を削除または評者補足として明示し、validation なし TIES は T5-base では Task Arithmetic を下回ることが分かる表現に修正（main.tex, sections/appendix.tex, sections/experiments.tex）。
 
 ## Related Papers
 

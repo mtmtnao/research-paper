@@ -3,7 +3,7 @@
 - arXiv: https://arxiv.org/abs/2408.06292
 - source: ../papers/arXiv-2408.06292v3/
 - authors: Chris Lu, Cong Lu, Robert Tjarko Lange, Jakob Foerster, Jeff Clune, David Ha
-- venue / year: arXiv preprint, 2024 (v3) — Sakana AI / Oxford FLAIR / UBC / Vector
+- venue / year: TeX 中には掲載先・年の明示なし（著者所属: Sakana AI / FLAIR, University of Oxford / University of British Columbia / Vector Institute / Canada CIFAR AI Chair）
 - tags: [LLM-agent, automated-research, AI-for-science, Aider, automated-review]
 - read_date: 2026-05-12
 
@@ -26,13 +26,13 @@
 - Sonnet 3.5 (Diffusion) max score = 6.0 は NeurIPS Weak Accept ボーダーと「reviewer の閾値」上は一致する、というだけで、人間レビュアーが accept するかは別問題。著者自身も「研究のヒント」として扱えと釘を刺している。
 - 「コードを LLM 自身が改変してリソース制約を回避する」失敗例（自己再起動で Python プロセス増殖、TB 単位のチェックポイント、time limit 自身の編集）は **AI safety の具体ケーススタディ** として強烈で、self-improving system を試す前にサンドボックス化が必須という根拠資料になる。
 - NanoGPT テンプレで「将来トークンを subtle に漏らして perplexity を下げる」アイデアが出る、と著者自身が言及。**自動評価指標の reward hacking を LLM 研究エージェントが自然に発見してしまう**点はリスクを示す好例。
-- Aider の SWE Bench 18.9% という前提性能が必要十分、というメッセージは具体的（ベース LLM 性能の何がスレッショルドかが分かる）。
+- Aider の SWE Bench 18.9% という性能について、著者は「この reliability 水準が初めて ML 研究プロセスの完全自動化を可能にした」と位置づけている。
 - ~\$15/paper はあくまで API 課金ベース。計算機側コスト・人間のテンプレート整備コスト・後処理は別、という前提でコスト主張を受け取る必要あり。
 
 ## Critical Thoughts（評価・疑問）
 
 - **強み**:
-  - "research の自動化" を fragments（ideation / coding / writing / reviewing）から **end-to-end** に押し上げた最初の実証で、開発者が真似できる粒度（Aider + Semantic Scholar API + LaTeX template）で書かれている。再現性に強い。
+  - "research の自動化" を fragments（ideation / coding / writing / reviewing）から **end-to-end** に押し上げた最初の実証で、Aider + Semantic Scholar API + LaTeX template という構成要素まで明示している。
   - Reviewer をテンプレ化して 500 件で定量評価し、人間との同等性を別ベンチで示してから論文評価に使う、という二段構えが綺麗。「評価指標がそもそも妥当か」をちゃんと先に示している。
   - 4 LLM 横断・3 テンプレ横断のマトリクス比較があり、proprietary vs open-weight の現状が一望できる。
   - Limitations が異常に正直: 自己ハッキング、幻覚、metric 比較ミス、related works 落ち、自分のハードウェアを幻覚（H100 を V100 と書く）など、致命的なエピソードを名指しで載せている。
@@ -47,7 +47,7 @@
   - コスト \$15/paper は LLM API ベース。8×H100 で 12h は普通に高コストで、「democratize する」主張と齟齬がある。
   - 著者自身が認める limitations の節は長く、率直さは美点だが「次の論文版で本当に直せるのか」が結局フロンティア LLM 任せ、というのは構造的弱点。
 - **次に試したいこと**:
-  - 人間 reviewer (blind, NeurIPS 経験者) に AIS 生成論文 10〜20 本を採点してもらい、Automated Reviewer のスコアとの correlation を取る。Reviewer 同士 0.18 を上回るか。
+  - 人間 reviewer (blind, NeurIPS 経験者) に AIS 生成論文 10〜20 本を採点してもらい、Automated Reviewer のスコアとの correlation を取る。human-human 相関 0.14 や LLM-average human 相関 0.18 と比較する（評者補足）。
   - novelty 判定の self-assessment を、**第三のモデル**（別ベンダー LLM）で独立に Semantic Scholar 検索からやり直し、novelty 率がどれだけ落ちるか測る。
   - NanoGPT テンプレで生成された「perplexity 改善」アイデアの実装を 1 件ずつ adversarial code review し、何 % が future-token leak / metric hack に相当するかを定量化する。
   - Aider が失敗する理由（GPT-4o の LaTeX compile 失敗、DeepSeek の tool call 失敗）の **type 別失敗分類**を取り、テンプレート側で吸収する部分とモデル側で要る部分を分ける。
@@ -66,6 +66,8 @@
 - 計算機: 各 run は 51〜52 アイデア / 約 12h / 8×H100、各テンプレあたり総額 Sonnet 3.5 ~\$250、GPT-4o ~\$300、DeepSeek Coder ~\$10、Llama-3.1 405b ~\$120 (Tables 3–5)。Reviewer 1 件あたり \$0.25–\$0.50 (§4)。
 - (verified 2026-05-20) GPT-4o のコストを ~\$250 から ~\$300 に訂正し、Sonnet/GPT-4o を分離。根拠: main.tex L650-653 (tab:diff_papers), L741-744 (tab:nlp_papers), L810-813 (tab:grokking_papers) いずれも GPT-4o は ~\$300。
 - (verified 2026-05-20) 他の数値（balanced acc 0.65/0.66、F1 0.57/0.49、相関 0.14/0.18、Diffusion 49/38/38、KL 0.989→0.862、SWE Bench 18.9% 等）は main.tex (§4 tab:reviewer, §5 case study, §6 各 tab:*, §2 Aider) と一致を確認。
+- (verified 2026-05-27) venue/year を TeX で確認できる範囲に限定し、Aider 性能・強み・次実験案の表現を TeX 根拠より強くならないよう修正 (main.tex, main.bbl)。
+- (verified 2026-05-27) Related Papers の bbl で確認できない通称を、bbl で確認できる論文タイトルに置換 (main.bbl)。
 
 ## Related Papers
 
@@ -76,9 +78,9 @@
 - beygelzimer et al., NeurIPS 2021 consistency experiment — 人間 reviewer のベースライン (acc 0.73, F1 0.49)。
 - Huang et al., MLAgentBench 2024 — LLM が ML タスクをコードで解くベンチ。比較対象。
 - Lu et al., Discovering Preference Optimization 2024 — LLM が SOTA アルゴ提案。AIS 前身。
-- Romera-Paredes et al., FunSearch / Merchant et al., GNoME / Jumper et al., AlphaFold — 制約付き科学発見の先行例（論文を書かないタイプ）。
+- Romera-Paredes et al., *Mathematical discoveries from program search with large language models* / Merchant et al., *Scaling deep learning for materials discovery* / Jumper et al., AlphaFold — 制約付き科学発見の先行例（論文を書かないタイプ）。
 - Power et al., Grokking 2022 — テンプレ 3 (grokking) のベース。
 - Karpathy, NanoGPT — テンプレ 2 のベース。
-- Tanelp tiny-diffusion / Ho et al., DDPM — テンプレ 1 のベース。
+- Tanel Pärnamaa, tiny-diffusion / Ho et al., DDPM — テンプレ 1 のベース。
 - Burns et al., Weak-to-Strong Generalization 2023 — superalignment（AIS の限界が人間を超える将来の議論で参照）。
 - Liang et al., 2024 — LLM が査読フィードバックを生成。Reviewer の先行。

@@ -22,8 +22,8 @@
   - **CIFAR10 unconditional**: IS $9.46\pm0.11$、**FID $3.17$（test set FID は $5.24$）**、NLL $\leq 3.75$ test (3.72 train)。当時の class-conditional 含む大半のモデルを上回り、unconditional では StyleGAN2+ADA (FID 3.26) と並ぶ。
   - **LSUN $256^2$** (Table lsun_fid): Bedroom FID **4.90**（large, 256M params） / 6.36（114M）、Church **7.89**、Cat **19.75**。abstract で "sample quality similar to ProgressiveGAN" と総括（Bedroom/Cat は PGAN を上回り、Church は 7.89 vs 6.42 で僅かに下回る）。StyleGAN2 (Church 3.86, Cat 6.93) には劣る。
   - **CelebA-HQ $256\times256$**: 図 (Fig. 1, Appendix) で定性サンプルを提示。本文中に定量 FID 比較は無い。
-  - **Loss ablation (Table 2)**: $\tilde\bmu$-pred + $L$(fixed iso $\Sigma$) は FID 13.22、$\bepsilon$-pred + $L$ は 13.51 で同等。だが $\bepsilon$-pred + $L_\mathrm{simple}$ で 3.17 と一気に改善。$\tilde\bmu$-pred + MSE と learned diagonal $\bSigma$ は学習不安定で "blank"。
-  - **Rate-distortion 解析**: CIFAR10 で rate 1.78 bits/dim + distortion 1.97 bits/dim (RMSE 0.95/255)。Lossless codelength の半分以上が知覚不能な細部に費やされている。
+  - **Loss ablation (Table 2)**: $\tilde\bmu$-pred + $L$(fixed iso $\Sigma$) は FID 13.22、$\bepsilon$-pred + $L$ は 13.51 で同等。だが $\bepsilon$-pred + $L_\mathrm{simple}$ で 3.17 と一気に改善。$\tilde\bmu$-pred + MSE と $\bepsilon$-pred + learned diagonal $\bSigma$ は学習不安定で "blank"、$\tilde\bmu$-pred + learned diagonal $\bSigma$ は FID 23.69。
+  - **Rate-distortion 解析**: CIFAR10 で rate 1.78 bits/dim + distortion 1.97 bits/dim (RMSE 0.95 on a 0-255 scale)。Lossless codelength の半分以上が知覚不能な細部に費やされている。
   - **Progressive 生成**: $\hat\bx_0$ を時刻ごとに復元すると、大域構造が先、細部が後で出現。
 - **貢献**:
   1. Diffusion ↔ multi-noise denoising score matching + Langevin dynamics の明示的同値（ε-prediction を介する）。
@@ -34,41 +34,42 @@
 ## Takeaway（自分にとっての要点）
 
 - **「平均ではなくノイズを予測する」** という再パラメータ化が肝。$\bmu_\theta$ を直接 fit するより、$\bx_t$ 中の Gaussian ノイズ $\bepsilon$ を出させる方が score matching と整合し、しかも単純な MSE で書ける。
-- **理論的に正しい重み付き ELBO を捨てて、unweighted MSE に切り替えた途端に FID が 13.51 → 3.17** に改善（Table 2）。これは "尤度最適 = 標本品質最適" ではないことのきれいな実証で、後続の DDPM 派生研究はこの「重みを設計する」観点を継承している。
-- **$\sigma_t^2$ を学習させると壊れる**。固定で十分。後の研究（Improved DDPM, Nichol & Dhariwal 2021）が learned $\Sigma$ を成立させるのは別工夫が要る、という伏線。
-- **rate-distortion 視点**: lossless 1.78+1.97≒3.75 bits/dim のうち distortion 側（知覚に効く部分）は RMSE で 0.95/255 にしかならない。だから NLL が悪く見えても標本は綺麗、という説明が成立する。likelihood と perceptual quality が乖離する理由の良い説明。
-- **forward process が学習不要・$\bx_T$ がほぼ data と独立**という設計が、VAE/flow と diffusion を分ける本質。VAE は encoder を学習するから後段の表現が data に依存する。
+- **理論的に正しい重み付き ELBO を捨てて、unweighted MSE に切り替えた途端に FID が 13.51 → 3.17** に改善（Table 2）。TeX では、真の variational bound は codelength を改善する一方、simplified objective が最良の sample quality を与えると述べている。
+- **$\sigma_t^2$ を学習させると壊れる**。Table 2 と §4.2 では、learned diagonal $\bSigma$ が fixed variance より不安定で sample quality も悪いと報告されている。
+- **rate-distortion 視点**: lossless 1.78+1.97≒3.75 bits/dim のうち distortion 側（知覚に効く部分）は RMSE で 0.95（0-255 scale）にしかならない。だから NLL が悪く見えても標本は綺麗、という説明が成立する。likelihood と perceptual quality が乖離する理由の良い説明。
+- **forward process が学習不要・$\bx_T$ がほぼ data と独立**という設計が、TeX で flow/VAE との差分として説明されている。
 - **autoregressive との接続**: diffusion を「Gaussian ノイズ順で並べた generalized bit ordering の autoregressive」と解釈すると、$T$ を data 次元と独立に選べる利点（$T=1000 \ll 32\cdot32\cdot3$）が出てくる。
 - **実装メモ**: T=1000, β linear 1e-4→0.02, U-Net 35.7M (CIFAR) / 114M (256²) / 256M (LSUN-bedroom large), Adam lr 2e-4 (2e-5 for 256²), batch 128/64, EMA 0.9999, dropout 0.1 only on CIFAR, TPU v3-8。CIFAR は 800k step で 10.6 時間。
 
 ## Critical Thoughts（評価・疑問）
 
 - **強み**:
-  - 「数式上は等価な再パラメータ化（$\tilde\bmu$-pred / $\bepsilon$-pred）と重み付き/非加重 ELBO」を Table 2 で ablation 比較し、経験的最適解 ($\bepsilon$-pred + $L_\mathrm{simple}$) を特定している（$\bx_0$-pred は §3.2 で「early experiments で sample quality が悪かった」と本文中で言及のみ、Table 2 には入っていない）。後続が follow しやすい良いベースライン。
+  - 「数式上は等価な再パラメータ化（$\tilde\bmu$-pred / $\bepsilon$-pred）と重み付き/非加重 ELBO」を Table 2 で ablation 比較し、経験的最適解 ($\bepsilon$-pred + $L_\mathrm{simple}$) を特定している（$\bx_0$-pred は §3.2 で「early experiments で sample quality が悪かった」と本文中で言及のみ、Table 2 には入っていない）。この ablation が良いベースラインになっている点は評者補足。
   - score matching, Langevin dynamics, autoregressive decoding, lossy compression という独立した4文脈すべてに diffusion を橋渡しした概念整理が秀逸。
   - 実装公開（github.com/hojonathanho/diffusion）+ 詳細な hyperparameter 開示で再現性が高い。
 - **弱み / 疑問**（著者自身が認めているもの含む）:
   - **NLL は競合しない**（著者自ら認める）: CIFAR10 で Sparse Transformer 2.80, Gated PixelCNN 3.03 に対し本提案は ≤ 3.75。"半分以上が imperceptible details に費やされる" と説明しているが、density estimator としては劣る。
   - **Progressive compression は概念実証どまり**（著者自ら "only a proof of concept", appendix）: minimal random coding が高次元で tractable でない。
-  - **Learned $\bSigma$ が不安定**（Table 2 で実際に学習失敗）—固定 $\sigma_t$ で逃げているが、最尤の意味では sub-optimal。
-  - **サンプリングが遅い**: $T=1000$ ステップ × NN 評価。論文では CIFAR で 256 枚 17 秒、256² で 128 枚 **300 秒**。実応用には致命的（後の DDIM, progressive distillation 等が解決する課題）。本論文中に latency についての limitation 明示はあまり強くない。
-  - **モード網羅性・多様性の定量評価が薄い**: FID/IS のみで、recall/coverage 指標や mode collapse の検証はない。GAN との比較なら本来必要。
-  - **LSUN Cat FID 19.75** は StyleGAN2 (6.93) に大きく劣る。高解像度・多様分布で diffusion がまだ不利な領域があることが示唆されているが本文での議論は薄い。
+  - **Learned $\bSigma$ が不安定 / sample quality 悪化**: Table 2 では $\bepsilon$-pred + learned diagonal $\bSigma$ が blank、$\tilde\bmu$-pred + learned diagonal $\bSigma$ は FID 23.69。固定 $\sigma_t$ で十分かは追加検証の余地がある（評者補足）。
+  - **サンプリングが遅い**: $T=1000$ ステップ × NN 評価。論文では CIFAR で 256 枚 17 秒、256² で 128 枚 **300 秒**。実応用上の重さは気になる（評者補足）。本論文中に latency についての limitation 明示はあまり強くない。
+  - **モード網羅性・多様性の定量評価が薄い**: FID/IS のみで、recall/coverage 指標や mode collapse の検証はない（評者補足）。
+  - **LSUN Cat FID 19.75** は StyleGAN2 (6.93) に大きく劣る。高解像度・多様分布で diffusion がまだ不利な領域がある可能性はあるが、これは評者補足であり、本文での議論は薄い。
   - **interpolation で eyewear だけ滑らかに変わらない**と著者自身が述べている（§4.2）。離散属性は latent diffusion 経路に乗りにくい。
   - **設計判断の sweep 範囲が限定的**: $T$ や $\beta$ の上限は sweep していない（"set $T=1000$ without a sweep"）。最適点ではない可能性。
+  - **より強い decoder は future work 扱い**: 著者は $L_0$ の discrete decoder について、conditional autoregressive model のような強い decoder の組み込みは straightforward だが future work に残すと述べている。
 - **次に試したいこと**:
-  - **重み関数の系統的探索**: $L_\mathrm{simple}$ は重み=1 だが、$t$ 依存重み $w(t)$ を学習可能にして perceptual loss と NLL の Pareto を取る（後の Improved DDPM / VDM 方向の追検証）。
-  - **$T$ を 100 / 50 / 10 まで落としたときの FID 曲線**を引いて、本論文の $T=1000$ がどれだけ over-killed か確認（DDIM 等の前段）。
-  - **CIFAR10 で IS/FID と NLL の同時 Pareto** をモデルサイズ・objective・$\bSigma$ 設定を変えて引く。
-  - **$\bepsilon$-pred vs $\bx_0$-pred** を改めて現代的設定で比較（論文では "$\bx_0$ pred は早期実験で悪かった" としか書かれていない）。
-  - **rate-distortion 解釈を loss 設計に直接戻す**: 知覚に効くタイムステップを自動検出して優先的に学習する curriculum。
-  - 自分が普段触る非画像領域（音声/タンパク/グラフ）に同じ "noise-prediction + simplified MSE" を移植したときの sample quality / NLL の挙動。
+  - **重み関数の系統的探索**: $L_\mathrm{simple}$ は重み=1 だが、$t$ 依存重み $w(t)$ を変えて sample quality と NLL の Pareto を取る（評者補足）。
+  - **$T$ を小さくしたときの FID 曲線**を引く。TeX では Gaussian diffusions can be made shorter for fast sampling と述べるが、短縮時の定量曲線は示していない。
+  - **CIFAR10 で IS/FID と NLL の同時 Pareto** をモデルサイズ・objective・$\bSigma$ 設定を変えて引く（評者補足）。
+  - **$\bepsilon$-pred vs $\bx_0$-pred** を改めて比較（論文では "$\bx_0$ pred は早期実験で悪かった" としか書かれていない）。
+  - **rate-distortion 解釈を loss 設計に直接戻す**: 知覚に効くタイムステップを自動検出して優先的に学習する curriculum（評者補足）。
+  - 自分が普段触る非画像領域（音声/タンパク/グラフ）に同じ "noise-prediction + simplified MSE" を移植したときの sample quality / NLL の挙動（評者補足。著者は conclusion で other data modalities への utility を今後調べたいと述べている）。
 
 ## Notes / Quotes
 
 - "the $\bepsilon$-prediction parameterization both resembles Langevin dynamics and simplifies the diffusion model's variational bound to an objective that resembles denoising score matching." (§3.2)
 - "We find that training our models on the true variational bound yields better codelengths than training on the simplified objective, as expected, but the latter yields the best sample quality." (§4.1) — likelihood と perceptual quality の乖離を明示。
-- "More than half of the lossless codelength describes imperceptible distortions." (§4.3) — rate 1.78 / distortion 1.97 bits/dim, RMSE 0.95/255。
+- "More than half of the lossless codelength describes imperceptible distortions." (§4.3) — rate 1.78 / distortion 1.97 bits/dim, RMSE 0.95 on a 0-255 scale。
 - "We can therefore interpret the Gaussian diffusion model as a kind of autoregressive model with a generalized bit ordering that cannot be expressed by reordering data coordinates." (§4.3)
 - 限界の自認: "our lossless codelengths ... are not competitive with other types of likelihood-based generative models" (§4.3)、"Our lossy compression argument ... is only a proof of concept" (Appendix)、"learning reverse process variances ... leads to unstable training and poorer sample quality compared to fixed variances" (§4.2)、interpolation で "smoothly vary attributes such as pose, skin tone, hairstyle, expression and background, **but not eyewear**" (§4.4)。
 - Forward posterior: $q(\bx_{t-1}|\bx_t,\bx_0)=\mathcal{N}(\tilde\bmu_t(\bx_t,\bx_0),\tilde\beta_t\bI)$、$\tilde\beta_t=(1-\bar\alpha_{t-1})/(1-\bar\alpha_t)\cdot\beta_t$（式 (6),(7)）。
@@ -77,6 +78,7 @@
 - (verified 2026-05-20) Summary 結果欄の "CelebA-HQ で ProgressiveGAN 同等を主張" を削除し、abstract は LSUN についてのみ「ProgressiveGAN と同程度」と述べていることを反映（main.tex abstract, §4.1）。
 - (verified 2026-05-20) LSUN の対 ProgressiveGAN/StyleGAN2 評価を Table lsun_fid の実数値（Bedroom 4.90 vs 8.34, Church 7.89 vs 6.42, Cat 19.75 vs 37.52 / StyleGAN2 Church 3.86, Cat 6.93）に基づき書き直し（main.tex Appendix Table）。
 - (verified 2026-05-20) Critical Thoughts 強み欄の "3つの設計選択 (μ/ε/x0 pred) を ablation" を Table 2 の実際の 2 軸 ($\tilde\bmu$-pred / $\bepsilon$-pred × {L learned Σ, L fixed Σ, L_simple}) に合わせて修正、$\bx_0$-pred は §3.2 で言及のみで Table 2 に含まれていない旨を追記（main.tex §3.2, Table 2）。
+- (verified 2026-05-27) Takeaway / Critical Thoughts から TeX 外の後続研究名を削除し、評者の推論・追加実験案を評者補足として明示。Loss ablation と RMSE 表記を TeX に合わせ、future work の強い decoder 記述を追加（main.tex §3.3, §4.2, Appendix Experimental details）。
 
 ## Related Papers
 

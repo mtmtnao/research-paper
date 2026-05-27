@@ -12,9 +12,9 @@
 
 ## Summary（著者の主張）
 
-- **問題**: LLM の alignment は (a) RLHF/DPO 等の fine-tuning が不安定かつ計算量が大きく、目的が変わる度に再学習が必要、(b) prompting や guided decoding 等の test-time 手法はモデル本体を変えないので原モデルの能力に縛られる、という二択になっている。さらに既存の representation engineering（Li+ 2024 の inference-time intervention 等）は生成全体に「固定ベクトル」を足すだけで autoregressive な動的性を活かしていない。
+- **問題**: LLM の alignment は (a) RLHF/DPO 等の fine-tuning が不安定かつ計算量が大きく、目的が変わる度に再学習が必要、(b) prompting や guided decoding 等の test-time 手法はモデル本体を変えないので原モデルの能力に縛られる、という二択になっている。さらに既存の representation engineering（Li+ 2023 の inference-time intervention 等）は生成全体に「固定ベクトル」を足すだけで autoregressive な動的性を活かしていない。
 - **手法**: 提案手法 **Re-Control**。autoregressive LLM を離散時間確率力学系 \(y_t \sim \text{Softmax}(W o_t),\ h_{t+1},o_{t+1}=f_{\mathrm{LM}}(h_t, y_t)\) と見なし、状態 \(s_t=\{h_t,o_t\}\) に各ステップで制御信号 \(u_t=\{u^h_t,u^o_t\}\) を加える。reward は最終応答 \(r([\mathbf{x},\mathbf{y}])\) を pretrained reward model から取り、EOS 時のみ与える（中間 reward は 0）。「ゼロポリシー（\(u_t=0\)）」を 1-step policy iteration の初期値として固定し、Bellman 方程式 \(V(s_t)=\mathbb{E}[V(s_{t+1})]\)（or EOS で \(r\)）の MSE 損失で **value network を hidden state の上に学習**。テスト時は \(u_t \leftarrow u_t+\alpha\nabla_{s_t}V_\phi(s_t+u_t)\) を \(n\) 回反復する勾配上昇を行い、最後に LLM を forward して次トークンを出す。\(\alpha\) と \(n\) を小さく抑えることが \(\lambda\|u_t\|_2^2\) 正則化の代替（"implicit regularization"）になる。実装上は最後の層の出力 \(o_t\) だけに介入し、value network は隠れ次元 4096 の 2〜3 層 MLP。
-- **結果**: HH-RLHF と Stanford SHP の test prompts で評価。`Vicuna-7B`/`Falcon-7B-Instruct`/`Llama3-8B-Instruct` の 3 ベースで、評価指標は Diversity / Coherence / Average Reward / GPT-4 win rate（300 prompts, 1〜10 点採点）/ Inference time。
+- **結果**: HH-RLHF と Stanford SHP の test prompts で評価。`Vicuna-7B`/`Falcon-7B`（appendix では `Falcon-7B-Instruct`）/`Llama3-8B-Instruct` の 3 ベースで、評価指標は Diversity / Coherence / Average Reward / GPT-4 win rate / Inference time。GPT-4 judge は 2 応答を 1〜10 点で採点し、HH-RLHF では test set から 300 prompts をランダムサンプルする。
   - HH-RLHF · Vicuna-7B: Base win-rate 57.6 → **Re-Control 75.6**（+Prompt 80.3）、Avg Reward 5.894 → **6.214**（+Prompt 6.267）、推論時間 0.60h → 0.85h。
   - HH-RLHF · Falcon-7B: Base 42.3 → **58.0**（+Prompt 62.6）。Avg Reward 3.439 → 3.512（CD prefix 4.397 が最大）。
   - SHP · Vicuna-7B: Base 40.3 → **58.0**（+Prompt 63.6）、Avg Reward −5.68 → −5.38（+Prompt −4.63）。
@@ -33,7 +33,7 @@
 - 価値関数本体が **2〜3 層 MLP（hidden 4096）** で済むという報告は実用上強い。base LLM は触らない・差し替えやすい。
 - **implicit regularization**: KL を陽に書かず、step size \(\alpha\) と 反復回数 \(n\) を validation で選ぶことで「原 hidden state から離れすぎない」を担保。reward hacking が出始める領域がはっきり観測されている (Fig. parameters_0)。
 - CD (ARGS) との比較で **「reward model 全体を毎ステップ走らせる」vs「2〜3 層 value net を走らせる」**で 20×差というのは、guided decoding 系の "高い test-time cost" を正面から突いている。
-- OOD（HarmfulQA）で value 関数が崩れなかったのは、「hidden state 上の linear-ish な好ましさ方向」がドメインを跨いで生きていることの証拠と読める（ただし n=サンプル数の詳細は要確認）。
+- OOD（HarmfulQA）では、HH-RLHF で学習した value 関数のまま Re-Control+Prompting が Vicuna-7B / Falcon-7B の両方で GPT-4 win rate 最高と報告されている。ただし、なぜ汎化するかの機構分析は TeX 中には明示されていない。
 
 ## Critical Thoughts（評価・疑問）
 
@@ -75,6 +75,8 @@
 - (verified 2026-05-20) 同 {7.6, 19.0, 12.4, 13.2}% は table/maintable.tex の数値から逆算すると **相対改善率** (Ours+Prompting / best non-Ours baseline − 1)。順序は HH-RLHF·Vicuna→Falcon→SHP·Vicuna→Llama3 で TeX と整合。
 - (verified 2026-05-20) Related Papers の "Li+ 2024" を "Li+ 2023" に修正 (main.bbl line 175 で "Advances in Neural Information Processing Systems, 36, 2023" と記載。bibkey の "2024" は誤誘導)。
 - (verified 2026-05-20) "Fig. 6_2_3" を "Fig.~\ref{fig:ppo}（PDF: 6_2_3.pdf）" に修正 (exp.tex L214-221 で label は fig:ppo, 画像ファイルが 6_2_3.pdf)。
+- (verified 2026-05-27) Summary の "Li+ 2024" を main.bbl に合わせて "Li+ 2023" に修正し、GPT-4 評価の 300 prompts が HH-RLHF に対する記述だと明確化 (main.bbl, exp.tex, appendix.tex)。
+- (verified 2026-05-27) OOD HarmfulQA の Takeaway から、TeX にない「hidden state 上の linear-ish な好ましさ方向」という機構解釈を削除し、TeX にある結果と未分析点に限定 (exp.tex, appendix.tex)。
 
 ## Related Papers
 

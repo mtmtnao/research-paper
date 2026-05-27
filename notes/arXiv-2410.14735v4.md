@@ -23,7 +23,7 @@
   - MBPP では expert（70.4）を超え 76.4 まで伸び、OS でも expert（30.4）→ 42.6 と大幅改善、DB だけは DB expert（42.4）から 38.2 にわずかに低下。
   - **Table 2 アブレーション**: QD（軸固定）47.6 → CycleQD（軸入替）49.4 → +SVD mutation 51.7 → +Elite sampling **52.4**。ガウシアン摂動は 48.5 で no-mutation より悪化。
   - **Table 3 汎化**（base モデル比で正規化）: CycleQD は HumanEval+ 1.10 / BigCodeBench 1.03 / Reasoning 0.95 / GSM8K 0.88 / RC 0.98 / CommonSense 1.02 / 平均 **0.99**。MBPP expert は HumanEval+ 1.18 と OOD コーディングは強いが Reasoning 0.57 と catastrophic forgetting を起こす。
-  - **Table 4 SAM への適用**: SAM-ViT-Huge を CAM/POL/SKL/LEA で 2 モデルずつ merge、6 ペア中 3 ペア（CAM+POL, POL+SKL, CAM+SKL）は両 expert の 90% 以上を保持。失敗ペア（LEA を含むもの）はモデル類似度が低く、平均スコアと類似度の相関は 0.83。
+  - **Table 4 SAM への適用**: SAM-ViT-Huge を CAM/POL/SKL/LEA で 2 モデルずつ merge、6 ペア中 3 ペア（CAM+POL, CAM+SKL, POL+SKL）は平均スコア 0.90 以上（0.97 / 0.92 / 0.96）を保持。成功度が低いペア（CAM+LEA, POL+LEA, SKL+LEA）は平均スコア 0.70 / 0.62 / 0.83 で、平均スコアとモデル類似度の相関は 0.83。
 - **貢献**:
   1. data-ratio チューニング不要・タスクメトリック直接最適化な multi-skill LLM 後訓練法 CycleQD。
   2. cyclic alternation / model-merge crossover / SVD mutation / Elite sampling の各設計のアブレーション根拠。
@@ -31,7 +31,7 @@
 
 ## Takeaway（自分にとっての要点）
 
-- 「データ比率を諦めて、各タスクの専門家を別々に SFT してから進化で混ぜる」という戦略は、AgentBench の三領域で全データ結合 SFT（47.0）を 5.4pt 上回り、しかも一般言語能力（GSM8K, Reasoning, RC, CommonSense）を base 比 0.95 以上に保てる → multi-skill 後訓練の実務ベースラインとして強い。
+- 「データ比率を諦めて、各タスクの専門家を別々に SFT してから進化で混ぜる」という戦略は、AgentBench の三領域で全データ結合 SFT（47.0）を 5.4pt 上回る。一般言語能力では Reasoning 0.95 / GSM8K 0.88 / RC 0.98 / CommonSense 1.02 で、GSM8K は base 比で低下するが、平均では expert 群より高い 0.99。
 - **quality と BC を毎世代入れ替える**だけで +1.8pt（47.6 → 49.4）。これは "どの軸を最適化するか" 自体をスケジューリングする発想で、複数目的をスカラ化せずに済むのが本質的。
 - 突然変異の設計が効く: ガウシアン摂動は no-mutation より悪い（48.5 vs 49.4）が、SVD で task vector の主成分方向に縛ると 51.7 まで上がる。"freedom を増やせば良い" ではなく "意味のある方向にだけ動かす" のがコツ。
 - Elite sampling の式 $\gamma_j = \prod_i (\alpha_{\mathrm{low}} + \mathrm{norm}(f_{j,i})(\alpha_{\mathrm{high}}-\alpha_{\mathrm{low}}))$ は「全 BC で良い個体を優先サンプル」する単純な積。NSGA-II の crowding distance より素直で、それでも NSGA-II merge（51.6）を上回る。
@@ -45,11 +45,11 @@
   - SAM への横展開で「LLM だけの話ではない」と示している。class of model merging × QD 全般に通用するというメッセージが立っている。
   - Catastrophic forgetting の定量（MBPP expert: Reasoning 0.57）を示した上で CycleQD が 0.95 と落とさない、という対比は実用上重要な数値。
 - **弱み / 疑問**:
-  - **計算コスト**: 1200 世代を回す各ステップで child を全 K archive に対して評価する必要があり、コーディング/OS/DB を各 400 世代 = 1200 回 LLM 推論評価。fine-tuning との fair comparison（GPU-hour 換算）が論文中に明示されていない。
-  - **K=3 でしか検証していない**: $K$ を 5, 10 と増やしたら archive サイズが $\prod_{k \neq i} d_k$ で指数的に膨らみ、15 bin だと $15^4 \approx 5\mathrm{万}$ セル。スケール限界の議論が無い。
+  - **計算コスト**: 1200 世代を回す各ステップで child を全 K archive に対して評価する必要があり、コーディング/OS/DB を各 400 世代 = 1200 回 LLM 推論評価。Appendix では NVIDIA H100 上で全データ fine-tuning が約 200 GPU hours、CycleQD が expert 訓練時間を除いて約 410 GPU hours と報告され、追加時間の大部分は agentic task evaluations 由来だと説明されている。
+  - **K のスケール検証は限定的**: 主実験はコーディング/OS/DB の $K=3$、Appendix では VQA を足した 4 タスク実験があるが、$K$ をさらに増やした場合の archive サイズ（$\prod_{k \neq i} d_k$）や計算量のスケール限界は十分に議論されていない。
   - **DB で expert に負けている**（42.4 → 38.2）。著者は "mild drop" としているが、最も BC として情報量が出にくいタスクで quality 化したときに何が起きているのかの分析は無い。
   - **モデル類似度の前提**: 著者自身が limitations で「expert が divergent な設定だと CycleQD は苦しい」と認めている。Llama3-8B 共通 base から SFT した 3 expert なので元々 task vector が近い設定で、異なる base や強い LoRA など真に異種な expert で動く保証は無い。
-  - **Elite sampling のハイパー** $\alpha_{\mathrm{low}}, \alpha_{\mathrm{high}}$、SVD 摂動の $w_{\max}$、merge の $(\mu, \sigma)$ の感度がメインテキストでは触れられていない（Appendix 参照と書かれているのみで TeX 内には明示の感度図は無い）。
+  - **Elite sampling のハイパー** $\alpha_{\mathrm{low}}=0.5, \alpha_{\mathrm{high}}=0.8$、SVD 摂動の $w_{\max}=0.3$、merge の $(\mu, \sigma)=(1.0, 0.03)$ は Appendix に値と preliminary studies で選んだ旨があるが、感度分析は示されていない。
   - **比較対象が AgentBench の 3 タスクに閉じている**: 推論寄りタスク（MATH, HumanEval 本体, ARC など）を quality として直接最適化したらどうなるかは未検証。Table 3 はあくまで「副作用としての汎化」評価。
   - gpt-3.5-turbo と "on par" の主張は平均値ベース。DB では 38.2 vs 41.6 でまだ負けており、"approaching" の方が正確。
 - **次に試したいこと**:
@@ -72,6 +72,10 @@
 - code: https://github.com/SakanaAI/CycleQD （abstract footnote）
 - (verified 2026-05-20) Table 1/2/3/4 の全数値 (MBPP 76.4 / DB 38.2 / OS 42.6 / Avg 52.4 ほか) と base 比 (32.6 → 52.4)、アブレーション 47.6/49.4/48.5/51.7/52.4、引用キー (akiba2024evolutionary, ilharco2022editing, pugh2016quality, mouret2015illuminating, pierrot2022multi, fedprox 等) を tables/*.tex, sec3_methods.tex, sec4_experiments.tex, sec5_conclusion.tex, iclr2025_conference.bbl で裏取り。
 - (verified 2026-05-20) Critical Thoughts のアブレーション増分を +1.7 → +1.8 (47.6→49.4) に修正、Gaussian mutation で非単調な点を補足 (tables/table2_ablation_studies.tex)。
+- (verified 2026-05-27) SAM の Table 4 記述を「両 expert 90%以上」から平均スコア 0.90 以上のペアと各スコアに修正 (tables/table4_sam_results.tex, sec4_experiments.tex)。
+- (verified 2026-05-27) 一般言語能力の「base 比 0.95 以上」を、GSM8K 0.88 を含む Table 3 の値に合わせて修正 (tables/table3_categoried_normalized.tex)。
+- (verified 2026-05-27) 計算コストとハイパーパラメータの記述を Appendix の GPU hours と $\alpha_{\mathrm{low}}/\alpha_{\mathrm{high}}/\mu/\sigma/w_{\max}$ に合わせて修正 (appendix.tex)。
+- (verified 2026-05-27) 「K=3 でしか検証していない」を Appendix の VQA 追加 4 タスク実験に合わせて「スケール検証は限定的」に修正 (appendix.tex, tables/table5_add_vqa.tex)。
 
 ## Related Papers
 

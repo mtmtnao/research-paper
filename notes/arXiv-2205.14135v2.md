@@ -39,9 +39,9 @@
 - **Backward の recomputation が "checkpointing for speed"**: 既存の gradient checkpointing は「メモリのために速度を犠牲にする」のが定石だったが、IO の枠で考えると recompute の方が HBM 往復より速い、という逆転がある。Backward でも HBM 削減効果が出る点が肝。
 - **Lower bound の意味**: $\Theta(N^2 d^2 / M)$ は SRAM サイズ $M$ をパラメータに残した形で漸近最適。「もうこの方向では伸びしろが小さい」のと「ハードを変える（SRAM を増やす / multi-GPU の IO を考える）と話が変わる」の両方を示唆。
 - **block sparsity との直交性**: 近似 attention 自体は否定されておらず、「IO-aware に実装し直せば速くなる」という土台を提供する形。butterfly sparsity を採用しているのは著者らの過去研究の流用。
-- **Path-X 16K / Path-256 64K** という、それまで S4 などの非 Transformer でしか解けていなかったタスクを vanilla Transformer + 長系列で解いた、というインパクトが大きい。長系列が解けない理由は「アーキの限界」というより「実装の限界」だった可能性。
+- **Path-X 16K / Path-256 64K** で、著者らは Transformer 系モデルとして初めて better-than-chance / non-random performance を報告している。Path-256 については、著者らの知る限りで first sequence model と書いている。
 - ブロックサイズ $B_c = \lceil M/(4d) \rceil$, $B_r = \min(B_c, d)$ という具体公式まで提示されていて、再現実装の指針として有用。
-- IO-aware の思想は「コンパイラ（Halide 的）に attention を書いて自動で IO-aware CUDA に落としたい」という future work に直結。これが後の Triton ベース実装や FlashAttention-2/3 の系譜になっていく（本論文では未言及だが文脈として重要）。
+- IO-aware の思想は「高水準言語で attention algorithm を書き、IO-aware CUDA 実装へコンパイルしたい」という future work に直結している（著者は Halide を例に挙げる）。
 
 ## Critical Thoughts（評価・疑問）
 
@@ -56,18 +56,18 @@
         - 実装は GPU アーキ間で必ずしも transferrable でない（A100 で書かれたものを他世代に持っていくのは別物）。
         - IO-aware は attention 以外にも広げる余地があるが本論文ではやっていない。
         - 単一 GPU では定数項まで含めて最適だが、multi-GPU の IO（GPU 間通信）は未対応。
-    - 評価の主軸が A100。3090 や T4 の図はあるが、TPU や AMD GPU など別アーキでの効果は議論されない。SRAM/HBM 比が違うハードでは利得は変わるはず。
-    - head dim $d$ が大きくなる（例えば $d \ge 256$）と $d^2 / M$ が 1 に近づき、理論的優位が縮む。本論文の実験は $d=64$ 中心で、その点の感度分析は手薄。
+    - 評価の主軸が A100。Appendix には RTX 3090 と T4 の図もあるが、著者自身も実装が GPU アーキテクチャ間で必ずしも transferrable でないと述べている。
+    - head dimension は実験では $d=64$ 中心で、Appendix に $d=128$ の A100 図がある。著者は $d \in [64,128]$ と $M \approx 100\mathrm{KB}$ を典型値として理論の利点を説明しているが、それを超える head dimension の感度分析は TeX 中には示されない。
     - block-sparse の sparsity pattern として butterfly を採用しているが、pattern の選び方への感度（content-based sparsity と比べての劣化）は本文では追っていない。
     - Path-X 61.4% は確かに better-than-chance だが、本論文の Table 6 では S4 等他系モデルとの直接数値比較は示されておらず（Transformer 系のみ）、ベンチマーク SOTA を取りに行く形ではない（本論文の主目的ではないので妥当だが、Transformer で解けた事実そのものに重点）。
     - Long Document の MIMIC-III は seq 16K で 57.1、seq 8K で 56.4、seq 1024 で逆に 50.7 と非単調。本文も「distribution shift の可能性」と認めているが、長系列＝常に良いというストーリーをやや弱める。
     - 公平比較として、近似 attention は標準的なリファレンス実装で測られている。もし近似手法も同じくらい IO-aware に書き直されたら？ block-sparse FlashAttention 自身がその一例だが、Linformer/Performer の IO-aware 実装との比較はない。
 - **次に試したいこと**:
-    - head dim $d \in \{64, 128, 256\}$ で speedup を測って $d^2/M$ がボトルネックになる点を実測する。
-    - online softmax の数値安定性を fp16/bf16 で詳しく測る（特に長系列で $m_i$ の更新誤差が積もるかどうか）。
-    - block-sparse の mask を learned routing（MoE 的 / Mixture-of-Depths 的）にして dynamic sparsity に拡張、IO 複雑度との折り合いを見る。
-    - decode 時（KV cache 増分、$Q$ が 1 行）の IO 解析。本論文は training 中心で inference の incremental case はあまり扱っていない。
-    - multi-GPU IO-aware の attention 実装（GPU 間 ring + tiling）を考えると、後に出る Ring Attention の前段として整理し直せる。
+    - head dim $d \in \{64, 128\}$ と、それを超える設定で speedup を測って $d^2/M$ がボトルネックになる点を実測する（評者補足）。
+    - online softmax の数値安定性を fp16 で詳しく測る（特に長系列で $m_i$ の更新誤差が積もるかどうか; 評者補足）。
+    - block-sparse の mask pattern を変えた場合の精度・速度感度を見る（評者補足）。
+    - inference の incremental case の IO 解析（評者補足）。
+    - multi-GPU IO-aware の attention 実装。著者は GPU 間通信を含む IO analysis が追加で必要になると述べている。
 
 ## Notes / Quotes
 
@@ -82,15 +82,17 @@
 
 - (verified 2026-05-20) experiments.tex の `\label` を直接確認し、ノート内のテーブル番号参照を修正（LRA: Table 2→3、GPT-2 長文脈: Table 3→4、Long Document: Table 4→5、Path-X: Table 5→6）。
 - (verified 2026-05-20) Critical Thoughts 内の「S4 系の 88%」という TeX に根拠の無い具体値を削除し、Table 6 (`table:pathx`) が Transformer 系のみの比較である旨に書き換え。
+- (verified 2026-05-27) Takeaway / 次に試したいことから TeX に無い後続研究名と、Path-X を S4 が解いたという含意を削除・修正 (src/experiments.tex, src/discussion.tex, src/related_work.tex)。
+- (verified 2026-05-27) Related Papers の年・タイトルを bbl で確認し、Devlin et al. 2019 / Dao et al. 2022a / Child et al. 2019 / Gu et al. 2022 などに修正 (streaming_attention_neurips_2022.bbl)。
 
 ## Related Papers
 
 - Milakov & Gimelshein 2018, "Online normalizer calculation for softmax" — online softmax の元ネタ。
 - Rabe & Staats 2021, "Self-attention does not need $O(n^2)$ memory" — sequential な online softmax + checkpointing で attention を low memory に。FlashAttention は IO 視点でこれを再構成し速度も出す。
-- Aggarwal & Vitter 1988, "Input/output complexity of sorting" — IO 複雑度モデルの古典。
-- Williams, Waterman, Patterson 2009, "Roofline" — memory-bound / compute-bound の判定。
-- Kitaev et al. 2020 Reformer, Wang et al. 2020 Linformer, Choromanski et al. 2020 Performer, Beltagy et al. 2020 Longformer, Zaheer et al. 2020 BigBird, Daras et al. 2020 SMYRF, Katharopoulos et al. 2020 Linear Attention — LRA / Path-X で並ぶ近似 attention 群。
-- Child et al. 2019, "Sparse Transformer"; Dao et al. 2021 Pixelated Butterfly — butterfly sparsity の出典。
+- Aggarwal & Vitter 1988, "The input/output complexity of sorting and related problems" — IO 複雑度モデルの古典。
+- Williams, Waterman, Patterson 2009, "Roofline: an insightful visual performance model for multicore architectures" — memory-bound / compute-bound の判定。
+- Kitaev et al. 2020 Reformer, Wang et al. 2020 Linformer, Choromanski et al. 2020 Performer, Beltagy et al. 2020 Longformer, Zaheer et al. 2020 BigBird, Daras et al. 2020 SMYRF, Katharopoulos et al. 2020 "Transformers are RNNs: Fast autoregressive transformers with linear attention" — LRA / Path-X で並ぶ近似 attention 群。
+- Child et al. 2019, "Generating long sequences with sparse transformers"; Dao et al. 2022a, "Pixelated butterfly: Simple and efficient sparse training for neural network models" — butterfly sparsity の出典。
 - Griewank & Walther 2008; Chen et al. 2016 — gradient checkpointing の出典。
-- Tay et al. 2020, Long Range Arena; Gu et al. 2022, S4 — Path-X benchmark とそこを先に解いていた非 Transformer モデル。
-- Devlin et al. 2018 BERT; Radford et al. 2019 GPT-2; Shoeybi et al. 2019 Megatron-LM; Wolf et al. 2020 HuggingFace Transformers; MLPerf 1.1 — 速度比較 baseline。
+- Tay et al. 2020a, "Long range arena: A benchmark for efficient transformers"; Gu et al. 2022, "Efficiently modeling long sequences with structured state spaces" — Path-X benchmark と alternative architecture の文脈。
+- Devlin et al. 2019 BERT; Radford et al. 2019 GPT-2; Shoeybi et al. 2019 Megatron-LM; Wolf et al. 2020 HuggingFace Transformers; Mattson et al. 2020 MLPerf Training Benchmark — 速度比較 baseline。
