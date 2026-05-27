@@ -398,10 +398,20 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
     font-size: 12.5px; margin-right: .8em;
   }}
   .meta {{ color: var(--muted); font-size: 13px; margin-top: -.3em; }}
+  .lead {{
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1em 1.2em; margin: 1.5em 0;
+    font-size: 14.5px; line-height: 1.75;
+  }}
+  .lead p {{ margin: .4em 0; }}
 </style>
 </head>
 <body>
 <h1>Research Paper Notes</h1>
+<div class="lead">
+<p>研究者向けの正規ノート一覧です。</p>
+<p>原論文や正規ノートに入る前の橋渡し解説は <a href="easy/">初学者研究者向けブリッジノート</a> から見られます。</p>
+</div>
 <p class="meta">{n} notes &middot; generated {ts}</p>
 <ul>
 {items}
