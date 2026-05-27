@@ -1,4 +1,4 @@
-# Agent Skill Acquisition for Large Language Models via CycleQD（CycleQD で大規模言語モデルにエージェント技能を覚えさせる）
+# Agent Skill Acquisition for Large Language Models via CycleQD（Quality Diversity と model merging による LLM agent skill acquisition）
 
 - arXiv: https://arxiv.org/abs/2410.14735
 - 一次ソース: ../papers/arXiv-2410.14735v4/
@@ -8,166 +8,180 @@
 
 ## 一言で言うと
 
-3 つの「得意分野が違う AI」を、世代交代でじわじわ混ぜていって、1 体で全部こなせる強い AI を作る方法。
+複数の agent skill を 1 つの LLM に獲得させるとき、データ比率調整と next token prediction の目的関数がボトルネックになる、という問題に対し、著者は Quality Diversity と model merging を組み合わせた CycleQD を提案する。Llama3-8B-Instruct ベースの実験では、coding、Operation System (OS)、Database (DB) の 3 タスク平均で 52.4 を示し、Fine-tuning (All) の 47.0 や NSGA-II merging の 51.6 を上回ると主張している（Table 1 `tab:agentic_task_comparison`、`tables/table1_agent_tasks.tex`）。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- いま大流行している「大規模言語モデル」（おしゃべりが上手な AI。ChatGPT みたいなやつ）を、おしゃべりだけじゃなくて「コードを書く」「パソコン（OS）を操作する」「データベース（情報を整理してためておく棚）を検索する」など、いろんな仕事ができる **エージェント**（自分で動いて作業する AI のこと）に育てたい。
-- ところが、いろんな種類の練習問題を同時に教えると、こんな困りごとが起きる:
-  - **教科のバランス問題**: 中学生が「数学・英語・理科」を同じ日に勉強するとき、数学ばかり時間を取ると英語が下がる。これと同じことが AI でも起きる。論文では、コードの練習をたくさんさせると「ものを考える力」が下がる、と書かれている。
-  - **採点の仕方が合わない問題**: AI のふつうの練習は「次に来る単語をピタリと当てる」というもの。でも実際にやりたいのは「コードがちゃんと動くか」「OS の操作が成功するか」。**当てっこの上手さと本当にやりたい仕事の上手さが、ズレている**。これだと点数が伸びにくい。
-- これまでの方法（全部のデータを混ぜて 1 回で訓練しなおす、など）はこの 2 つの問題で苦戦していた。
+- **問題設定**: LLM を「会話」だけでなく、coding、OS manipulation、DB query generation のような agent skill に対応させたい。著者は continual agentic fine-tuning における主要な困難として、複数データセットの data ratio tuning と、next token prediction が pass@1 や success rate のような task-specific performance に合いにくい点を挙げる（`sec1_introduction.tex`）。
+- **対象範囲 / 仮定**: 主実験は、同じ Llama3-8B-Instruct base model から supervised fine-tuning で作った coding、OS、DB expert を seed models として使う設定である。model merging が有効であるには source models の compatibility が重要であり、この仮定は著者自身も limitation として認めている（`sec5_conclusion.tex`）。
+- **既存研究との差分**: 標準的な fine-tuning は全データを混ぜて cross-entropy、すなわち next token prediction を最適化する。従来の model merging baseline は expert の task vector を平均する、または GD、CMA-ES、NSGA-II で係数を学ぶ。CycleQD は MAP-Elites 型の QD archive を用い、task metrics を quality と behavioral characteristics (BCs) として周期的に入れ替えながら、model merging based crossover と SVD-based mutation を行う（`sec3_methods.tex`、`sec4_experiments.tex`）。
+- **この論文で答えたい問い**: 複数の single-task expert を出発点に、データ比率や複合目的関数を手で設計せず、タスク固有の評価指標を直接使って、1 つの multi-skill LLM agent を作れるか。さらに、その方法が一般的な言語能力を大きく損なわず、SAM の image segmentation model merging にも使えるかを検証する。
 
-## どうやって解いたの？
+## 背景と前提
+
+- **LLM-as-Agent**: この論文では、LLM が自然言語で答えるだけでなく、コード生成、bash environment 上の OS 操作、SQL による DB 操作のように、外部環境へ action を出して課題を解く状況を扱う。関連研究として ReAct や AgentBench などが参照され、OS/DB experts の training datasets として Agent-FLAN が使われる（`sec2_relatedworks.tex`、`sec4_experiments.tex`、`appendix.tex` の More related works）。
+- **Quality Diversity (QD) と MAP-Elites**: QD は単一の最適解だけでなく、多様な high-performing solutions を archive に残す進化的最適化の枠組みである。MAP-Elites では、BC 空間を離散化した lattice の各 cell に、その cell で最も quality が高い solution を保存する（`sec2_background.tex`）。
+- **quality と BC**: 通常の QD では、最適化したい性能を quality、解の観測可能な特徴を BC として固定する。この論文では各タスクの performance metric を quality と BC の両方に使い、世代ごとにどのタスクを quality にするかを入れ替える。著者はこれを "archive is rotated by 90 degrees" と説明している（`sec3_methods.tex`）。
+- **model merging と task vector**: 同じ base model から fine-tuning された複数モデルの parameter difference を task vector として扱い、それらを線形結合して新しい model parameters を作る。CycleQD では、この操作を進化アルゴリズムの crossover として使う。
+- **評価指標**: coding task では MBPP+ の pass@1、OS と DB では AgentBench 系の success rate を使う。generalization では Llama3-8B-Instruct base model に対する normalized score を使う。SAM 実験では各 expert model の性能に対する normalized score を使う（`tables/table1_agent_tasks.tex`、`tables/table3_categoried_normalized.tex`、`tables/table4_sam_results.tex`）。
+
+## 提案手法
 
 ### コアアイデア
 
-まず、コーディング担当・OS 担当・DB 担当の 3 体の「専門家 AI」を別々に作る（教科ごとに専門の先生を 3 人雇うイメージ）。次に、この 3 体を **進化ゲーム** で混ぜていく。具体的には、
+CycleQD は、まず各タスクに特化した expert LLM agent を通常の supervised fine-tuning で作り、それらを QD archive の初期個体として配置する。各 archive は 1 つのタスクを quality とし、残りのタスク指標を BC とする。世代 \(t\) ごとに active archive を \(i = t \mod K\) で切り替え、親モデルを sample し、task vector の model merging based crossover で child を作り、SVD-based mutation で child の task vector を変化させる。得られた child は active archive だけでなく全 \(K\) archives に対して update される（Algorithm 1 `algo:qdagent`、`sec3_methods.tex`）。
 
-- 2 体の AI を「親」に選んで、その性質を混ぜた「子」を作る（**交叉**: 親の特徴を引き継いだ子が生まれる、生き物の遺伝と同じ）
-- 子に少しだけランダムな変化を加える（**突然変異**）
-- 子をテストして、強かったら名簿（**アーカイブ** = 成績優秀者リスト）に登録する
+この設計の狙いは 2 つある。第一に、各タスクを順番に quality として扱うため、複数タスクのデータ比率や loss weighting を手で決める必要を減らす。第二に、pass@1 や success rate のような task metric を直接 QD の評価に使うため、next token prediction loss と実タスク性能のずれを避ける。
 
-これを 1200 回くりかえす。さらに著者は「**今日はコードの点数を伸ばす日、明日は OS の点数を伸ばす日、あさっては DB の点数を伸ばす日**」みたいに、伸ばす科目を毎日くるくる入れ替える工夫を入れた。これで「数学ばかりやりすぎて英語が下がる」状態を防ぐ。これが CycleQD（サイクル = ぐるぐる回す、QD = Quality Diversity = 質と多様性、の略）。
+### 重要な定義・数式
 
-### 仕組み
+**1. task vector と model merging based crossover**
 
-- **step1**: ベース AI（Llama-3-8B-Instruct という名前の、80 億個のつまみを持った AI）に対して、コーディング・OS・DB の練習データを別々に与えて、3 体の専門家を作る。
-- **step2**: 3 つの「名簿」を用意する。各名簿は格子状（マス目）で、たとえばコード名簿なら「OS の得点」「DB の得点」がマス目の縦横軸になっていて、その AI の「コードの得点」をマスの色で示す。
-- **step3**: 世代 $t$ ごとに、$t$ を 3 で割った余り（0, 1, 2）で「今日はどの科目を quality（伸ばしたい主役）にするか」を決める。
-- **step4**: 主役の名簿から「成績が全体的に良い AI」を 2 体えらぶ（**Elite sampling**）。
-- **step5**: その 2 体の「**タスクベクトル**」（後で説明）を混ぜて子を作る（**交叉**）。
-- **step6**: 子のつまみを **SVD** という数学の道具で分解して、意味のある方向にだけちょっと動かす（**突然変異**）。
-- **step7**: できた子を、3 つの名簿それぞれで「今までより強かったら登録」する。
-- **step8**: 1200 世代まわしたら、各名簿のトップを 1 体に合体させて完成。
+$$
+\tau = \theta - \theta_\mathrm{base}, \quad
+\theta_\mathrm{child} = \theta_\mathrm{base} + \big(\omega_1 / (\omega_1 + \omega_2) \big) \tau_{p_1} + \big( \omega_2 / (\omega_1 + \omega_2) \big) \tau_{p_2}
+$$
 
-ここで出てきた **タスクベクトル** とは「ベース AI からの変化分」のこと。たとえば「ベース AI のつまみが全部 0」「コード専門家のつまみが (3, 1, -2, …)」だったら、コードのタスクベクトルは (3, 1, -2, …)。これは「ベースをコード得意にするために、どっち向きにどれだけつまみを回したか」のリストで、これを足したり引いたりすると AI の性格を混ぜられる。
+**式の意味**: まず fine-tuned model と base model の差分を task vector \(\tau\) と定義する。child model は、2 つの parent task vectors を正規化された係数で混ぜ、base model に足し戻すことで作られる（`sec3_methods.tex` の "Model merging based crossover"）。
 
-### 主要な数式
+**記号の定義**:
+- \(\theta_\mathrm{base}\) ... pre-trained base LLM の parameters
+- \(\theta\) ... fine-tuned LLM の parameters
+- \(\tau\) ... task vector、すなわち \(\theta - \theta_\mathrm{base}\)
+- \(\tau_{p_1}, \tau_{p_2}\) ... 2 つの parent models の task vectors
+- \(\omega_1, \omega_2\) ... \(\mathcal{N}(\mu, \sigma^2)\) から独立に sample される mixing weights。TeX では positive numbers である必要はないと明記される
 
-**(1) 交叉（親 2 体から子 1 体を作る式）**
+**この論文での役割**: CycleQD では、通常の遺伝的アルゴリズムの parameter swap ではなく、この model merging を crossover として使う。Appendix では \(\mu=1.0\)、\(\sigma=0.03\) が使われる（`appendix.tex`）。
 
-$$ \theta_\mathrm{child} = \theta_\mathrm{base} + \frac{\omega_1}{\omega_1+\omega_2}\,\tau_{p_1} + \frac{\omega_2}{\omega_1+\omega_2}\,\tau_{p_2} $$
+**2. Elite sampling**
 
-**この式が言ってること**: ベース AI に、「親 1 のタスクベクトル」と「親 2 のタスクベクトル」をブレンド比 $\omega_1 : \omega_2$ で混ぜて足す。混ぜ具合はサイコロみたいにランダムに決める。
+$$
+P_j = \frac{\gamma_j}{\sum_{n=1}^{N}{\gamma_n}}, \quad
+\gamma_j = \prod_{i=1}^{K} \big(\alpha_\mathrm{low} + \frac{f_{j,i} - \min(f_{1:N,i})}{\max(f_{1:N,i}) - \min(f_{1:N,i})} (\alpha_\mathrm{high} - \alpha_\mathrm{low}) \big)
+$$
 
-**記号の意味**:
-- $\theta_\mathrm{child}$ … 子 AI のつまみの設定全部のこと
-- $\theta_\mathrm{base}$ … 元のベース AI のつまみの設定（出発点）
-- $\tau_{p_1}, \tau_{p_2}$ … 親 1・親 2 の「タスクベクトル」（ベースからどっち向きにずらしたかのメモ）
-- $\omega_1, \omega_2$ … 混ぜる比率（ランダムに決める数。マイナスでも OK にしている。$\mathcal{N}(\mu, \sigma^2)$ という「真ん中が $\mu$ で散らばり具合が $\sigma$ の釣鐘型のサイコロ」から決める）
-- $\omega_1 / (\omega_1+\omega_2)$ などで割っているのは、合わせて 1 になるように整える（カルピスの原液を水で薄めて 1 杯にするのと同じ）
+**式の意味**: active archive 内の model \(j\) を親として選ぶ確率を、全タスクの performance を min-max normalization した値の積に基づいて決める。全タスクで相対的に高い performance を持つ model が選ばれやすい（`sec3_methods.tex` の "Elite sampling"）。
 
-**身近な例え**: スムージーづくり。バナナ味（親 1）とイチゴ味（親 2）をスプーン何杯ずつ入れるかをサイコロで決めて、ベース（牛乳）にまぜる。サイコロでマイナスが出たら「逆の味を引く」ことになる。比率を最後に整えて、ちょうど 1 杯ぶんの味になるようにする。
+**記号の定義**:
+- \(P_j\) ... active archive 内の \(j\)-th model が sample される確率
+- \(\gamma_j\) ... \(j\)-th model の sampling weight
+- \(N\) ... active archive に入っている models の数
+- \(K\) ... タスク数。主実験では coding、OS、DB の 3
+- \(f_{j,i}\) ... \(j\)-th model の \(i\)-th task performance
+- \(\alpha_\mathrm{low}, \alpha_\mathrm{high}\) ... normalization 用 hyper-parameters。Appendix では 0.5 と 0.8
 
----
+**この論文での役割**: QD archive の frontier を高性能側へ広げるための親選択である。Table 2 `tab:ablation` では、CycleQD + SVD mutation + Random sampling の平均 51.7 から、Elite sampling を加えると 52.4 になる（`tables/table2_ablation_studies.tex`）。
 
-**(2) Elite sampling（親をえらぶときに、どの AI を高い確率でえらぶか）**
+**3. SVD-based mutation**
 
-$$ \gamma_j = \prod_{i=1}^{K} \left(\alpha_\mathrm{low} + \frac{f_{j,i} - \min(f_{1:N,i})}{\max(f_{1:N,i}) - \min(f_{1:N,i})}\,(\alpha_\mathrm{high} - \alpha_\mathrm{low})\right) $$
+$$
+h(\theta_\mathrm{child})=\theta_\mathrm{base} + \text{concat}\big( [U_l (\Sigma_l w) V_l^{\intercal}]_{l=1}^{L} \big), \quad
+\tau_l = U_l \Sigma_l V_l^{\intercal}
+$$
 
-**この式が言ってること**: 名簿の中の $j$ 番目の AI について、「コードの得点」「OS の得点」「DB の得点」をそれぞれ 0〜1 に整えた数（みんなの中で一番下を 0、一番上を 1 にした位置）に下駄を履かせて、**全部をかけ算する**。3 科目とも高い AI ほどこのスコアが大きくなって、選ばれやすくなる。
+**式の意味**: child の task vector を parameter matrix ごとに SVD し、特異値方向に沿って perturbation vector \(w\) で scale したものを再結合する。通常の Gaussian mutation のように任意方向へ perturb するのではなく、task vector の parameter matrices の component directions に沿って変化させる（`sec3_methods.tex` の "SVD-based mutation"）。
 
-**記号の意味**:
-- $\gamma_j$ … $j$ 番目の AI の「えらばれやすさ」のスコア
-- $K$ … 科目の数（この論文では 3）
-- $f_{j,i}$ … $j$ 番目の AI の $i$ 番目の科目の得点
-- $\min, \max$ … 名簿の中の最低点・最高点（基準にして、各 AI の点数を 0〜1 の位置に直す）
-- $\alpha_\mathrm{low}, \alpha_\mathrm{high}$ … 「最低でもこれくらいは選ばれてほしい」「最高でこれくらい選ばれてほしい」の下駄（人が決めるつまみ）
-- $\prod$ … かけ算をぜんぶつなげる記号（$\sum$ が足し算の合計なら、$\prod$ はかけ算の合計）
+**記号の定義**:
+- \(h(\theta_\mathrm{child})\) ... mutation 後の child parameters
+- \(L\) ... task vector に含まれる parameter matrices の数
+- \(\tau_l\) ... child task vector \(\tau_\mathrm{child}\) の \(l\)-th parameter matrix
+- \(U_l, \Sigma_l, V_l\) ... \(\tau_l\) の SVD components
+- \(w \in \mathbb{R}^r\) ... \([0, w_\mathrm{max}]\) の uniform distribution から sample される perturbation vector
+- \(w_\mathrm{max}\) ... Appendix では 0.3
 
-**身近な例え**: クラス委員えらび。「数学・英語・理科」3 科目とも 70 点以上ある人は当選しやすいけど、数学だけ 100 点で理科が 0 点の人は、かけ算するとどこかで小さい数になってしまうから選ばれにくい。**全教科そこそこ強い人**を優先する仕組み。
+**この論文での役割**: crossover だけでは expert task vectors の linear combination に閉じ、著者の表現では performance space の "convex region" に捕まりやすい。SVD-based mutation は外挿を可能にしつつ、Gaussian mutation の excess freedom と overfitting を避ける設計として導入される。Table 2 `tab:ablation` では Gaussian mutation が平均 48.5、SVD mutation が平均 51.7 である。
 
----
+**4. 最終 aggregation**
 
-**(3) 突然変異（SVD を使って意味のある方向にだけ動かす）**
+$$
+\theta_\mathrm{agg} = \theta_\mathrm{base} + \sum_{k=1}^{K}{\beta_k \tau_k}, \quad
+\beta_k = \frac{\exp(f_k)}{\sum_{i=1}^{K}{\exp(f_i)}}
+$$
 
-$$ h(\theta_\mathrm{child}) = \theta_\mathrm{base} + \mathrm{concat}\big( [U_l (\Sigma_l\, w) V_l^{\top}]_{l=1}^{L} \big) $$
+**式の意味**: 各 archive の elite model から task vector \(\tau_k\) を取り出し、その task performance \(f_k\) に softmax をかけた係数 \(\beta_k\) で混ぜて 1 つの final model を作る（`sec3_methods.tex` の "Model aggregation"）。
 
-**この式が言ってること**: 子のタスクベクトルを「主成分」と呼ばれる重要な向きに分解して、その向きごとに別々のランダムな倍率 $w$ をかけて作り直す。完全にデタラメに揺さぶるのではなく、「意味のある方向だけ」を強めたり弱めたりする。
+**記号の定義**:
+- \(\theta_\mathrm{agg}\) ... 最終的に評価される aggregated model
+- \(\tau_k\) ... \(k\)-th archive の elite model の task vector
+- \(f_k\) ... \(k\)-th archive の elite model の task performance
+- \(\beta_k\) ... softmax で得られる mixing coefficient
 
-**記号の意味**:
-- $h(\theta_\mathrm{child})$ … 突然変異したあとの子の AI のつまみ
-- $U_l, \Sigma_l, V_l$ … SVD（特異値分解）で出てくる 3 つの部品。「元のつまみの表」を「縦の向き × 強さ × 横の向き」の 3 つに分けたもの。**強さ $\Sigma_l$ の対角線に並んだ数が、その向きがどれくらい大事かを表す**
-- $w$ … 各「向き」をどれくらい伸ばすかのランダムな数のリスト。0 から $w_\mathrm{max}$ までの一様サイコロ（0〜上限のどれも同じ確率で出るサイコロ）から決める
-- $l$ … AI の中の何番目の重みの表か（$L$ 個ある）
-- $\mathrm{concat}$ … バラバラの部品をまた 1 本につなげる操作
+**この論文での役割**: CycleQD は archive に多様な agents を多数残すが、Table 1 `tab:agentic_task_comparison` など本文の CycleQD 結果は、この \(\theta_\mathrm{agg}\) による単一モデルの結果であると明記されている。
 
-**身近な例え**: ギターのチューニング。6 本ある弦を全部デタラメに回すと音楽じゃなくなる。でも「6 弦それぞれは音楽的に意味のある方向」だから、その軸にそってちょっとずつ強さを変えると、新しい曲調になる。SVD は AI のつまみを「意味のある弦」に分けてくれる道具で、その弦ごとに別々の倍率をかけている。
+**5. SAM 実験で使う model similarity**
 
----
+$$
+s = (1 / L) \sum_{i=1}^{L} \cos \big(\text{diag}(\Sigma_{i,A}), \text{diag}(\Sigma_{i,B}) \big)
+$$
 
-**(4) 最後の合体（3 つの名簿のトップを 1 体にまとめる）**
+**式の意味**: 2 つの expert models A, B について、task vector の各 weight matrix から得られる singular value vectors の cosine similarity を layer 平均する。これは model pair の近さを要約する指標として使われる（`sec4_experiments.tex` の SAM analysis）。
 
-$$ \theta_\mathrm{agg} = \theta_\mathrm{base} + \sum_{k=1}^{K} \beta_k\,\tau_k, \quad \beta_k = \frac{\exp(f_k)}{\sum_{i=1}^{K}\exp(f_i)} $$
+**記号の定義**:
+- \(s\) ... expert A と expert B の model similarity
+- \(L\) ... rank が 1 より大きい weight matrices の数
+- \(\Sigma_{i,A}, \Sigma_{i,B}\) ... expert A, B の \(i\)-th weight matrix の task vector から得た diagonal singular value matrix
+- \(\cos(\cdot,\cdot)\) ... 2 つの singular value vectors の cosine similarity
 
-**この式が言ってること**: 3 つの名簿のトップ AI のタスクベクトルを、それぞれの得点が高いものほど大きい比率で足し合わせる。点数が高い専門家ほど混ぜる量が多くなる。
+**この論文での役割**: Table 4 `tab:sam_tasks_comparison` では Avg Score と Model Similarity の相関が 0.83 と報告され、source models の compatibility が CycleQD の成否に関係するという limitation と future work の根拠になっている。
 
-**記号の意味**:
-- $\theta_\mathrm{agg}$ … 最後に出てくる完成 AI のつまみ
-- $\tau_k$ … $k$ 番目の名簿のトップ AI のタスクベクトル
-- $f_k$ … その AI の点数
-- $\beta_k$ … 混ぜる比率（合計が 1 になるように整えてある）
-- $\exp$ … 「指数」と呼ばれる関数。中身の数が大きいほど急激に大きくなる。たとえば $\exp(1) \approx 2.7$、$\exp(3) \approx 20$。これを使うと「点数が高い AI」がうんと優先される
-- $\sum$ … 全部足し算する記号
+### 実装 / アルゴリズム上の要点
 
-**身近な例え**: 三人前のカレーを 1 皿にまとめる。一番おいしく作れた人のカレーを多めに、そこそこの 2 人のは少なめに、合計が 1 皿になるようにブレンドする。$\exp$ は「上手な人のはぐっと多めにする」きいきの強い計量カップ。
+- step1: Llama3-8B-Instruct を base model とし、coding、OS、DB の single-task experts を supervised fine-tuning で作る。OS と DB experts は Agent-FLAN の OS/DB training datasets、coding expert は Magicoder-Evol-Instruct-110K と Magicoder-OSS-Instruct-75K を使う（`sec4_experiments.tex`）。
+- step2: \(K\) 個の archives を用意する。\(i\)-th archive では \(i\)-th task metric を quality、他 task metrics を BCs とする。archive lattice の size は TeX では \(\prod_{k \neq i}{d_k}\) と書かれる（`sec3_methods.tex`）。
+- step3: generation \(t\) で active archive を \(i = t \mod K\) として選び、quality と BCs を周期的に入れ替える。Algorithm 1 `algo:qdagent` の lines 6-7 がこの処理である。
+- step4: active archive から parents \(p_1, p_2\) を sample し、model merging based crossover で child \(c\) を作り、SVD-based mutation を適用する。
+- step5: child を全 \(K\) archives に対して UpdateArchive する。TeX は「new model is used to update not only the \(i\)-th archive but all \(K\) archives」と説明している。
+- step6: 主実験では、BC の lower bound を最も低い expert performance の 85%、upper bound を最も高い expert performance の 115% に設定し、各 BC を 15 bins に等分する。各 bin には 1 model だけを置き、CycleQD を 1200 generations 走らせる。3 タスクなので各 skill に 400 generations 相当である（`sec4_experiments.tex`）。
+- step7: Appendix の training configuration では、expert fine-tuning に llm-recipes commit 606cdfb、AdamW、\(\beta_1=0.9\)、\(\beta_2=0.95\)、global batch size 64、cosine learning rate scheduling \([4 \times 10^{-6}, 2 \times 10^{-5}]\)、最初の 10% linear warmup を使う。OS/DB experts は 1 epoch、code model は 3 epochs である（`appendix.tex`）。
 
-## 何がすごいの？
+## 実験・結果
 
-数値はすべて論文の Table 1〜4 に書かれているもの。
+- **データセット / ベンチマーク**: 主実験は MBPP+、AgentBench の OS と DB を使う。MBPP+ は MBPP-sanitized からの 399 hand-verified problems に基づき、Base Tests の pass@1 で評価する。OS は Ubuntu Docker の interactive bash environments、DB は SQL interface と multiple tables を使う database operation であり、いずれも success rate が主指標である。OS は maximum 5 interaction turns の 1-shot setup、DB も同様の interaction limit だが 0-shot evaluation と Appendix に書かれている。CycleQD setup では、MBPP+ と OS/DB の test/development datasets を evenly split して training/test splits にし、OS では expert models と GPT models のいずれでも解けなかった problems を computation cost 削減のため事前に除外する（`sec4_experiments.tex`、`appendix.tex`）。
+- **比較対象 / baseline**: Table 1 `tab:agentic_task_comparison` は gpt-4、gpt-3.5-turbo、Llama3-8B-Instruct base model、Fine-tuning (Coding expert)、Fine-tuning (DB expert)、Fine-tuning (OS expert)、Fine-tuning (All)、Merging (w/o learning)、Merging (learning w/ GD)、Merging (learning w/ CMA-ES)、Merging (learning w/ NSGA-II)、CycleQD を比較する。Fine-tuning (All) は 3 タスクのデータと Magicoder datasets を合わせ、data ratio は tune せず、cross-entropy を objective function とする。
+- **指標**: Table 1 は MBPP pass@1、DB success rate、OS success rate、Avg を報告する。Table 2 は ablation の同じ 3 指標と Avg。Table 3 は base model に対して normalized した HUMANEVAL+、BigCodeBench、Reasoning、GSM8K、RC、CommonSense、Avg。Table 4 は SAM expert performance に対して normalized した Score A、Score B、Avg Score、Model Similarity を報告する。
+- **主な結果**: Table 1 では CycleQD が MBPP 76.4、DB 38.2、OS 42.6、Avg 52.4 である。Avg では Fine-tuning (All) 47.0、Merging (w/o learning) 46.7、Merging (learning w/ GD) 46.7、Merging (learning w/ CMA-ES) 46.9、Merging (learning w/ NSGA-II) 51.6 を上回る。参照値として gpt-3.5-turbo は Avg 53.7、gpt-4 は Avg 61.3、base model は Avg 32.6 である。
+- **個別タスクの読み方**: CycleQD は MBPP 76.4 で coding expert の 70.4 を上回り、OS 42.6 で OS expert の 30.4 を上回る。一方 DB は DB expert 42.4 に対して CycleQD 38.2 であり、著者は "mild performance drop" と述べるが、TeX 中に DB 低下の詳細分析はない。
+- **アブレーション**: Table 2 では、QD + No mutation + Random sampling が Avg 47.6、CycleQD + No mutation + Random sampling が 49.4、CycleQD + Gaussian mutation + Random sampling が 48.5、CycleQD + SVD mutation + Random sampling が 51.7、CycleQD + SVD mutation + Elite sampling が 52.4 である。著者は、poor design choices can harm performance と述べ、Gaussian mutation が no mutation より悪くなる点を強調している。
+- **skill generalization と language capabilities**: Table 3 では CycleQD が HUMANEVAL+ 1.10、BigCodeBench 1.03、Reasoning 0.95、GSM8K 0.88、RC 0.98、CommonSense 1.02、Avg 0.99 である。MBPP expert は HUMANEVAL+ 1.18 と coding OOD では高いが、Reasoning 0.57 まで落ちるため、著者は catastrophic forgetting の例として扱う。
+- **SAM への適用**: SAM-ViT Huge を base とし、Camouflaged Object Segmentation (CAM)、Polyp Segmentation (POL)、Skin Lesion Segmentation (SKL)、Leaf Segmentation (LEA) の experts を fine-tune して、pairwise に CycleQD で merge する。Table 4 では CAM+POL が Avg Score 0.97、CAM+SKL が 0.92、CAM+LEA が 0.70、POL+SKL が 0.96、POL+LEA が 0.62、SKL+LEA が 0.83 である。Avg Score と Model Similarity の correlation は 0.83 と報告される。
+- **追加 VQA 実験**: Appendix では TextVQA を加えた VQA、MBPP、DB、OS の 4 タスク実験も示す。VQA expert は Llama3-Llava-Next-8B を TextVQA 4000 samples で最適化し、別の 500 samples を CycleQD training 用に割り当て、それを optimization/test に等分する。Table 5 では CycleQD が VQA 54.1、MBPP 72.9、DB 32.4、OS 39.6、Avg 49.7 で、base model Avg 34.2 と各 expert model の Avg（最大は DB expert の 45.5）を上回る。
+- **著者が主張する貢献**: Introduction の contributions は、(1) AgentBench と coding benchmarks で baseline methods を上回り language capabilities も維持する multi-skill LLM merging approach として CycleQD を導入したこと、(2) ablation studies により key design choices の役割を示したこと、(3) SAM への応用により domains across の適用可能性を示したこと、である。
 
-- **AgentBench（OS と DB の練習問題集）と MBPP+（コードの練習問題集）で実験**:
-  - CycleQD の平均点 **52.4** に対して
-    - コード専門家: 37.4、OS 専門家: 32.2、DB 専門家: 45.6（1 教科しかできない）
-    - 全データをただ混ぜて再訓練: 47.0
-    - 単純な平均合体: 46.7、CMA-ES 合体: 46.9、NSGA-II 合体: 51.6（合体系のライバル）
-  - CycleQD は **すべてのライバルに勝った**。
-  - 個別では MBPP（コード）76.4、DB 38.2、OS 42.6。コード専門家（70.4）よりさらに上、OS 専門家（30.4）より大幅に上。DB だけは DB 専門家（42.4）にちょっと負ける。
-  - **参考: gpt-3.5-turbo の平均 53.7、gpt-4 が 61.3、ベース Llama3-8B-Instruct は 32.6**。80 億パラメータの自前モデルで、世界的に有名な gpt-3.5-turbo にほぼ並んだ。
-- **ぐるぐる入れ替える工夫の効果（Table 2）**:
-  - 軸を固定したふつうの QD: 47.6 → 軸を入れ替える CycleQD: 49.4 → +SVD 突然変異: 51.7 → +Elite sampling: **52.4**。**1 つずつ部品を足すたびに点数が上がる**ことを確かめている。
-  - ふつうのランダムな（ガウシアン）突然変異だと逆に 48.5 に下がってしまう。「意味のある方向にだけ動かす」のが大事という証拠。
-- **他の能力を壊していない（Table 3）**:
-  - HumanEval+（コード）1.10 倍・BigCodeBench 1.03 倍・推論 0.95 倍・GSM8K（算数）0.88 倍・読解 0.98 倍・常識 1.02 倍・**平均 0.99**。元の Llama3-8B-Instruct の力をほぼ保ったまま、AgentBench だけ大きく伸ばせた。
-  - 比較対象の MBPP 専門家は、推論が 0.57 まで急落（**カタストロフィック・フォゲッティング** = 新しいことを覚えると古いことを忘れちゃう現象が起きている）。
-- **画像 AI（SAM）でも実験（Table 4）**: 4 種類の画像セグメント（迷彩物・大腸ポリープ・皮膚病変・植物の葉）の専門家を 2 体ずつ混ぜる 6 通り中、3 通りで両方の 90% 以上の力を維持。
-- **論文での貢献**（著者自身が introduction に書いている 3 点）:
-  1. データ比率を調整せずに、複数のエージェント技能を伸ばせる新しい手法 CycleQD を提案。
-  2. 各部品（軸入れ替え、SVD 突然変異、Elite sampling など）が何点ぶん効くかをアブレーションで分解した。
-  3. LLM だけでなく画像モデル SAM にも応用できることを示した。
+## 妥当性と限界
 
-## キーワード辞典
+- **この主張を支える根拠**: Table 1 は、CycleQD が fine-tuning based baselines と merging based baselines の Avg を上回ることを示す。Table 2 は alternating quality/BCs、SVD mutation、Elite sampling の効果を分解している。Table 3 は、agent skills の改善が一般的な language benchmark の大幅崩壊だけで説明されるわけではないことを示す。Figure `fig:archives` は 1200 generations 後の archive を示し、Appendix Figure `fig:development_of_archives` は archives の frontier が generations とともに広がる様子を示す。
+- **著者が認めている limitations / future work**: Conclusion では、model merging の成功が source models の compatibility に依存し、expert models が highly divergent settings から来る場合には CycleQD が難しくなる可能性があると述べる。対応策として、expert training 中に model similarity を regularization term として入れる案を挙げる。また、CMA-ME や PGA-MAP-Elites の統合による learning process の効率化、CycleQD が生成する diverse agents を multi-agent systems に使う方向を future work として挙げる。
+- **読者として注意すべき点**: 主実験は同じ Llama3-8B-Instruct から作った 3 experts の merging であり、異なる base model 間の merging で同じ結果が出るとは TeX 中には示されていない。VQA を加えた 4 タスク実験は Appendix にあるが、より大きな \(K\) で archive size や evaluation cost がどう増えるかは十分に検証されていない。
+- **計算コスト**: Appendix は NVIDIA H100 GPUs を用いたとし、gradient fine-tuning method、すなわち Table 1 model #6 が約 200 GPU hours、CycleQD、すなわち model #11 が expert model training time を除いて約 410 GPU hours と報告する。著者は追加時間の大部分が agentic task evaluations によるもので、merging process は GPU memory constraints のため CPU で実行されたとも述べる。
+- **hyper-parameter sensitivity**: Appendix では \(\alpha_\mathrm{low}=0.5\)、\(\alpha_\mathrm{high}=0.8\)、\(\mu=1.0\)、\(\sigma=0.03\)、\(w_\mathrm{max}=0.3\) を preliminary studies で選んだと書かれている。体系的な hyperparameter search や感度分析は TeX 中には示されていない。
+- **追加で確認したい実験 / 疑問**: DB で expert 42.4 に対し CycleQD 38.2 へ低下した理由の error analysis、より多い agent skills での scaling、source models の similarity を regularization した expert training の実測、同じ GPU budget での fine-tuning や RL 系手法との比較を確認したい。これらは読者側の確認点であり、TeX 中で完了済みの実験としては示されていない。
 
-- **LLM**（Large Language Model）… 大規模言語モデル。たくさんの文を読んで、人みたいにおしゃべりできる AI。
-- **エージェント**（agent）… 自分で行動して仕事を片付ける AI。コードを書く・PC を操作する など。
-- **fine-tuning（ファインチューニング）**… すでに作られた AI を、特定の仕事用にもうひと練習させて専門化すること。「すでに英語が話せる人にビジネス英語の研修をする」感じ。
-- **next token prediction（次トークン予測）**… 「次に来る単語を当てる」練習。LLM のふつうの訓練のやり方。
-- **MBPP / AgentBench**… 練習問題集の名前。MBPP は Python のコード問題、AgentBench は OS や DB の問題を集めたテスト。
-- **pass@1 / success rate**… 点数の付け方。pass@1 は「1 回の答えでテストにパスした問題の割合」、success rate は「お題をうまく達成した割合」。
-- **QD（Quality Diversity）**… 「質と多様性」。点数の高さだけでなく、性格の違うものをたくさん残す進化アルゴリズムの考え方。
-- **MAP-Elites**… QD の代表的な実装。マス目の地図にエリートを 1 体ずつ住まわせていく仕組み。
-- **アーカイブ**（archive）… AI の住所録 / 成績優秀者リスト。マス目の各部屋に最強の 1 体を保管する。
-- **BC（Behavioral Characteristics）**… その AI の「性格を表す軸」。この論文では「他の科目の得点」を性格軸にしている。
-- **quality**… 今この世代で伸ばしたい「主役の科目」。
-- **タスクベクトル**（task vector）… ベース AI からのつまみのずらし方を並べた数のリスト。$\tau = \theta - \theta_\mathrm{base}$。
-- **model merging（モデル合体）**… 複数の AI のつまみを足し算して 1 体にすること。
-- **交叉**（crossover）… 親 2 体の遺伝子（ここではつまみ）を混ぜて子を作ること。
-- **突然変異**（mutation）… 子のつまみをちょっとだけランダムに変えること。
-- **SVD（特異値分解）**… つまみの表を「向き × 強さ × 向き」の 3 つに分解する数学の道具。意味のある主成分（その AI の個性のかなめ）を取り出せる。
-- **SFT**（Supervised Fine-Tuning）… 模範解答つきのデータで AI を再訓練する一番ふつうの方法。
-- **NSGA-II / CMA-ES**… ライバルの進化アルゴリズム。NSGA-II は多目的最適化の有名手法。
-- **catastrophic forgetting（破滅的忘却）**… 新しいことを覚えると古いことを全部忘れる現象。
-- **SAM**（Segment Anything Model）… 画像の中の物体の境目をくっきり切り取る Meta 社の有名な画像 AI。
-- **cosine similarity（コサイン類似度）**… 2 つのベクトル（数の並び）がどれくらい同じ方向を向いているかを 0〜1 で測る指標。
+## 用語メモ
 
-## ちょっと深掘り（中学生は飛ばして OK）
+一般的な辞書的定義ではなく、この論文での使われ方を中心に書く。
 
-- **どうして「ぐるぐる入れ替え」が効くのか**: QD の元祖（MAP-Elites）は「どの軸を伸ばしたい主役にするか」を最初に決めたら 1 回も変えない。CycleQD は「コード軸を主役 → OS 軸を主役 → DB 軸を主役」と毎世代回す。これは「3 つの名簿を 90 度ずつ回しながら最適化していく」のと同じ動きで、複数の目標を 1 本のスカラに無理やりまとめなくていい。
-- **どうして DB だけ専門家に少し負けるのか**: 著者は "mild drop" と書くだけで詳しい分析はしていない。DB のお題は他のお題に比べて点数の差が小さく出やすい（性格軸として情報量が低い）ことが影響していると考えられるが、TeX 中には書かれていない。
-- **SAM 実験の「似ている専門家どうしほどうまく合体できる」発見**: タスクベクトルの「特異値の対角線」を 2 体ぶん取って、その方向のコサイン類似度を平均する。これと合体後の点数の相関が 0.83。つまり「もともと考え方が近い専門家どうしじゃないと、合体しても性能が出ない」というルール。著者は「ならば専門家を訓練するときから、お互い似た方向に近づける『プロキシマル項』を入れたらいいのでは」と提案している。これは federated learning（みんなのスマホで個別にちょっと訓練して中央で混ぜる仕組み）の FedProx という研究で使われているテクと同じ発想。
-- **計算コストの問題**: 1200 世代の各ステップで、子 AI を 3 つの名簿全部で評価する必要があるので、評価回数が多い。fine-tuning との GPU 時間の比較は本文には書かれていない（正規ノートで指摘あり）。
-- **限界として著者自身が認めていること**（sec5）: 「model merging は元の AI どうしの相性に強く依存する。CycleQD は専門家が大きく違う設定だと苦戦するかもしれない」。今回はすべて同じ Llama-3-8B-Instruct から育てた専門家で実験しているので、元から離れた専門家（別ベースから始めたものや、LoRA で軽く調整したものなど）でうまくいく保証はない。
+- **CycleQD**: MAP-Elites 型の Quality Diversity を、task metrics の cyclic alternation、model merging based crossover、SVD-based mutation、Elite sampling と組み合わせた著者の提案手法。
+- **agent skill**: coding、OS manipulation、DB query generation のように、LLM が外部環境や形式的な出力を通じて課題を解く能力。主実験では computer science skills として扱われる。
+- **quality**: その archive で最適化する task metric。coding なら pass@1、OS/DB なら success rate。
+- **behavioral characteristics (BCs)**: archive の lattice 軸を作るための特徴量。この論文では、quality ではない他タスクの performance metrics を BCs とする。
+- **archive**: MAP-Elites で solution を保存する lattice。各 cell には、その BC combination に対応する best solution が 1 つ入る。CycleQD は \(K\) tasks に対して \(K\) archives を持つ。
+- **Elite sampling**: active archive 内で、全タスク performance が高い models を sampling しやすくする親選択。式では normalized task performances の積で \(\gamma_j\) を作る。
+- **task vector**: base model から fine-tuned model への parameter difference \(\tau = \theta - \theta_\mathrm{base}\)。model merging の操作単位。
+- **model merging based crossover**: 2 つの parent task vectors を正規化された random coefficients で線形結合し、base model に足すことで child model を作る crossover。
+- **SVD-based mutation**: child task vector の parameter matrices を SVD し、singular value directions に沿って perturb する mutation。rank 1 の parameter matrices、例えば layer-normalization layers に属するものは pass-through operation になると TeX に書かれている。
+- **convex region**: 著者が、parent task vectors の linear combination だけで探索した場合に閉じ込められやすい performance space の領域として使う表現。SVD-based mutation はこの外側への extrapolation を意図している。
+- **Fine-tuning (All)**: 3 タスクのデータをまとめて Llama3-8B-Instruct を supervised fine-tuning する baseline。data ratio は tune せず、objective は cross-entropy、つまり next token prediction。
+- **catastrophic forgetting**: Table 3 の MBPP expert が Reasoning 0.57 まで下がる現象を説明するために使われる語。専門タスク fine-tuning により専門外能力が落ちる例として扱われる。
+- **model similarity**: SAM 実験で、2 experts の task vectors から得た singular value vectors の cosine similarity を layer 平均した指標。Avg Score との correlation 0.83 が報告される。
+
+## 読む順番の提案
+
+- まず `notes/arXiv-2410.14735v4.md` の Summary を読み、何が主張されているかを把握する。その後、原論文の abstract と `sec1_introduction.tex` で、問題設定が data ratio tuning と objective function mismatch の 2 点に置かれていることを確認する。
+- 次に `sec2_background.tex` で MAP-Elites の archive、quality、BC の基本を読む。ここが分からないと、CycleQD の「quality と BC を入れ替える」という説明が追いにくい。
+- 手法は `sec3_methods.tex` を Algorithm 1 `algo:qdagent`、Elite sampling の式、model merging based crossover、SVD-based mutation、Model aggregation の順に読む。正規ノートの Notes / Quotes にある式と対応させると、記号の対応を確認しやすい。
+- 実験は `sec4_experiments.tex` と `tables/table1_agent_tasks.tex`、`tables/table2_ablation_studies.tex`、`tables/table3_categoried_normalized.tex` を先に見る。Table 1 は主張の中心、Table 2 は設計要素の妥当性、Table 3 は language capabilities 維持の根拠である。
+- 限界を読むときは `sec5_conclusion.tex` の limitations / future works と、正規ノートの Critical Thoughts を並べる。計算時間、VQA 追加実験、SAM datasets、training configuration は `appendix.tex` にあるため、正規ノートの疑問点を検証するときに参照する。
+- SAM 実験は、主張の中心というより cross-domain applicability と model compatibility の根拠である。`tables/table4_sam_results.tex` と `sec4_experiments.tex` の model similarity analysis を読む。
 
 ## もとの論文・正規ノート
 

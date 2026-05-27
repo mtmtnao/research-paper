@@ -1,4 +1,4 @@
-# Tree of Thoughts: Deliberate Problem Solving with Large Language Models（思考の木：AI に「じっくり考える」をさせる方法）
+# Tree of Thoughts: Deliberate Problem Solving with Large Language Models（LLM 推論を思考単位の木探索として定式化する研究）
 
 - arXiv: https://arxiv.org/abs/2305.10601
 - 一次ソース: ../papers/arXiv-2305.10601v2/
@@ -8,202 +8,161 @@
 
 ## 一言で言うと
 
-ChatGPT のような AI に、答えを一気に書かせるのではなく「枝分かれする思考の木」をつくらせて、有望そうな枝だけ伸ばしていく仕組み。
+この論文は、LLM の推論を左から右への単一路生成だけに閉じず、`thought` と呼ぶまとまった中間ステップをノードにした探索木として扱う Tree of Thoughts (ToT) を提案する。Game of 24、Creative Writing、5x5 Mini Crosswords で、GPT-4 + ToT が IO prompting や Chain-of-Thought (CoT) prompting より高い性能を示す、というのが著者の主張である。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- ChatGPT みたいな AI（これを「大規模言語モデル」、略して **LLM** と呼ぶよ。大量の文章で学習した、文章を続きから書くのが得意な AI のこと）は、文章を **左から右に 1 文字（正確には「トークン」という単位）ずつ** 書いていく。一度書いた文字は戻って書き直さない。
-- これは、テストを **1 行目から消しゴム禁止で書いていく** ようなもの。最初の数文字をうっかり間違えると、後でどう頑張っても取り返しがつかない。
-- たとえば「**Game of 24**」というパズル：4 つの数字（例: 4, 9, 10, 13）を +, −, ×, ÷ で組み合わせて 24 を作る。最初に「4 +」と書いてしまうと、もうこの組み合わせでは 24 にできないことが多いのに、AI は気づかず進んでしまう。
-- これまでの工夫として「**Chain-of-Thought（思考の鎖、略して CoT）**」という方法があった。これは「途中の計算を文章で書きながら答えなさい」と頼むやり方。でも結局 **一本道で書き続ける** だけで、「あ、この道はダメだ、戻ろう」ができない。
-- 人間が難しいパズルを解くときは「この手はどうかな…ダメっぽいな、別の手を試そう」と **枝分かれを試して戻る**。AI にもこれをやらせたい、というのがこの論文の動機。
+- **問題設定**: LLM は推論時に token-level, left-to-right な自己回帰生成を行うため、探索、戦略的 lookahead、初期決定が重要なタスクで失敗しやすい。Introduction では、これを「System 1」的な高速・連想的処理に近いものとして位置づけ、より deliberate な「System 2」的計画過程で補うことを考える。
+- **対象範囲 / 仮定**: 入力 $x$ から出力 $y$ を生成する問題を、自然言語列の部分解を状態として探索する問題に写す。中心的な仮定は、問題ごとに適切な粒度の `thought` を設計でき、LM 自身が候補 thought や状態をおおまかに評価できる、という点である。
+- **既存研究との差分**: IO prompting は直接 $y$ を生成する。CoT は $z_1,\ldots,z_n$ という中間 thought を逐次生成するが、各 thought 列は一本道で、局所的な分岐や backtracking はない。CoT-SC は複数の完全な CoT 軌跡を独立にサンプルして多数決するが、軌跡内の途中状態を探索しない。ToT は途中の thought 単位で複数候補を生成・評価し、BFS や DFS によって木を探索する。
+- **この論文で答えたい問い**: token-level の単一路生成では難しい planning/search タスクに対して、LM 自身による thought 生成、状態評価、探索アルゴリズムを組み合わせることで、より強い問題解決能力を得られるか。
 
-## どうやって解いたの？
+## 背景と前提
+
+- この論文では、$p_\theta$ をパラメータ $\theta$ を持つ事前学習済み LM と書く。小文字 $x,y,z,s,\cdots$ は language sequence、大文字 $S,\cdots$ は language sequences の集合を表す。
+- IO prompting は、問題入力 $x$ を task instruction や few-shot 例で包んだ prompt から出力 $y$ を生成する方法で、本文では $y \sim p_\theta^{IO}(y|x)$ と簡略化される。
+- CoT prompting は、入力 $x$ と出力 $y$ の間に thought 列 $z_1,\cdots,z_n$ を入れる。各 $z_i$ は「coherent language sequence that serves as a meaningful intermediate step」で、数学 QA なら中間式のようなものを指す。ただし CoT では thought の粒度は明示的に分解されないことが多い。
+- CoT-SC は $k$ 個の CoT 軌跡 $[z^{(i)}_{1\cdots n}, y^{(i)}]$ を i.i.d. にサンプルし、最頻の出力を返す。出力空間が小さい multi-choice QA などでは有効だが、途中ステップ単位の局所探索はしない。
+- ToT の思想的背景として、Newell, Shaw, and Simon 以降の「問題解決を combinatorial problem space の木探索として見る」古典 AI / cognitive science の見方が使われている。Related Work では A*, MCTS, NeuroLogic A*esque decoding、RAP、self-reflection / self-refine 系などと比較される。
+
+## 提案手法
 
 ### コアアイデア
 
-**思考を「木」にする**。これが論文のすべて。
+ToT は、問題解決を「状態 $s=[x,z_{1\cdots i}]$ をノード、次の thought を枝とする木の探索」として扱う。1 つの thought は token ではなく、問題に応じて意味のあるまとまりにする。Table 1 (`Task overview`) では、Game of 24 の thought は 3 個の中間式、Creative Writing の thought は短い writing plan、5x5 Crosswords の thought は clue に入れる単語として整理されている。
 
-迷路を解くところを想像してみて。一本道で進む（CoT）と、行き止まりに当たっても引き返せない。でも、分かれ道のたびに「左右どっちが正解っぽいかな」と少し先まで見て、ダメそうなら戻って別の道を試す、というのが普通の迷路の解き方だよね。これと同じことを AI の思考でやらせるのが **Tree of Thoughts（思考の木、略して ToT）**。
+ToT の具体化は、本文で 4 つの問いに分けられる。
 
-具体的には、AI に「次の一手」を **何通りか出させて**、それぞれを AI 自身に「これは見込みあり？無し？」と **採点させて**、見込みのある枝だけ深く進めていく。だめなら親の分かれ道に戻る（バックトラックする）。
+- Thought decomposition: thought の粒度を問題ごとに決める。小さすぎると評価できず、大きすぎると多様で有望な候補を生成しにくい。
+- Thought generator $G(p_\theta,s,k)$: 現在状態 $s$ から次の thought 候補を $k$ 個作る。Creative Writing では CoT prompt から i.i.d. sample、Game of 24 と Crosswords では propose prompt で複数候補を列挙する。
+- State evaluator $V(p_\theta,S)$: 候補状態の進捗を heuristic として評価する。候補ごとに `sure/likely/impossible` や scalar value を付ける Value と、複数候補を比較して有望なものに Vote する方式がある。
+- Search algorithm: 木構造に合わせて BFS または DFS を使う。Game of 24 と Creative Writing は深さが浅いので BFS、Crosswords は最大 10 thought steps の深い探索なので DFS と backtracking を使う。
 
-### 仕組み
+### 重要な定義・数式
 
-論文では「ToT を作るには 4 つの問いに答えればいい」と整理している。
+$$
+s = [x, z_{1 \cdots i}]
+$$
 
-- **step1: 思考をどう区切る？（thought decomposition）**
-  - 「思考の 1 ステップ」を、問題に合わせて決める。
-  - Game of 24 なら「1 行の式」（例: `13 - 9 = 4`）が 1 ステップ。
-  - クロスワード（穴埋めパズル）なら「1 単語」が 1 ステップ。
-  - 作文タスクなら「文章の構想プラン 1 つ（数段落分）」が 1 ステップ。
-  - 小さすぎると AI が良し悪しを判断できないし、大きすぎると 1 発で書ききれない。ちょうどいいサイズに区切るのがコツ。
+**式の意味**: ToT における木のノード、すなわち状態 $s$ を定義している。状態は元の入力 $x$ と、ここまでに選ばれた thought 列 $z_{1\cdots i}$ からなる部分解である。
 
-- **step2: 次の一手をどう作る？（thought generator $G$）**
-  - 方法 A「**Sample**（サンプル）」: 同じお願いを何度もして、ランダムに違う答えを何個か出させる。作文みたいに自由度が高い問題向き。
-  - 方法 B「**Propose**（提案）」: 「次の一手を $k$ 個列挙して」と一気にお願いする。数式や単語みたいに、答えがダブりやすい問題向き。
+**記号の定義**:
+- $s$ ... ToT の探索木における state / node
+- $x$ ... 問題入力
+- $z_{1\cdots i}$ ... 現在までの thought 列
+- $i$ ... thought step の深さ
 
-- **step3: それぞれの一手を採点する（state evaluator $V$）**
-  - 方法 A「**Value**（評価）」: 各候補を独立に「sure（確実）/ maybe（たぶん）/ impossible（無理）」と AI 自身に判定させる。Game of 24 で使う。
-  - 方法 B「**Vote**（投票）」: 候補を並べて「どれが一番有望？」と AI に多数決させる。作文みたいに点数が付けにくい問題で使う。
+**この論文での役割**: IO や CoT では生成列全体を一方向に進めるのに対し、ToT はこの $s$ を単位として分岐、評価、枝刈り、backtracking を行う。
 
-- **step4: 木の探索方法を決める（search）**
-  - **BFS（幅優先探索）**: 各段で「上位 $b$ 個」だけ残して、横並びで進む。木が浅いとき（3 ステップ以内）に使う。Game of 24 と作文で採用。
-  - **DFS（深さ優先探索）**: 一番見込みのある枝をどんどん深く掘っていき、ダメなら親に戻る。木が深いとき（最大 10 ステップ）に使う。クロスワードで採用。
+$$
+z^{(j)} \sim p_\theta^{CoT}(z_{i+1} \mid s)
+= p_\theta^{CoT}(z_{i+1} \mid x, z_{1\cdots i})
+\quad (j=1 \cdots k)
+$$
 
-「BFS（幅優先）」は迷路で **分かれ道に来たら両方を 1 歩ずつ進める** イメージ。「DFS（深さ優先）」は **片方を行けるところまで行って、行き止まったら戻る** イメージ。
+**式の意味**: Sample 型の thought generation を表す。現在状態 $s$ を条件として、次の thought $z_{i+1}$ の候補を $k$ 回 i.i.d. に生成する。
 
-### 主要な数式
+**記号の定義**:
+- $z^{(j)}$ ... $j$ 番目に生成された次 thought 候補
+- $p_\theta^{CoT}$ ... CoT prompt による LM の条件付き生成分布
+- $k$ ... 生成する候補数
+- $s=[x,z_{1\cdots i}]$ ... 現在の部分解
 
-#### ① 思考の木の「ノード（節）」とは何か
+**この論文での役割**: Creative Writing のように thought space が豊かなタスクでは、独立サンプルによって多様な plan や passage 候補を得るために使われる。制約が強い Game of 24 / Crosswords では、別式の propose prompt $[z^{(1)},\cdots,z^{(k)}]\sim p_\theta^{propose}(z_{i+1}^{(1\cdots k)}\mid s)$ が使われる。
 
-$$ s = [x,\, z_1, z_2, \ldots, z_i] $$
+$$
+V(p_\theta, S)(s) \sim p_\theta^{value}(v \mid s)
+\quad \forall s \in S
+$$
 
-**この式が言ってること**: 木の 1 つの節（state, 状態）$s$ は、「最初の問題文 $x$」と「これまでに書いた思考のステップたち」を全部つなげたもの、というだけの意味。
+**式の意味**: Value 型の state evaluation を表す。候補集合 $S$ の各状態 $s$ について、LM に状態の見込みを評価させ、値 $v$ を返す。
 
-**記号の意味**:
-- $s$ … 思考の木の 1 つの分かれ道（節、ノード、状態）のこと
-- $x$ … 元の問題文（例: 「4 9 10 13 で 24 を作って」）
-- $z_1, z_2, \ldots, z_i$ … ここまで考えた途中の思考ステップ（例: $z_1 = $「13−9=4」、$z_2 = $「10−4=6」）
-- $i$ … 今まで何ステップ思考したか、の番号
+**記号の定義**:
+- $V(p_\theta,S)$ ... LM を用いた state evaluator
+- $S$ ... frontier など、評価対象の状態集合
+- $s$ ... 評価対象の状態
+- $v$ ... scalar value、または `sure/likely/impossible` のような分類
+- $p_\theta^{value}$ ... value prompt による LM の評価分布
 
-**身近な例え**: テストの解答用紙の「**今書いたところまでの全部**」だと思えばいい。「問題文 ＋ ここまで自分が書いた途中式」をまるごとセットにして「今の状態」と呼ぶ感じ。次の 1 行を書く前に、いつも問題と今までの式を見直してから次を書くよね。あれをそのまま「状態」と呼んでいる。
+**この論文での役割**: Game of 24 では「24 に到達できそうか」を `sure/maybe/impossible` で評価し、Crosswords では残り clue が埋められるかを評価して DFS の pruning に使う。Creative Writing のように直接値付けしにくい場合は、本文の別式 $V(p_\theta,S)(s)=\mathds{1}[s=s^*]$ と vote prompt が使われる。
 
-#### ② 次の一手の作り方（Sample 方式）
+$$
+S_t = \arg \max_{S \subset S'_t, |S| = b} \sum_{s \in S} V_t(s)
+$$
 
-$$ z^{(j)} \sim p_\theta^{CoT}(z_{i+1} \mid x,\, z_{1\ldots i}) \quad (j = 1, \ldots, k) $$
+**式の意味**: ToT-BFS の枝刈りを表す。時刻 $t$ で生成された候補集合 $S'_t$ から、評価値の合計が最大になる $b$ 個の状態を残す。
 
-**この式が言ってること**: AI に「今の状態を見て、次の 1 ステップを書いて」とお願いする。同じお願いを $k$ 回繰り返して、$k$ 個の違う候補を作る、という意味。
+**記号の定義**:
+- $S_t$ ... 深さ $t$ で保持する状態集合
+- $S'_t$ ... 深さ $t$ で生成された全候補状態
+- $b$ ... breadth limit、各段で残す候補数
+- $V_t(s)$ ... 深さ $t$ における状態 $s$ の評価値
+- $\arg\max$ ... 目的を最大化する選択を返す演算
 
-**記号の意味**:
-- $z^{(j)}$ … $j$ 番目に作った「次の一手」の候補
-- $\sim$ … 「〜という決まりに従ってランダムに 1 つ作る」という記号（サイコロを振る感じ）
-- $p_\theta$ … AI（LLM）のこと。$\theta$ はその AI の中身の設定値。読者はここは「ChatGPT」と思って OK
-- $p_\theta^{CoT}(\ldots \mid \ldots)$ … 「縦棒 $\mid$ の右側を見せたうえで、左側を AI に書いてもらう」という意味。CoT というラベルは「途中式を書かせるお願いの仕方」を示すだけ
-- $z_{i+1}$ … 「$i+1$ 番目の思考ステップ」、つまり次の一手
-- $x,\, z_{1\ldots i}$ … 問題文と、ここまで書いた思考全部（つまり今の状態 $s$）
-- $k$ … 候補を何個作るかの個数
+**この論文での役割**: Game of 24 では $b=5$ の BFS が主要設定で、成功率 74% を得る。DFS の場合は、本文で $V(p_\theta,\{s\})(s) \le v_{th}$ のとき subtree を prune し、親状態へ backtrack すると説明される。
 
-**身近な例え**: クラスで「次の問題、誰か解いてみて」と先生が同じ質問を 5 人にする感じ。5 人それぞれ違う答えを書いてくる。その中から良さそうなのを選びたい。$k$ は「何人に聞くか」の数。
+### 実装 / アルゴリズム上の要点
 
-#### ③ 各候補を AI 自身に採点させる（Value 方式）
+- step1: 問題ごとに thought の粒度を決める。Game of 24 は 3 個の中間式、Creative Writing は 1 個の plan を挟む depth 2、Crosswords は clue に単語を入れる 5-10 steps。
+- step2: 現在状態から候補 thought を作る。自由度が高い場合は Sample、制約が強く重複が問題になる場合は Propose を使う。
+- step3: 候補状態を LM 自身に評価させる。Game of 24 は 3 回 value sampling、Creative Writing は 5 回 vote、Crosswords は残り clue の可能性評価と confidence の集約を行う。
+- step4: 探索する。BFS は各段で上位 $b$ 個を残す。DFS は有望な候補から深く進み、評価が閾値以下なら prune して backtrack する。
+- step5: 最終出力を生成する。BFS では最後に $S_T$ の最良状態から出力を生成し、Crosswords では 100 DFS steps を上限として、最も深く探索された state を board に render する。
 
-$$ V(p_\theta, S)(s) \sim p_\theta^{value}(v \mid s) \quad \forall s \in S $$
+## 実験・結果
 
-**この式が言ってること**: いま手元にある候補たち $S$ のそれぞれ $s$ について、AI に「これって有望？」と聞いて、数字（例: 1〜10 点）か言葉（sure / maybe / impossible）で点数 $v$ を返してもらう、ということ。
+- **データセット / ベンチマーク**: 主実験は Game of 24、Creative Writing、5x5 Mini Crosswords の 3 タスク。本文では、GPT-4 Chat Completion mode、temperature 0.7、実験期間 May 5-16, 2023 と明記されている。
+- **比較対象 / baseline**: IO prompting、CoT prompting、CoT-SC、iterative-refine、oracle best-of-100、ToT の ablation (`+best state`, `-prune`, `-backtrack`) が使われる。タスクごとに prompt 例数や sampling 回数は異なる。
+- **指標**: Game of 24 は 100 games の success rate。Creative Writing は GPT-4 zero-shot prompt による 1-10 coherency score と、著者サブセットによる blind human comparison。Mini Crosswords は Letter / Word / Game の success rate (%)。
+- **主な結果**: Game of 24 では Table 2 で IO 7.3%、CoT 4.0%、CoT-SC (k=100) 9.0%、ToT (b=1) 45%、ToT (b=5) 74%。Creative Writing では Figure 5 (`fig:write_results`) で IO 6.19、CoT 6.93、ToT 7.56、human comparison は ToT 勝ち 41、CoT 勝ち 21、同等 38。Mini Crosswords では Table 3 で IO 38.7/14/0、CoT 40.6/15.6/1、ToT 78/60/20。
+- **著者が主張する貢献**: ToT は LM 推論を thought 単位の木探索に一般化し、thought decomposition、generation、evaluation、search を独立に変えられる modular な枠組みを与える。3 つの planning/search タスクで、既存 prompting より強い結果を示す。
 
-**記号の意味**:
-- $V$ … 採点係（state evaluator）。状態を入れると点数を返す関数
-- $S$ … 候補の集まり（例: 5 個の「次の一手」候補をまとめた袋）
-- $s$ … その中の 1 つの候補
-- $v$ … その候補の点数（例: 「sure」「maybe」「impossible」、または 1〜10 の数）
-- $\forall s \in S$ … 「$S$ の中のどの $s$ についても」という記号
-- $p_\theta^{value}$ … AI に「採点してね」とお願いするときの言い方
+Game of 24 の設定は、4nums.com の 1,362 games から人間の solving time で難しめの index 901-1,000 を使う。成功条件は、有効な式で 24 になり、入力数字を各 1 回だけ使うこと。ToT は 3 thought steps、propose prompt、BFS、$b=5$、`sure/maybe/impossible` 評価を使う。Figure 3 の error analysis では、CoT samples の約 60% が最初の step、すなわち最初の 3 words で既に失敗していると説明される。
 
-**身近な例え**: テストの自己採点。自分が書いた候補答案 5 つを並べて、「これは絶対正解、これは多分合ってる、これは絶対違う」と自分でラベルを貼っていくイメージ。AI に **自分で書いた候補を自分で採点させている** のがポイント。
+Creative Writing は randomwordgenerator.com から 4 random sentences を取り、4 paragraphs の各段落末尾がその文になる passage を生成する。ToT は $k=5$ plans を生成して 5 votes で best plan を選び、その plan から $k=5$ passages を生成して同様に vote する。iterative-refine は IO を 6.19 から 7.67、ToT を 7.56 から 7.91 に改善し、著者はこれを ToT framework 内の第三の thought generation approach と見なせると述べる。
 
-#### ④ BFS（幅優先探索）のアルゴリズム — 「広く浅く探す」
+Mini Crosswords は GooBix の 156 games から test indices $1,6,\cdots,91,96$ の 20 games、prompting 用に $136,141,146,151,156$ を使う。ToT は DFS で最も有望な word clue を埋め、既に埋めた word / letter は変更しないため最大 10 intermediate steps となる。`+best state` は 82.4/67.5/35 で 7/20 games を解く。`-prune` は 65.4/41.5/5、`-backtrack` は 54.6/20/5 で、特に backtracking の重要性を示す ablation になっている。
 
-$$ S_t = \arg\max_{S \subset S'_t,\, |S| = b} \sum_{s \in S} V_t(s) $$
+付録では、GSM8K と StrategyQA に zero-shot ToT-BFS を適用し、GSM8K は IO 51、CoT 86、ToT 90、StrategyQA は IO 73、CoT 82、ToT 83 と報告する。GPT-3.5 では Game of 24 が IO 6%、CoT 3%、ToT 19%、Creative Writing が IO 4.47、CoT 5.16、ToT 6.62。Game of 24 で GPT-4 generation + GPT-3.5 evaluation は 64%、GPT-3.5 generation + GPT-4 evaluation は 31% で、著者は thought generation が bottleneck だと解釈している。
 
-**この式が言ってること**: いまの段で作った候補たち $S'_t$ のうち、点数 $V_t$ の合計が一番大きくなる **上位 $b$ 個** だけを残して、残りは捨てる、という意味。
+コストは Appendix `Cost and efficiency` にまとまっている。Game of 24 では IO best-of-100 が 1.8k / 1.0k tokens、\$0.13、33%、CoT best-of-100 が 6.7k / 2.2k、\$0.47、49%、ToT が 5.5k / 1.4k、\$0.74、74%。Creative Writing では IO が 0.9k / 0.4k、\$0.06、CoT が 0.9k / 0.4k、\$0.07、ToT が 4k / 2.9k、\$0.32。
 
-**記号の意味**:
-- $S_t$ … 第 $t$ 段（深さ $t$）で生き残った候補たち
-- $S'_t$ … 第 $t$ 段で作ったすべての候補たち（生き残る前の全員）
-- $\arg\max$ … 「これを一番大きくする選び方を選んで」という記号
-- $S \subset S'_t$ … 「$S$ は $S'_t$ の中から選ぶ部分集合」という意味
-- $|S| = b$ … 選ぶ個数を $b$ 個に固定
-- $V_t(s)$ … 候補 $s$ の点数
-- $\sum_{s \in S}$ … $S$ に入った候補の点数を全部足す
+## 妥当性と限界
 
-**身近な例え**: マラソン大会の予選。各ラウンドで **上位 5 名（$b=5$）だけが次に進める**、それ以外は脱落、という仕組み。次のラウンドはまた走って、また上位 5 名だけ残る。これを目的地（ゴール、$t=T$）まで繰り返す。
+- **この主張を支える根拠**: Game of 24 では CoT-SC や best-of-100 CoT と比較しても ToT が高く、Figure 3 の error analysis が「初期 step の誤りが致命的」という問題設定を直接支えている。Mini Crosswords では `-backtrack` の Word success が 60 から 20 に落ち、backtracking が性能に効いていることを示す。Creative Writing では自動 GPT-4 score だけでなく blind human comparison も併用している。
+- **著者が認めている limitations / future work**: Discussion では、GPT-4 が既に得意な多くの既存タスクでは deliberate search は不要かもしれないこと、この研究は GPT-4 を難しくする 3 つの比較的単純なタスクに限ること、ToT は IO / CoT より多くの計算資源や API cost を要すること、off-the-shelf LM のみを使っており ToT-style fine-tuning は未検討であることが述べられる。
+- **読者として注意すべき点**: ToT の性能は thought 粒度、prompt、評価 heuristic、探索予算に依存する。特に Crosswords では、GPT-4 が rare or obsolete words を知らず、`agend` を typo と見なして `impossible` と prune する例が footnote で挙げられている。LM 自身による評価は有用な heuristic だが、完全な verifier ではない。
+- **追加で確認したい実験 / 疑問**: 同一 token / cost budget で CoT-SC、iterative-refine、ToT の Pareto curve を比較すると、性能改善が探索構造由来か計算量由来かをより切り分けやすい。Game of 24 では式検算は外部プログラムで決定的にできるため、LM value prompt と symbolic verifier の比較も重要である。thought decomposition を人手設計せずに選ぶ方法は TeX 中には示されていない。
 
-## 何がすごいの？
+## 用語メモ
 
-論文では 3 つの新しいタスクで実験している（GPT-4 を使用、温度 0.7、2023 年 5 月 5〜16 日）。
+一般的な辞書的定義ではなく、この論文での使われ方を中心に書く。
 
-### Game of 24（4 数字で 24 を作るパズル、4nums.com から index 901〜1000 の 100 問）
-| 方法 | 成功率 |
-|---|---|
-| IO（普通に答えだけ書かせる） | 7.3% |
-| CoT（途中式も書かせる） | 4.0% |
-| CoT-SC（CoT を 100 回やって多数決） | 9.0% |
-| **ToT（$b=1$）** | **45%** |
-| **ToT（$b=5$）** | **74%** |
-| IO + Refine（書き直しを 10 回） | 27% |
-| IO best-of-100 / CoT best-of-100 | 33% / 49% |
+- **Tree of Thoughts (ToT)**: thought をノード展開単位として、生成、評価、探索を組み合わせる LM inference framework。本文では IO、CoT、CoT-SC、self-refinement を limited depth and breadth の特殊例として見られると述べる。
+- **thought**: 問題解決へ向かう「coherent language sequence」。Game of 24 では 1 行の中間式、Creative Writing では writing plan、Crosswords では clue を埋める word。
+- **state**: $s=[x,z_{1\cdots i}]$。入力とここまでの thought 列からなる部分解。
+- **thought decomposition**: thought の粒度設計。LM が多様な候補を作れる程度に small で、かつ進捗を評価できる程度に big である必要がある。
+- **thought generator $G$**: 現在状態から次 thought 候補を作る機構。Sample と Propose がある。
+- **Sample**: CoT prompt から $k$ 個の thought を i.i.d. に生成する方式。本文では Creative Writing に使われる。
+- **Propose**: propose prompt で複数 thought を同じ文脈から列挙する方式。本文では Game of 24 と Crosswords に使われる。
+- **state evaluator $V$**: 状態の探索価値を推定する heuristic。LM 自身を value prompt または vote prompt で使う。
+- **Value**: 各状態を独立に score / class で評価する方式。Game of 24 の `sure/maybe/impossible` や Crosswords の clue feasibility が例。
+- **Vote**: 複数状態を比較し、最も有望な $s^*$ を選ぶ方式。Creative Writing の plan / passage 選択で使う。
+- **BFS**: breadth-first search。各 step で $b$ 個の promising states を保持する。Game of 24 と Creative Writing で使用。
+- **DFS**: depth-first search。有望な状態を深く探索し、評価が閾値以下なら prune して backtrack する。Mini Crosswords で使用。
+- **pruning**: evaluator が見込みなしと判断した subtree を探索しないこと。
+- **backtracking**: ある枝が失敗または終了したとき、親状態に戻って別候補を探索すること。
+- **oracle best state**: Crosswords の ablation で、heuristic が選んだ出力ではなく、探索中の最良状態を oracle 的に出力した場合。
 
-CoT が IO より悪い（4.0% < 7.3%）のは意外な発見。「途中式を書かせれば賢くなる」と思いがちだけど、最初を間違えると後戻りできないので逆効果になることもある、ということ。さらに、CoT で失敗した例の約 **60% は最初の 1 ステップ（最初の 3 単語）でもう詰んでいた**。これが「戻れる仕組みが必要」という ToT のいちばんの根拠。
+## 読む順番の提案
 
-### Creative Writing（4 つの文を末尾に持つ 4 段落の文章を作る、100 問）
-GPT-4 が 0〜10 で採点した一貫性スコア：
-- IO: 6.19
-- CoT: 6.93
-- **ToT: 7.56**
-
-著者陣の盲検（どっちが ToT か知らずに）比較では、100 ペア中 **ToT 勝ち 41 / CoT 勝ち 21 / 引き分け 38**。書き直し（refine）を入れると ToT は 7.91 までさらに上がる。
-
-### 5×5 Mini Crosswords（小さなクロスワード、GooBix の 156 ゲームから 20 問）
-| 方法 | 文字正解率 | 単語正解率 | ゲーム完全正解率 |
-|---|---|---|---|
-| IO | 38.7% | 14% | 0/20 |
-| CoT | 40.6% | 15.6% | 1/20 |
-| **ToT** | **78%** | **60%** | **20%（4/20）** |
-
-切り分け実験（ablation, 機能を 1 つずつ外して効果を測る実験）：
-- 「枝刈り」を外すと: 単語正解率 60% → 41.5%
-- 「バックトラック（戻る）」を外すと: 60% → 20%
-
-→ **戻れることが、特にクロスワードでは大事** だと数字で示している。
-
-### 著者が挙げる貢献（contribution）
-1. AI の推論を「**木の探索**」として一般化する枠組み（ToT）を提案
-2. 「思考生成（Sample / Propose）× 状態評価（Value / Vote）× 探索（BFS / DFS）」というモジュール式の組み合わせの提示
-3. GPT-4 でも難しい 3 つの新タスク（Game of 24、Creative Writing、5×5 Crosswords）と切り分け実験
-4. AI の「直感的応答（System 1）」を、古い AI 研究の「じっくり考える（System 2）」で補強する位置付け
-
-### コスト
-Game of 24 で ToT は 1 問あたり **\$0.74**（CoT を 100 回試す方法 \$0.47 と同じくらい）。Creative Writing では CoT の約 5 倍。タダではないけど、性能向上に対して妥当な範囲。
-
-## キーワード辞典
-
-- **LLM（Large Language Model, 大規模言語モデル）** … たくさんの文章で学習した、文章を続きから書くのが得意な AI。ChatGPT の中身。
-- **GPT-4** … OpenAI が 2023 年に出した強い LLM。この論文の実験で主に使われる。
-- **トークン（token）** … AI が文章を扱うときの最小単位。だいたい「単語の一部」や「短い単語」1 つ分。
-- **自己回帰（autoregressive）** … 1 トークンずつ、前のトークンを見ながら次を決めて書いていく仕組み。途中で戻れない。
-- **プロンプト（prompt）** … AI へのお願い文・指示文。
-- **IO prompting（Input-Output）** … 「問題 → 答え」を直接書かせる、いちばん素朴なやり方。
-- **CoT（Chain-of-Thought, 思考の鎖）** … 答えだけでなく **途中の考え方も書かせる** 工夫。1 本道で書く。
-- **CoT-SC（Self-Consistency, 自己一貫性）** … CoT を $k$ 回サンプリングして、一番多かった答えを採用する多数決方式。
-- **ToT（Tree of Thoughts, 思考の木）** … この論文の提案。思考を木にして枝分かれと戻りを許す。
-- **state（状態、ノード）** … 木の 1 つの節。「問題文 + ここまでの思考」のセット。
-- **thought（思考）** … 推論の 1 ステップ。問題に応じて「1 つの式」「1 単語」「1 段落」など粒度を選ぶ。
-- **decomposition（分解）** … 1 つの思考をどの単位で区切るかを決めること。
-- **thought generator $G$** … 次の一手の候補を作る部分。Sample 方式と Propose 方式がある。
-- **state evaluator $V$** … 候補を採点する部分。Value 方式と Vote 方式がある。
-- **BFS（Breadth-First Search, 幅優先探索）** … 各段で上位 $b$ 個だけ残しながら横並びに進む探索。
-- **DFS（Depth-First Search, 深さ優先探索）** … 1 本を深く掘り、ダメなら戻る探索。
-- **backtrack（バックトラック、戻る）** … 行き止まりのとき、親の分かれ道に戻って別の道を試すこと。
-- **pruning（枝刈り）** … 見込みのない枝を切り落とすこと。
-- **ablation（切り分け実験）** … 「この部品がないとどれくらい性能が落ちるか」を測る実験。
-- **System 1 / System 2** … 心理学者カーネマンの言葉。System 1 は「直感的・速い思考」、System 2 は「じっくり・遅い思考」。論文は AI を System 1 から System 2 に近づけたいと主張。
-- **オラクル（oracle）比較** … 「もし $k$ 個の答えの中に正解があれば成功」と緩く判定した上限性能。
-
-## ちょっと深掘り（中学生は飛ばして OK）
-
-- **「思考の粒度」の設計指針**: 論文では「small enough（小さく多様な候補が作れる）かつ big enough（評価ができる）」が目安。1 トークンずつでは評価できず、本 1 冊では生成できない、その中間を狙う。
-- **Sample vs Propose の使い分け**: 思考空間が広く自由（作文）なら Sample（多様性が大事）。思考空間が狭く制約強め（数式・単語）なら Propose（同じ文脈で違うものを並べて出させる方が重複を避けられる）。
-- **Value vs Vote の使い分け**: 各候補に絶対的なスコアを付けやすい（Game of 24 で「24 に近づきそう？」）なら Value。スコアが付けにくい（文章の一貫性）なら、候補を並べて Vote。
-- **BFS のアルゴリズム**: 初期状態から始め、各段で「思考生成 → 評価 → 上位 $b$ 個に枝刈り」を繰り返す。Game of 24 と Creative Writing で採用。
-- **DFS のアルゴリズム**: 最も有望な状態を深く掘る。$V(p_\theta, \{s\})(s) \le v_{th}$（評価が閾値以下）になったらその枝を捨てて親に戻る。クロスワードでは最大 100 ステップを予算とした。
-- **CoT が IO より悪くなる現象**: Game of 24 で CoT 4.0% < IO 7.3%。これは「途中式を書かせると、最初を間違えた瞬間に詰む確率も上がる」ため。エラー解析で約 60% の CoT 失敗は最初の 1 ステップで起きていた、というデータが裏付けている。
-- **生成と評価でモデルを使い分けるとコスト最適**: ablation で「生成 GPT-4 / 評価 GPT-3.5」だと 64%、「生成 GPT-3.5 / 評価 GPT-4」だと 31%。**生成の方が難しい仕事** で、評価は弱いモデルでもある程度こなせる。
-- **著者が認める限界**: (1) GPT-4 が既に CoT で解けるタスク（GSM8K では 86 → 90 で誤差レベル）には ToT は不要、(2) API コストが高い、(3) 試したタスクが 3 つしかない、(4) ToT 流の学習（fine-tuning）はまだ試されていない、(5) クロスワードで GPT-4 が知らない古い単語（例: ``agend''）を「impossible」と誤判定して枝刈りしてしまうケースがある。
-- **思想的源流**: Newell, Shaw, Simon（1959, 1972）の「問題解決は木の探索である」という古典 AI の考え方を、現代の LLM に持ち込んだ位置付け。
+- まず Abstract と Introduction を読み、token-level left-to-right decoding への問題意識と、Newell らの tree search に基づく位置づけを押さえる。正規ノートの Summary 冒頭に対応する。
+- 次に Background の IO / CoT / CoT-SC の定式化を読む。ここで $p_\theta$、$x,y,z,s$、language sequence、thought の使われ方を確認すると、正規ノートの「IO/CoT/CoT-SC/self-refine は ToT の特殊例」という整理が読みやすくなる。
+- その後、Section 3 `Tree of Thoughts` の 4 要素、Algorithm 1 ToT-BFS、Algorithm 2 ToT-DFS を読む。特に $s=[x,z_{1\cdots i}]$、$G(p_\theta,s,k)$、$V(p_\theta,S)$、BFS の $S_t$ 更新式を見る。
+- 実験は Table 1 で 3 タスクの thought 粒度を比べてから、Game of 24、Creative Writing、Mini Crosswords の順に読む。Table 2、Figure 3、Figure 5 (`fig:write_results`)、Table 3 が主要な数値の根拠で、正規ノートの Results / Critical Thoughts と対応する。
+- 最後に Discussion と Appendix `Additional Experiment Results` / `Cost and efficiency` を読む。限界、GPT-3.5 結果、GSM8K / StrategyQA、コスト表が、正規ノートの limitations と cost の記述につながる。
 
 ## もとの論文・正規ノート
 
 - 論文 TeX: `papers/arXiv-2305.10601v2/`
 - 正規ノート: `notes/arXiv-2305.10601v2.md`
-- GitHub: https://github.com/princeton-nlp/tree-of-thought-llm

@@ -1,4 +1,4 @@
-# Snakes and Ladders: a Treewidth Story（ヘビとはしご：木幅をめぐる物語）
+# Snakes and Ladders: a Treewidth Story（長い ladder を短くしても treewidth を保つ tight な簡約定数を与えるグラフ理論論文）
 
 - arXiv: https://arxiv.org/abs/2302.10662
 - 一次ソース: ../papers/arXiv-2302.10662v2/
@@ -8,147 +8,179 @@
 
 ## 一言で言うと
 
-グラフの中にある「はしご」状の部品は、長さを 4 にまで短くしてしまっても、グラフの“ややこしさの度合い”は変わらないと数学的に証明した論文。
+グラフ $G$ に含まれる ladder、すなわち $2 \times (k+1)$ grid graph が 4 つの cornerpoints だけで外部と接続する誘導部分グラフ、を長さ 4 まで短くしても treewidth は変わらないことを示す論文である。さらにこの定数 4 は一般グラフでは tight であり、display graph では common chain を 4 leaf labels まで縮めても treewidth を保つことを示して、phylogenetics の未解決問題に答える。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- そもそも「グラフ」というのは、**点（丸）** をいくつか描いて、その間を **線（辺）** でつないだ図のこと。SNS の友達関係を、人を丸・友達同士を線でつないだ図にしたものを思い浮かべればよい。
-- このグラフには「**ややこしさの度合い**（専門用語では **treewidth／木幅**）」という数字がついている。数字が小さいグラフほど、コンピュータで扱いやすく、たとえば「最短の道を探す」「ぴったりはまる組み合わせを探す」みたいな難しい問題が速く解けるようになる。木幅は、**そのグラフをどれだけうまく“木の形”（枝分かれの形）に整理できるか** を測る指標。
-- 生物学では、**系統樹**（生き物の進化のつながりを描いた家系図みたいなもの）を 2 つ並べて「この 2 つの進化の予想図はどれくらい食い違っているか？」を計算したい。この計算には、2 つの系統樹を合体させた「**display graph（ディスプレイグラフ）**」というグラフの木幅を測る、という方法がよく使われる。
-- 系統樹を比較するとき、**「両方の系統樹にまったく同じ順番で並んでいる種のリスト」**（共通チェイン）はくり返し出てきて邪魔。これを短く縮めて計算を速くしたい。
-- 困りごと: 「この共通チェインを短く縮めても、display graph の木幅は変わらないのか？」「どこまで短くしてセーフなのか？」が 2017 年から **未解決問題** として残っていた。
-- これまでのやり方の足りなかった点:
-  - 「ある定数までは短くしてもセーフ」という大ざっぱな結果はあったが、その定数が **木幅 $k$ に依存する関数 $f(k)$** で、$k$ が大きいとめちゃくちゃ大きい数になってしまっていた。
-  - 「**$k$ がいくつであろうと、長さ 4 まで縮めれば必ずセーフ**」のようなシンプルで小さな普遍定数があるかどうかは、誰も決着をつけていなかった。
+- **問題設定**: 長い ladder を短くする、または短い ladder を長くしても、グラフの treewidth $tw(G)$ が保存される条件を調べる。TeX の abstract は ladder を "$2 \times (k+1)$ grid graph" で、かつ "only connected to the rest of $G$ via its four cornerpoints" と定義している。
+- **対象範囲 / 仮定**: 主結果は任意の連結な無向グラフ $G$ を対象にする。display graph への応用では、同じ taxa 集合 $X$ 上の 2 本の unrooted binary phylogenetic trees $T_1,T_2$ を考え、$|X|\geq 4$ かつ $T_1 \neq T_2$ を仮定する。
+- **既存研究との差分**: Kelk et al. の Theorem `thm:unbounded` は、$tw(G)=k$ に依存する値 $f(k)$ 以上の ladder なら任意に長くしても treewidth が変わらないことを与えていた。本論文は、$k$ に依存しない普遍定数 4 を与え、さらに tightness を示す。
+- **この論文で答えたい問い**: 一般グラフでは ladder をどこまで短くしても treewidth を保てるか。phylogenetics では、common chain reduction rule が display graph の treewidth を保存する定数長を持つか。
 
-## どうやって解いたの？
+## 背景と前提
+
+- **tree decomposition / treewidth**: グラフの頂点を bag に入れ、その bag を木 $\mathbb{T}$ 上に配置する表現である。各頂点を含む bag は $\mathbb{T}$ 上で連結に現れなければならず、これを running intersection property と呼ぶ。最大 bag サイズから 1 を引いた幅を最小化した値が $tw(G)$ である。
+- **minor と treewidth**: TeX では、ladder of length $k$ は ladder of length $(k+1)$ の minor であり、treewidth は minor を取る操作で増えない、と述べている。したがって ladder を短くする操作だけなら treewidth は増えない。難しいのは「短くしても treewidth が下がらない」ことを、逆向きに ladder を長くする tree decomposition の構成で示す部分である。
+- **disconnecting ladder**: ladder 内の square $\{u,v,w,x\}$ の水平辺 $\{u,w\}$ と $\{v,x\}$ がグラフ全体の edge cut になる場合を disconnecting と呼ぶ。Lemma `lem:disconnecting` により、この場合は ladder を任意に長くしても treewidth は増えない。
+- **display graph と common chain**: 2 本の phylogenetic trees $T_1,T_2$ で同じ leaf label を同一視したグラフが $D(T_1,T_2)$ である。common chain は、両方の木で同じ順序に現れる leaf labels の列で、display graph では ladder-like structure を作る。chain の $k$ leaves は display graph 内で $k-1$ squares の ladder を誘導する。
+- **先行研究や baseline との関係**: subtree reduction は Kelk et al. により display graph の treewidth-preserving と知られていた。一方、common chain reduction が treewidth-preserving かは未解決だった。protrusion や finite integer index に基づく一般理論は「ある定数」を示す可能性はあるが、本論文の tight bounds には届きにくい、という位置づけである。
+
+## 提案手法
 
 ### コアアイデア
 
-グラフの中の **「はしご」**（公園にある縄ばしごみたいに、2 本のたて棒の間に何本もの横棒が並んだ部品）に注目する。普通の道（1 本道）なら「短く縮めても木幅は変わらない」というのは昔から知られていた。しかし、はしごのように **少しだけ構造が複雑な部品** についても同じことが言えるかは、ちゃんと整理されていなかった。
+著者は treewidth の forbidden minor 的な特徴づけに頼らず、minimum-width tree decomposition $(\mathcal{B},\mathbb{T})$ を直接変形する。基本方針は、長さ 3 または 4 の局所的な ladder を見て、そこに新しい rung $\{u',v'\}$ を挿入しても bag の最大サイズを増やさない tree decomposition を作ることである。これを繰り返せば、ladder を任意の長さまで伸ばせる。短縮後のグラフは長いグラフの minor なので、伸長で treewidth が増えないことが短縮で treewidth が下がらないことを保証する。
 
-著者たちは「**木の形に整理した分け方（tree decomposition）**」というはしごをどう内包しているかを、長い場合分けでひとつずつ追いかける。途中、はしごの 1 個の点が「分け方の木の上を、まるで **ヘビ（snake）** がうねうね通るように散らばってしまう」というやっかいな現象が起きる。そのヘビを “巻き取る（reeling in）” という手作業のような操作で 1 匹ずつおとなしくさせて、最終的に「**はしごを長くしても木幅は増えない（＝はしごを短くしても木幅は減らない）**」と結論する。タイトル『Snakes and Ladders（ヘビとはしご）』はここから来ている。
+証明の中心は Theorem `thm:main` の case analysis である。Case 1 は 1 つの square の 4 頂点を含む bag がある場合、Case 2 は上側列 $\{a,u,w,c\}$ と下側列 $\{b,v,x,d\}$ から 2 頂点ずつ含む bag がある場合を処理する。残りでは、$\{u,w,v\}$ を含む bag $B_1$ と $\{v,w,x\}$ を含む bag $B_2$ を、minimum-width tree decomposition の中で距離が最小になるように選ぶ。ある ladder vertex を含む bag 集合が tree decomposition 上を複雑に伸びる現象を著者は "snakes" と呼び、`reeling in $a$ and $b$` という relabel と bag 挿入の操作で制御する。
 
-身近な例えで言うと:
-- 大きな本棚を引っ越し業者が運ぶときに、棚板を最低 4 段だけ残せば棚の強度（＝木幅）は保てる、それ以下に削ると棚がぐらつく（＝木幅が落ちる）、ということを数学的に証明した感じ。
-- 棚板を運ぶ最中に、ロープがあちこちで絡まってヘビみたいにうねる。それを 1 本ずつ巻き取って整える作業が、証明のいちばん大変な部分。
+### 重要な定義・数式
 
-### 仕組み
+TeX 中に機械学習論文のような目的関数や更新式はない。中核になるのは、tree decomposition の定義、width/treewidth の定義、ladder の定義、tightness 用の構成である。
 
-- **step 1**: グラフ $G$ と、その中にある長さ $k$ のはしご $L$（$2 \times (k+1)$ の格子状の部品。点 6 個＋横棒 7 本くらいで「3 段はしご」になる）を考える。$L$ は **4 つの角の点だけ** で外側のグラフとつながっていて、それ以外の点は外と縁が切れている、という条件付き。
-- **step 2**: $G$ にとっていちばん幅が小さい「木の形の分け方」$(\mathcal{B}, \mathbb{T})$ を取ってくる。これは、グラフの点をいくつかの **「袋（bag）」** に重複ありで詰めて、その袋たちを **木の形** に並べたもの。
-  - ルール (tw1): どの点も最低 1 個の袋に入っている。
-  - ルール (tw2): どの線（辺）も、両端の点を一緒に含む袋がどこかにある。
-  - ルール (tw3): ある点を含む袋は、木の上で 1 つの **つながった部分** にまとまっている（バラバラの場所に飛び散らない）。
-  - 「いちばん大きな袋に入っている点の数 − 1」がこの分け方の **幅**。これの最小値が **木幅** $tw(G)$。
-- **step 3**: 「はしごを 1 段だけ伸ばしても、いちばん大きな袋のサイズは増えない」ことを示せばよい（あとはこれをくり返せば何段でも伸ばせる）。
-- **step 4**: ここからが本論。袋のどこに、はしごの 4 点が入っているかで 4 通りに **場合分け** する。
-  - **Case 1**: ある袋に、はしごの 1 マス（正方形）の 4 点すべてが入っている → 新しい袋を 2 つ足すだけで OK。
-  - **Case 2**: ある袋に、はしごの上側から 2 点・下側から 2 点が入っている → そこを「ぎゅっと縮めた」グラフでまず分け方を作り、それを元に戻す。
-  - **Case 3**: 上 3 点を含む袋 $B_1$ と、下 3 点を含む袋 $B_2$ が **木の上で隣り合っている** → 「ヘビ巻き取り（reeling in）」操作で点を整理して終わる。
-  - **Case 4**: $B_1$ と $B_2$ の **間に他の袋がある** → いちばんやっかい。途中の袋に、はしごの点 $v, w$ が走り続けている（これがヘビ）。それを慎重にラベル付け直して整理し、「もし $B_1$ と $B_2$ の距離をいちばん短く取ったのに、それより短くできてしまう」という矛盾を導いて場合を潰す。
-- **step 5**: 木幅が 3 ぴったりのときは Case 1, 2 が使えない場合がある。そこを別補題で塞ぐ。最終的に「**長さ 4 以上のはしご**」なら、木幅がいくつであっても伸ばし放題、と結論。
-- **step 6**: 「長さ 3 ではダメ」（＝定数 4 が **これ以上小さくできない**）ことも、反例グラフ（Fig. `fig:prism`、五角柱っぽい形）と、もっと一般的な **bramble**（茂み）という道具を使った下界証明で示す。
+$$
+\begin{aligned}
+&\cup_{i=1}^q B_i = V(G),\\
+&\forall e = \{ u,v \} \in E(G), \exists B_i \in \mathcal{B} \mbox{ s.t. } \{u,v\} \subseteq B_i,\\
+&\forall v \in V(G), \text{ all the bags } B_i \text{ that contain } v \text{ form a connected subtree of } \mathbb{T}.
+\end{aligned}
+$$
 
-### 主要な数式
+**式の意味**: tree decomposition の 3 条件 (tw1), (tw2), (tw3) である。全頂点が bag に現れ、全辺がどこかの bag で覆われ、同じ頂点を含む bag は木 $\mathbb{T}$ 上で連結にまとまる必要がある。
 
-この論文には機械学習的なモデル式は出てこないが、**木幅の定義** だけは中核なので、ここを丁寧に押さえる。
+**記号の定義**:
+- $G=(V,E)$ ... 対象の無向グラフ
+- $\mathcal{B}=\{B_1,\dots,B_q\}$ ... bag の multiset
+- $\mathbb{T}$ ... bag と一対一対応する node を持つ木
+- $B_i$ ... $V(G)$ の部分集合である bag
 
-#### 数式1: 分け方の幅
+**この論文での役割**: ladder を長くした後も、これら 3 条件を満たす tree decomposition を構成できるかが証明の本体である。特に (tw3) が、$B_1$ と $B_2$ の間の path $P$ や snakes の議論を支える。
 
-$$ \text{width}(\mathcal{B}, \mathbb{T}) \;=\; \max_{i=1,\ldots,q}\, |B_i| - 1 $$
+$$
+\operatorname{width}(\mathcal{B}, \mathbb{T}) = \max_{i=1}^q |B_i|-1,\qquad
+tw(G)=\min_{(\mathcal{B},\mathbb{T})}\operatorname{width}(\mathcal{B}, \mathbb{T}).
+$$
 
-**この式が言ってること**: グラフを「袋」に詰めて木の形に並べた分け方 $(\mathcal{B}, \mathbb{T})$ について、**いちばん大きな袋に入っている点の数から 1 を引いた値** が、この分け方の「幅」だよ。袋がデカいほど幅が大きい＝この分け方はざつ、という気持ち。
+**式の意味**: ある tree decomposition の幅は最大 bag サイズから 1 を引いた値であり、treewidth は全 tree decompositions の中でその幅を最小化した値である。TeX では width を $\max_{i=1}^q |B_i|-1$ と定義し、treewidth を "the smallest width among all tree decompositions" と述べている。
 
-**記号の意味**:
-- $\mathcal{B} = \{B_1, B_2, \ldots, B_q\}$ … 袋ぜんぶのリスト。$B_i$ は 1 個 1 個の袋（点の集まり）。
-- $\mathbb{T}$ … 袋たちをノードとする木（枝分かれする図）。
-- $|B_i|$ … 袋 $B_i$ の中に入っている点の個数。
-- $\max$ … 「いちばん大きいものを選ぶ」という記号。テストの最高点を選ぶようなイメージ。
-- $-1$ … 慣習で 1 引く（こうしておくと、木そのものは木幅 1、点が 1 つだけなら木幅 0、というキレイな数字になる）。
+**記号の定義**:
+- $\operatorname{width}(\mathcal{B}, \mathbb{T})$ ... decomposition の幅
+- $|B_i|$ ... bag $B_i$ の頂点数
+- $tw(G)$ ... グラフ $G$ の treewidth
 
-**身近な例え**: クラス 30 人を **何人かずつのグループに分けて、グループを木の形（友達ネットワーク）で並べる** ようなもの。「1 つのグループにいちばん多く詰まったときの人数 − 1」がその分け方の幅。人数が少ない＝分け方が細かくてキレイ、人数が多い＝ざっくりひとまとめにしてしまっている、と思えばよい。
+**この論文での役割**: Case 1, Case 2 では size-5 bag を導入するため、$tw(G)\geq 4$ なら幅を増やさずに済む。一方、$tw(G)=3$ では size-5 bag が使えない可能性があり、Lemma `lem:main2` と Theorem `thm:main3` の追加議論が必要になる。
 
-#### 数式2: 木幅
+$$
+L \text{ is a } 2\times(k+1) \text{ grid graph},\qquad
+G[V(L)] = L,\qquad
+\text{only cornerpoints of } L \text{ can be incident to an edge with an endpoint outside } L.
+$$
 
-$$ tw(G) \;=\; \min_{(\mathcal{B}, \mathbb{T})} \text{width}(\mathcal{B}, \mathbb{T}) $$
+**式の意味**: TeX の ladder 定義を記法で整理したものである。ladder $L$ は $2\times(k+1)$ grid graph で、$G$ の中で誘導部分グラフとして現れ、外部と接続できるのは degree-2 vertices である 4 つの cornerpoints だけである。
 
-**この式が言ってること**: グラフ $G$ の **木幅** とは、$G$ を袋に詰めて木に並べる **すべてのやり方** のなかで、上の「幅」がいちばん小さくなるときの値。つまり「いちばん上手に整理したときの、最大袋サイズ − 1」。
+**記号の定義**:
+- $L$ ... length $k$ の ladder
+- $G[V(L)]$ ... $L$ の頂点集合が $G$ で誘導する部分グラフ
+- cornerpoints ... ladder の endpoints、すなわち degree-2 vertices
 
-**記号の意味**:
-- $tw(G)$ … グラフ $G$ の木幅（treewidth）。$G$ の「整理のしやすさ」を表す 1 つの数。
-- $\min$ … 「いちばん小さいものを選ぶ」記号。
-- $(\mathcal{B}, \mathbb{T})$ … 上で説明した「袋と木」の分け方。あらゆる候補を全部試すイメージ。
+**この論文での役割**: この境界条件により、ladder 内部の頂点の incident edges を局所的に把握できる。Case analysis では、例えば $u,w,v,x$ などの ladder vertices がどの bag に現れるべきかをこの定義に基づいて制約する。
 
-**身近な例え**: 部屋の片付け方コンテスト。**「いちばん物が多く詰まった引き出しの中身の個数」** で勝負する。何通りも片付け方を試して、いちばんバランス良く分けたときの最大引き出しサイズが「木幅」。木幅が小さい部屋＝整理しやすい部屋。
+$$
+\begin{aligned}
+E_{\text{ladder}}=
+\{&\{1,2\}, \{2,3\}, \{4,5\}, \{5,6\},\\
+&\{1,4\}, \{2,5\}, \{3,6\}\}.
+\end{aligned}
+$$
 
-#### 数式3: 本論文のメイン主張（Theorem `thm:main3`）
+**式の意味**: Lemma `lem:alwaystight` で構成する $G_2(t)$ の length 2 ladder 部分の辺集合である。TeX では vertices $1,2,3,4,5,6$ を導入し、この 7 本の辺で ladder of length 2 を作る。
 
-論文の中心結果はことばで書くと:
+**記号の定義**:
+- $G_2(t)$ ... treewidth exactly $t$ を持つ tightness 用グラフ
+- $t$ ... $t\geq 3$ の整数
+- $E_{\text{ladder}}$ ... $G_2(t)$ 内の ladder 部分の辺集合
 
-$$ \text{「$G$ にあるはしご $L$ の長さ $\geq 4$」} \;\Longrightarrow\; tw(G \text{ で $L$ を任意の長さに伸ばしたもの}) \;=\; tw(G) $$
+**この論文での役割**: この ladder に $(t-1)$ 頂点の clique $7,8,\ldots,7+t-2$ を接続し、長さ 2 から 3 に伸ばすと treewidth が $t$ から $t+1$ に上がる例を作る。したがって、treewidth が大きければ length 2 まで縮められる、という期待を否定する。
 
-**この式が言ってること**: もしグラフ $G$ の中に「4 段以上のはしご」が入っているなら、そのはしごを **どれだけ長く伸ばしても**（あるいは長さ 4 まで短くしても）、グラフの木幅 $tw(G)$ は **まったく変わらない** よ。
+$$
+\begin{array}{ll}
+\text{bag 1:} & \{1,3,7\} \cup C\\
+\text{bag 2:} & \{1,3,5\} \cup C\\
+\text{bag 3:} & \{1,4,5\} \cup C\\
+\text{bag 4:} & \{3,5,6\} \cup C\\
+\text{bag 5:} & \{1,2,3,5\}
+\end{array}
+\qquad
+C=\{8,\ldots,7+t-2\}.
+$$
 
-**記号の意味**:
-- $G$ … 元のグラフ。
-- $L$ … その中にある「はしご」と呼ばれる部品（$2\times(k+1)$ の格子状で、外と 4 つの角でのみつながっている）。
-- 「長さ $\geq 4$」 … はしごのマス（正方形）の数が 4 個以上、ということ。
-- $\Longrightarrow$ … 「ならば」「だから」を表す矢印。左が正しいなら右も正しい、の意味。
-- $tw(\cdot)$ … 木幅（さっき定義した数字）。
+**式の意味**: Lemma `lem:alwaystight` で $G_2(t)$ の treewidth が高々 $t$ であることを示す 5 bag の tree decomposition である。TeX では bag 2 を bag 1 に接続し、bag 3, 4, 5 を bag 2 に接続する。各 bag は高々 $t+1$ 頂点を持つ。
 
-**身近な例え**: たとえば縄ばしごを 4 段以上使った遊具を考える。**「4 段以上あれば、何段に伸ばしても遊具の安定感は変わらない」** と保証してくれる定理。逆に 3 段以下に削ると、安定感が落ちる（＝木幅が下がる）ことがある、という “境目” が **4** であることまで示している。
+**記号の定義**:
+- $C$ ... clique vertices のうち vertex $7$ を除いた集合
+- bag 1--5 ... $G_2(t)$ の tree decomposition に使う bag
+- $t+1$ ... bag サイズの上限で、width は高々 $t$
 
-## 何がすごいの？
+**この論文での役割**: 上界側の構成である。下界側は、$G_3(t)$ に対して $|C|+5$ 個の connected subgraphs からなる bramble を作り、minimum hitting set が $t+2$ elements であることから Seymour and Thomas の結果により $tw(G_3(t))\geq t+1$ を得る。
 
-- **未解決問題の解決**: Kelk らが 2017 年（[kelk2017treewidth]）に投げかけた「common chain reduction（共通チェインを定数長に縮める操作）は display graph の木幅を保つか？」という問題に、**「保つ」** と決着をつけた。
-- **最良の定数を確定**: 「長さ 4 まで縮めれば必ずセーフ、3 ではダメ」というタイトな数値が出ている（Theorem `thm:main3`）。木幅が高い場合（$tw(G) \geq 4$）はもう少し攻めて「長さ 3 まで OK」と言える（Theorem `thm:main`）。display graph 限定なら common chain を **4 個の葉ラベル**（はしご長さ 3）まで縮めて OK（Theorem `thm:preserve2`）。
-- **タイト性（これ以上良くできないこと）の証明**:
-  - 図 `fig:prism`（五角柱っぽい形のグラフ）で、木幅 3・長さ 3 のはしごを 1 段伸ばすと木幅が 4 に上がる、という反例を提示。
-  - Lemma `lem:alwaystight` で「**どんなに大きい木幅 $t \geq 3$ でも、長さ 2 から始めるとダメな例が必ず作れる**」ことを構成的に示した。これは、6 点の小さなはしごと $(t-1)$ 個の点からなる **クリーク**（互いに全員つながっている塊）$C$ を組み合わせた $G_2(t)$。
-- **アルゴリズム的にも強い**: 証明が「分け方を直接書き換える」やり方なので、Discussion で「**多項式時間で新しい分け方を作れる**」と主張できる。既存の「禁止マイナーがどうのこうの」型の存在証明より、コンピュータに乗せやすい。
-- **副産物**:
-  - 木幅を計算する際の **新しい安全な簡約ルール**（Abu-Khzam ら 2022 のサーベイ [Abu-Khzam2022] に追加できる）。
-  - 「**有限の木幅のグラフの最小禁止マイナーには、長いはしごは含まれない**」という系。これは、グラフ理論の他の問題への波及効果がある。
-- **正直さ**: Author's note 2 で「**Theorem `thm:main3` は実は別の研究グループが先に [almob2023]（WABI 2022）で別の方法で証明していた**」と明記。本論文の独自貢献は、(a) $tw \geq 4$ への少しの強化（Theorem `thm:main`）、(b) display graph 版（Theorem `thm:preserve2`）、(c) 全木幅でのタイト性（Lemma `lem:alwaystight`）に限られる、と棲み分けを書いている。
+### 実装 / アルゴリズム上の要点
 
-## キーワード辞典
+- step1: ladder が disconnecting なら Lemma `lem:disconnecting` を使い、その ladder は任意に長くしても treewidth が増えないとする。
+- step2: disconnecting でない length 2 以上の ladder では Observation `obs:k4` により $K_4$ minor を得て、$tw(G)\geq 3$ を確認する。
+- step3: Theorem `thm:main` では $tw(G)\geq 4$ を仮定し、長さ 3 の ladder に rung を 1 本挿入する tree decomposition を構成する。Case 1 と Case 2 は size-5 bag を許容できるため処理しやすい。
+- step4: Case 3 と Case 4 では、$\{u,w,v\}\subseteq B_1$ と $\{v,w,x\}\subseteq B_2$ を満たす bag の距離を最小化し、path $P$ と running intersection property を使って不可能な配置を排除する。必要に応じて `reeling in $a$ and $b$` で relabel し、新しい path of bags を挿入する。
+- step5: $tw(G)=3$ で size-5 bag が使えない問題は、Lemma `lem:main2` では両側に buffer square がある長さ 5 ladder、Theorem `thm:main3` では biconnected component と degree-2 cornerpoint の Lemma `lem:pointed` を使って処理する。
+- step6: display graph では、common chain が誘導する ladder の周辺構造を利用する。Theorem `thm:preserve2` では、Fig. `fig:buffercycle` の yellow-highlighted cycle が一般グラフの buffer square と同じ separator-blocking effect を持つため、common chain を 4 leaf labels まで縮められる。
 
-- **グラフ** … 点と、点をつなぐ線（辺）でできた図。SNS の友達関係や、駅と路線の図がイメージしやすい。
-- **木（tree）** … 枝分かれするだけで、ぐるりと一周する道（ループ）がないグラフ。家系図みたいな形。
-- **treewidth／木幅** … グラフを「木の形に整理した分け方」のなかで、いちばん大きな袋に入っている点の数から 1 を引いた値の最小値。グラフの “扱いやすさ” の指標。
-- **tree decomposition／木分解** … グラフの点を **袋（bag）** に重複ありで詰めて、その袋を木の形に並べた構造。3 つのルール (tw1)(tw2)(tw3) を満たす必要がある。
-- **bag／袋** … 木分解の各ノードに入っている、グラフの点の集まり。
-- **running intersection property** … 「ある点を含む袋たちは、木の上で 1 つにつながっている」というルール。袋を木の上で点ごとに見たときに、バラバラに飛び散っていてはダメ、ということ。
-- **ladder／はしご** … $2 \times (k+1)$ の格子状の部品。縄ばしごみたいな形。4 つの **角の点（cornerpoint）** だけで外側のグラフとつながっている、という条件付き。
-- **square／マス** … はしごの 1 個分の正方形（4 つの点・4 本の辺）。
-- **length（はしごの長さ）** … はしごに含まれる正方形（マス）の数。
-- **disconnecting ladder** … はしごの中央付近で横棒 2 本を切ると、グラフが 2 つにバラバラに割れてしまうようなはしご。
-- **minor／マイナー** … グラフから「点や辺を消す」「辺の両端をギュッと 1 点にまとめる」操作で作れる小さなグラフ。
-- **chordal graph／弦グラフ** … どの長さ 4 以上のループにも「近道」となる辺（弦）が入っているグラフ。木幅と密接に関係する。
-- **clique／クリーク** … 全員が互いにつながっている点の塊。$t$ 人クリークは木幅 $t-1$。
-- **separator** … 取り除くとグラフが 2 つ以上にバラバラに分かれる点の集まり。
-- **bramble（茂み）** … 木幅の **下界**（最低どれくらいあるか）を示すための道具。互いに触れ合っている点集合のグループを集めたもの。Seymour–Thomas の定理で「最小のヒッティングセットのサイズ −1 ≤ 木幅」が言える。
-- **phylogenetic tree／系統樹** … 生き物の進化の道筋を、葉に現代の種を並べた二分木として描いたもの。
-- **leaf label** … 系統樹の葉につけた、種の名前（ラベル）。
-- **display graph** … 2 本の系統樹を、同じラベルの葉どうしを 1 点にまとめて重ねたグラフ。
-- **common chain** … 2 本の系統樹に **同じ順番で並んでいる種のリスト**。display graph の中ではしご状の構造になる。
-- **common chain reduction rule** … 共通チェインを定数長に縮めて系統樹比較を速くする操作。Allen & Steel 2001 が原典。
-- **subtree reduction rule** … 2 本の系統樹に **共通する部分木** を 1 枚の葉に縮める操作。これは以前から「木幅を保つ」とわかっていた。
-- **forbidden minor／禁止マイナー** … 「このグラフをマイナーとして含んでいたら、もう木幅 ≤ $k$ にはできない」という、いわば NG パターン。$K_4$（4 点完全グラフ）は木幅 2 以下の禁止マイナー。
-- **snakes（ヘビ）** … 著者たちの命名。木分解の中で、ある点を含む袋たちが木の上をうねうね通っている状態を指す比喩。タイトルの由来。
-- **reeling in（巻き取り）** … ヘビ状にうねった点のラベルを、両端の方から書き換えて短くする操作。
-- **biconnected** … 1 点だけ取り除いてもまだバラバラにならない、つながりが二重に確保されたグラフ。
+## 実験・結果
 
-## ちょっと深掘り（中学生は飛ばして OK）
+- **データセット / ベンチマーク**: TeX 中に empirical dataset や benchmark はない。論文はグラフ理論の定理証明と構成例に基づく。
+- **比較対象 / baseline**: 経験的 baseline ではないが、主な比較対象は Kelk et al. の Lemma `lem:disconnecting`, Lemma `lem:protoplusone`, Theorem `thm:unbounded`、および Author's note 2 で言及される Marchand et al. の `almob2023` / `wabi2022` の Theorem 2 である。
+- **指標**: 評価される量は treewidth $tw(G)$、tree decomposition の width、ladder length、display graph の treewidth である。tightness では bramble の minimum hitting set size も使う。
+- **主な結果**: Theorem `thm:main` は、$tw(G)\geq 4$ かつ ladder length が 3 以上なら ladder を任意に長くしても treewidth が変わらないことを示す。Lemma `lem:main2` は任意の treewidth で ladder length 5 以上なら同じ結論を示す。Theorem `thm:main3` は任意の treewidth で ladder length 4 以上なら同じ結論を示す。
+- **主な結果**: Fig. `fig:prism` は、treewidth 3 のグラフで 3 squares の ladder を 1 square 伸ばすと treewidth が 4 に上がる例を与える。したがって Theorem `thm:main3` の定数 4 は一般グラフでは tight である。
+- **主な結果**: Lemma `lem:alwaystight` は、任意の $t\geq 3$ に対して、length 2 ladder を含み treewidth exactly $t$ の $G_2(t)$ が存在し、その ladder を 1 つ伸ばして $G_3(t)$ にすると treewidth が exactly $t+1$ になることを示す。
+- **主な結果**: Lemma `lem:preserve1` は、subtree reduction と common chain reduction を common chains が 5 leaf labels になるまで適用しても display graph の treewidth が変わらないことを示す。Theorem `thm:preserve2` はこれを 4 leaf labels まで強め、Fig. `fig:chains` により 3 leaf labels への truncation は treewidth-preserving とは限らない、つまり 4 leaf labels が best possible であることを示す。
+- **著者が主張する貢献**: Abstract と Introduction によれば、長い ladder は treewidth 計算時に短縮でき、bounded treewidth graphs の minimal forbidden minors は long ladders を含めない。phylogenetics では common chain reduction rule が display graph の treewidth-preserving であることを示す。Author's note 2 では、Theorem `thm:main3` は `almob2023` で別技法により既に証明されていたとし、Theorem `thm:main` は $tw(G)\geq 4$ の場合の "very mild strengthening"、Theorem `thm:preserve2` は display graphs への strengthening、Lemma `lem:alwaystight` は本論文独自の tightness result と位置づけている。
 
-- **なぜ「長さ 4」が運命の境目なのか？** 木幅 $\geq 4$ の場合は「長さ 3」までいける（Theorem `thm:main`）。ところが木幅 = 3 ぴったりだと Case 1, 2 で作る「5 個入りの袋」が幅を 4 に押し上げてしまい、矛盾になる。だから木幅 3 のときは長さ 3 までは攻められず、長さ 4 が安全圏になる。**「ボトルネックは木幅 3」** で、ここに合わせると 4 になる、という構造。
-- **`reeling in` のもう少し正確な意味（Subcase 3.2）**: $B_1$ から左へ向かって「点 $u$ を含む袋たち」と「点 $v$ を含む袋たち」がそれぞれ枝分かれせずに伸びている。両方の枝は最初 $B_1$ の隣 $B'$ で必ず合流していて、$B'$ には $\{a, b\}$ が同居している。そこで「$u$ のラベルを $a$ に」「$v$ のラベルを $b$ に」書き換えながら $B_1$ を 5 個コピーして並べ、$\{a, u', b\}, \{u', b, v'\}, \{u', u, v'\}, \{v', u, v\}, \{u, w, v\}$ という 5 つの新しい袋に置き換えると、はしごが 1 段伸びた状態に対応する **同じ幅** の正しい木分解になる。
-- **distance-minimizing decomposition**: 上 3 点を含む袋と下 3 点を含む袋が木の上でいちばん近くなるような分け方をあらかじめ選んでおく。Case 4 では、その「最短距離」が **これ以上短くなったら矛盾** という形で議論を進める。「すでに最短のはずなのに、もっと短い分け方ができてしまった」と示して場合を潰す、という典型的な数学的論法。
-- **`lem:alwaystight` の構成**: 6 個の点 1〜6 で長さ 2 のはしごを作り、別途 $(t-1)$ 個のクリーク $\{7, 8, \ldots, 7+t-2\}$ を用意。点 1, 3 をクリーク全部に、点 4, 6 をクリーク（7 を除く）に接続。これで木幅ちょうど $t$。はしごを長さ 3 に伸ばすと **bramble の最小ヒッティングセットが $t+2$ になる** → 木幅 $\geq t+1$ に上がってしまう、という反例になる。
-- **display graph で 1 段だけお得な理由**: 系統樹由来の display graph は **biconnected**（二重連結）で、はしごの両端付近にも `buffer` の役割をするサイクル構造が現れる（Fig. `fig:buffercycle`）。これが余分な手がかりになるため、長さ 5 → 4 まで詰められる。一般のグラフではこの buffer がはしごの片側にしかないので、長さ 4 までしか詰められない。
-- **Discussion での示唆**: 「各マスに **高々 1 本の対角線（chord）** を持つはしご」にも、ほぼ同じ証明技術が通る、と書かれている。さらに 3 本以上の系統樹から作る display graph や、他の「低 pathwidth 再帰構造」への一般化、$O(n^4)$ より速いはしご検出アルゴリズムは **オープン問題** として残っている。
-- **「証明テクの広がりへの期待」**: Kelk 2017 の subtree reduction が木幅を保つことの別証明や、protrusion 系の一般機械（[BodlaenderFLPST16]）では届かない **タイトな定数** を、distance-minimizing decomposition というアイデアでもぎ取れる、というのが研究の収穫。
+## 妥当性と限界
+
+- **この主張を支える根拠**: 一般グラフの上界は、minimum-width tree decomposition を直接変形し、ladder を 1 square 伸ばしても width が増えないことを case analysis で示す。短縮方向の treewidth 不変性は、短い ladder が長い ladder の minor であることと、逆向きの伸長で treewidth が増えないことを合わせて得る。
+- **この主張を支える根拠**: tightness は、Fig. `fig:prism` の具体例と、Lemma `lem:alwaystight` の $G_2(t),G_3(t)$ 構成で示す。後者では、$G_2(t)$ の 5 bag decomposition による上界と、$G_3(t)$ の bramble による下界を組み合わせる。
+- **この主張を支える根拠**: display graph 版は、common chain が ladder を誘導すること、$T_1\neq T_2$ なら display graph が $K_4$ minor を含み treewidth at least 3 になること、chain 周辺の restricted structure が buffer cycle を与えることを使う。
+- **著者が認めている limitations / future work**: Discussion では、証明は constructive にできるが、distance-minimizing tree decomposition の仮定は proof restart により処理する必要があると述べる。また、各 square に高々 1 chord を持つ ladder には手法が適用できると示唆するが、より複雑な recursive low-pathwidth structures への一般化は future work として残す。
+- **著者が認めている limitations / future work**: ladder の検出について、endpoints を guess する trivial $O(n^4)$-time algorithm より改善できるかを open にしている。さらに、3 本以上の phylogenetic trees から作る display graph で common chains がどのような ladder-like structures を誘導し、本結果が拡張できるかも open としている。
+- **読者として注意すべき点**: 本論文の「実験・結果」は empirical な精度比較ではなく、定理、反例、bramble lower bound による数学的結果である。したがって baseline や metric を ML 論文のように読むと誤解する。
+- **読者として注意すべき点**: Theorem `thm:main3` 自体は Author's note 2 により `almob2023` で先行して証明されていたと明記される。著者は、Theorem `thm:main` を $tw(G)\geq 4$ の場合のごく弱い強化、Theorem `thm:preserve2` を display graph 版の強化、Lemma `lem:alwaystight` を本論文独自の結果として切り分けている。
+- **追加で確認したい実験 / 疑問**: TeX 中の future work に沿えば、長い ladder を実際に検出して reduction rule として使う場合、$O(n^4)$ より速い認識アルゴリズムが作れるかが自然な確認点である。また TeX は各 square に高々 1 chord を持つ ladder に proof technique が適用できると述べるが、formal な theorem としては展開していない。3 本以上の tree の display graph で common chains が誘導する ladder-like structures への拡張も、TeX 中では open として扱われている。
+
+## 用語メモ
+
+一般的な辞書的定義ではなく、この論文での使われ方を中心に書く。
+
+- **tree decomposition**: bag の multiset $\mathcal{B}$ と、それらを node とする木 $\mathbb{T}$ の組。証明では bag を削除、コピー、relabel、pendant attachment する対象として扱う。
+- **running intersection property**: 同じ頂点を含む bag が $\mathbb{T}$ 上で連結な subtree をなすという (tw3) の別名。Case 3, Case 4 で「この頂点がそこにあるなら途中の bag にも現れる」という推論に使う。
+- **ladder**: $2\times(k+1)$ grid graph。$G$ 内で induced であり、外部への接続は 4 つの cornerpoints だけに限られる。
+- **square**: ladder 内で 4-cycle を誘導する頂点集合。Theorem `thm:main` の図では $\{u,v,w,x\}$ などが square として使われる。
+- **cornerpoints**: ladder の endpoints、すなわち degree-2 vertices。外部と接続できる ladder vertices は cornerpoints だけである。
+- **disconnecting ladder**: ある square の水平辺 $\{u,w\}$ と $\{v,x\}$ が edge cut になり、グラフを分ける ladder。Lemma `lem:disconnecting` により扱いやすい場合である。
+- **distance-minimizing tree decomposition**: $\{u,w,v\}$ を含む bag $B_1$ と $\{v,w,x\}$ を含む bag $B_2$ の距離を、minimum-width decompositions の中で最小にしたもの。Case 4 の矛盾導出に使う。
+- **snakes**: ladder vertex を含む bag 集合が tree decomposition 上で病的に伸びる現象を著者が指す語。Introduction では、これを制御する部分が title の由来だと説明される。
+- **reeling in**: 例えば $a,b$ について、$p_{ua}$ 上の $u$ を $a$ に、$p_{vb}$ 上の $v$ を $b$ に relabel し、$B_1$ のコピー列を挿入する操作。新しい rung を持つ graph の tree decomposition を作る。
+- **display graph**: 2 本の unrooted binary phylogenetic trees $T_1,T_2$ で同じ leaf label を同一視して得るグラフ $D(T_1,T_2)$。
+- **common chain**: 両方の phylogenetic trees に同じ順序で現れる leaf labels の列。ただし TeX の脚注では、最初の 2 leaves や最後の 2 leaves の unordered な場合、pendant の場合も含む技術的定義を与えている。
+- **subtree reduction / cherry reduction**: 2 つの labels $x,y$ が両方の trees で共通の parent を持つとき leaves $x,y$ を消し、その parent に label $xy$ を割り当てる操作を cherry reduction と呼ぶ。これを exhaustively 適用したものが subtree reduction である。
+- **bramble**: $G_3(t)$ の treewidth lower bound を示すための connected subgraphs の族。各 subgraph は互いに touch し、minimum hitting set のサイズが $t+2$ であることから treewidth at least $t+1$ を得る。
+- **buffer square / buffer cycle**: $tw(G)=3$ の場合に size-5 bag を避けるため、separator にならないことを保証する周辺構造。一般グラフの Theorem `thm:main3` では extra square、display graph の Theorem `thm:preserve2` では Fig. `fig:buffercycle` の cycle がこの役割を持つ。
+
+## 読む順番の提案
+
+- まず abstract と Introduction を読み、問題が「common chain reduction が display graph treewidth を保つか」から始まり、一般グラフの ladder shortening に拡張されることを確認する。正規ノートでは `Summary（著者の主張）` の問題設定と対応する。
+- 次に Preliminaries の tree decomposition 定義、ladder 定義、Lemma `lem:disconnecting`, Observation `obs:k4`, Lemma `lem:plusone`, Theorem `thm:unbounded` を読む。ここが正規ノートの `Related Papers` と `Notes / Quotes` の前提になる。
+- Theorem `thm:main` は証明が長いので、最初は Case 1/2 が size-5 bag を作る処理、Case 3/4 が distance-minimizing decomposition と `reeling in` を使う処理、という粒度で読む。正規ノートの `Takeaway` にある "distance-minimizing" と "reeling in the snakes" に対応する。
+- その後、Lemma `lem:main2`, Lemma `lem:pointed`, Theorem `thm:main3` を読む。ここで定数が 5 から 4 に改善され、$tw(G)=3$ が bottleneck になる理由が見える。正規ノートの `Critical Thoughts` の「$tw=3$ がボトルネック」というコメントにつながる。
+- Tightness 節では Fig. `fig:prism` と Lemma `lem:alwaystight` を見る。特に $G_2(t)$ の clique 接続、5 bag decomposition、$G_3(t)$ の bramble が、正規ノートの `Notes / Quotes` にある tightness メモの根拠である。
+- 最後に phylogenetics 節の Lemma `lem:preserve1` と Theorem `thm:preserve2`、Fig. `fig:buffercycle`, Fig. `fig:chains` を読む。正規ノートの `Summary` の display graph 特化版と、`Critical Thoughts` の future work に対応する。
+- Discussion and future work は、constructive proof、chord 入り ladder、より複雑な low-pathwidth structures、$O(n^4)$ より速い ladder detection、3 本以上の trees への拡張という未解決点を確認するために読む。
 
 ## もとの論文・正規ノート
 

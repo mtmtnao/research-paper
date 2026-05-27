@@ -1,4 +1,4 @@
-# Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models（日本語パラフレーズ：「進化するメモ帳」で LLM を自己改善させる枠組み ACE）
+# Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models（LLM の context adaptation / agent memory 研究における位置づけ）
 
 - arXiv: https://arxiv.org/abs/2510.04618
 - 一次ソース: ../papers/arXiv-2510.04618v3/
@@ -8,192 +8,108 @@
 
 ## 一言で言うと
 
-LLM（後で説明）に渡す「指示書」を、まとめて書き直すのではなく **箇条書きを少しずつ足し引きして育てる** ことで、賢く・安く・自分で勉強し続ける AI を作る方法。
+この論文は、LLM の重みを更新せず、入力に含める context を「evolving playbooks」として育てる **ACE (Agentic Context Engineering)** を提案する。ACE は Generator / Reflector / Curator と incremental delta updates により、brevity bias と context collapse を避けながら、AppWorld と金融ベンチマークで offline / online の両方の context adaptation を改善したと主張する。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-まずはここで使う最重要キーワードを 1 行ずつ説明しておくよ。
+- **問題設定**: LLM agents や domain-specific reasoning では、モデル重みの fine-tuning ではなく、system prompt、memory、factual evidence などの **context adaptation** によって性能を上げる場面が増えている。本論文の問題は、context をどう更新すれば、詳細な手順・ドメイン知識・失敗例を失わずに蓄積できるかである。
+- **対象範囲 / 仮定**: 対象は、multi-turn reasoning、tool use、environment interaction を伴う agent task と、XBRL などの専門知識を要する domain-specific task。評価は、offline adaptation では training split で context を最適化して test split で pass@1 評価、online adaptation では test sample を順に解き、各 sample の予測後に context を更新する設定で行う。
+- **既存研究との差分**: GEPA などの prompt optimizer は、強い prompt を探す一方で、短く一般的な指示に寄る **brevity bias** を持ちうる。Dynamic Cheatsheet (DC) は外部 memory を更新するが、LLM に accumulated context をまとめて書き直させるため、AppWorld の case study では **context collapse** が観測されている。ACE は full rewrite ではなく itemized bullets と delta updates を使う。
+- **この論文で答えたい問い**: context を「簡潔な summary」ではなく「comprehensive, structured playbooks」として蓄積したとき、性能・コスト・ラベルなし適応・長期的な安定性はどう変わるか。
 
-- **LLM**（Large Language Model、大規模言語モデル）… 大量の文章を読み込んで「次に来る言葉」を予測できるようにした AI。ChatGPT みたいなやつ。
-- **エージェント**（agent）… LLM が「ただ返事する」だけでなく、メールを送ったり、コードを実行したりと **道具を順番に使って仕事をこなす** モード。
-- **プロンプト**（prompt）… LLM に渡す「お願い文」。
-- **コンテキスト**（context）… LLM が答えを作るときに見ている全部の文章（お願い文＋これまでのやり取り＋参考資料）。
+## 背景と前提
 
-### 現実の困りごと（身近な例えで）
+- **Context adaptation / context engineering** は、LLM の weights を変えず、instructions、structured reasoning steps、domain-specific input formats、memory、evidence などを入力に加えることで振る舞いを変える方法である（`sections/background_CR.tex`, "rather than altering its weights"）。
+- **Natural language feedback** 系の方法では、LLM が execution traces、reasoning steps、validation results を見て、自然言語の修正案を生成し、それを context に反映する。本文では Reflexion、TextGrad、GEPA、Dynamic Cheatsheet が代表例として挙げられている。
+- **Brevity bias** は、optimization が短く汎用的な prompt に収束し、domain-specific heuristics、tool-use guidelines、common failure modes を落としてしまう傾向である。導入部では GEPA が brevity を強みとして強調する一方、その抽象化が詳細知識を落としうると説明している。
+- **Context collapse** は、LLM に accumulated context 全体を毎 step 書き直させると、長い context が短く情報の少ない summary に潰れる現象である。AppWorld の例では、step 60 で 18,282 tokens / accuracy 66.7 だった context が、step 61 で 122 tokens / accuracy 57.1 に落ち、baseline 63.7 を下回った（`sections/background_CR.tex`, Figure 2 / `fig:context-collapse`）。
+- **Baselines との関係**: AppWorld では official `ReAct` 実装を土台に、ICL、GEPA、DC (CU)、ACE を比較する。金融では Base LLM、ICL、MIPROv2、GEPA、DC、ACE を比較する。主実験の base LLM は DeepSeek-V3.1-671B で、ACE の Generator / Reflector / Curator は同じ LLM に揃えられている。
 
-新しくバイトに入った高校生を想像してみて。最初の日に店長が「マニュアルこれね」と紙を渡す。ここで店長が取れる選択肢は 2 つ：
-
-1. **短くまとめたマニュアル**：「お客さんに笑顔で接客！」だけ書いてある。読みやすいけど、レジの打ち方も電子マネーの裏ワザも書いてない。困ったときに使えない。
-2. **分厚い手引き**：「PayPay が反応しないときはここを押す」「常連の田中さんはアイスコーヒー無糖」みたいな具体的なコツが全部書いてある。読むのは大変だけど、本番では超強い。
-
-いまの LLM への指示書も同じで、「短くまとめれば良い」って思われがちだけど、実は **LLM は分厚い手引きの方が強い**、というのがこの論文の出発点。
-
-### これまでのやり方の何が足りなかったか
-
-著者は既存手法に 2 つのダメな癖があると指摘している。
-
-- **簡潔バイアス**（brevity bias）… GEPA という有名な手法（後述）は「指示を短くまとめる」のが得意。でも短くしすぎて **ドメイン固有のコツ**（XBRL という金融書類のルール、API の細かい使い方など）が消えてしまう。
-- **コンテキスト崩壊**（context collapse）… Dynamic Cheatsheet という別の手法は、毎回 LLM に「これまでのメモ帳を全部書き直して」と頼む。すると、ある瞬間に LLM が「えーい、全部まとめて短くしちゃえ」と勝手に要約してしまい、貯めてきた知識が **一瞬で吹き飛ぶ**。
-  - 実際の数字：AppWorld というベンチマークで、60 ステップ目には 18,282 トークン（≒単語のかけら 18,282 個分）あって正解率 66.7% だったメモが、**次のステップで 122 トークンに圧縮されてしまい、正解率が 57.1% まで急落**。何もしないベースライン（63.7%）よりも下がる悲劇。
-
-つまり「LLM にメモを丸ごと書き直させる」のは危険。短くなりすぎて中身が消える。
-
-## どうやって解いたの？
+## 提案手法
 
 ### コアアイデア
 
-提案するのは **ACE**（Agentic Context Engineering、エージェント型コンテキスト工学）という枠組み。コンテキストを **「進化するプレイブック」**（playbook：スポーツ用語で「作戦集」のこと）として扱う。
+ACE は context を単一の prompt 文字列ではなく、更新可能な **Playbook** として扱う。Playbook は、再利用可能な strategy、domain concept、common failure mode などを itemized bullets として持つ。論文の表現では、ACE は "generation, reflection, and curation" の modular process によって context を蓄積・洗練・整理する。
 
-例えるなら、**料理部の秘伝ノート** を 3 人の役割で育てていくイメージ：
+役割は 3 つに分かれる。
 
-- **作る人**（Generator）… 実際に今日の料理を作る部員。レシピを試して「ここで火加減ミスった！」みたいな経験を残す。
-- **振り返る人**（Reflector）… 今日の料理を見て「この工程は良かった」「ここはこう直すべき」と **教訓を抽出する** コーチ役。
-- **整理する人**（Curator、curate＝展示物を整理する人）… 教訓を **1 行ずつカードに書いて、秘伝ノートの該当ページに差し込む** 司書役。
+- **Generator**: 現在の Playbook を使って query を解き、reasoning trajectory を生成する。どの bullet が useful / misleading だったかも示す。
+- **Reflector**: 成功・失敗の trace から concrete insights や lessons を抽出する。主実験では maximum number of Reflector refinement rounds は 5。
+- **Curator**: lessons を compact な **delta entries** にまとめる。delta entries は、LLM ではない lightweight, non-LLM logic によって既存 Playbook に deterministic に merge される。
 
-ポイントは「司書はノート全体を書き直さない」こと。**新しいカードを足す／古いカードのカウンタを増やす** だけ。これで「ある日まとめて短くされて知識が消える」事故を防ぐ。
+重要なのは、ACE が context 全体を LLM に再生成させないことである。新しい知見は delta として追加され、既存 bullet は必要に応じて in-place update される。この設計が、Figure 2 (`fig:context-collapse`) のような full rewrite による context collapse を避けるための中核である。
 
-### 仕組み
+### 重要な定義・数式
 
-ACE のサイクルを step に分けるとこう：
+TeX 中に、中核となる目的関数・更新式・評価式のような明示的数式はほぼない。そのため、ここでは論文本文で定義されている操作単位と更新規則を整理する。
 
-- **step1**: ユーザーから新しい問題が来る。
-- **step2**: **作る人**（Generator）が、今のプレイブックを見ながら問題を解く。途中で「このカードは役立った／このカードに騙された」をメモする。
-- **step3**: 解いた結果（正解だったか／コードが動いたか）と途中経過を、**振り返る人**（Reflector）が読む。「このカードは正しい」「ここに新しいコツを足すべき」みたいな **lesson（教訓）** を文章で出す。Reflector はこの作業を最大 5 回くりかえして磨ける。
-- **step4**: **整理する人**（Curator）が、教訓を **デルタエントリ**（delta entry）という小さなカードに変換する。delta は数学っぽく聞こえるけど「差分」ぐらいの意味。
-- **step5**: できたカードを、プログラム（LLM ではなく普通のプログラム）が **決まったルールでプレイブックに差し込む**。ここで LLM が介入しないので、勝手に短くされる事故が起きない。
-- **step6**: たまにプレイブックを見直し、ほぼ同じカードがあれば 1 つにまとめる（**grow-and-refine**＝「育てて磨く」原則）。
-- **step7**: 次の問題に進む。これを繰り返してプレイブックを育てる。
+- **Context adaptation**: "constructing or modifying inputs to an LLM, rather than altering its weights" と定義される。ACE はこの枠組みの中で、system prompt optimization と test-time memory adaptation の両方を扱う。
+- **Structured, itemized bullet**: bullet は、(1) unique identifier と helpful / harmful counters を含む metadata、(2) reusable strategy、domain concept、common failure mode などを表す content からなる（`sections/design_CR.tex`, "metadata" / "content"）。
+- **Delta context / delta entry**: Reflector と Curator が、new insight を小さな candidate bullets として生成したもの。ACE は full context rewrite の代わりに、この delta を既存 Playbook に merge する。
+- **Grow-and-refine**: new identifiers を持つ bullets は append され、既存 bullets は in-place update される。その後、semantic embeddings により redundancy を比較し、de-duplication で prune する。refinement は proactive に各 delta 後に行うことも、context window 超過時に lazy に行うこともできる。
 
-カード（bullet）の中身：
+### 実装 / アルゴリズム上の要点
 
-- **メタデータ**：番号（id）と「何回役に立った／何回ミスリードしたか」のカウンタ。
-- **本体**：「こういう状況ではこう動け」という 1 つのコツ、または失敗パターン、または使えるコードスニペット。
+- step1: query を受け取り、Generator が current Playbook を入力 context として reasoning trajectory を生成する。
+- step2: Generator は、解答だけでなく、どの bullets が役立ったか、または誤導したかを feedback として残す。
+- step3: Reflector が trace、outcome、feedback を読み、success / error から lessons を抽出する。必要に応じて複数 round の refinement を行う。
+- step4: Curator が lessons を delta entries に変換する。
+- step5: 非 LLM の deterministic merge logic が、delta entries を Playbook に append / in-place update する。これにより、過去の知識を full rewrite で消すリスクを下げる。
+- step6: context が増えるにつれて、semantic embeddings による de-duplication と pruning を行う。主実験では batch size 1、offline adaptation の maximum number of epoch は 5。
 
-これによって、
+## 実験・結果
 
-- **局所修正できる**：関係あるカードだけ書き換える。
-- **細かく検索できる**：必要なときに該当カードだけ呼べる。
-- **並列で更新できる**：別々のカードは同時に直せる。
+- **データセット / ベンチマーク**: AppWorld は API understanding、code generation、environment interaction を含む autonomous agent benchmark で、test-normal と test-challenge に分かれる。金融では FiNER と Formula を使う。FiNER は XBRL financial documents の tokens を 139 fine-grained entity types のいずれかに分類する課題、Formula は financial concepts と computation を必要とする numerical reasoning 課題である。追加実験として StreamBench 由来の DDXPlus と BIRD-SQL も使う。
+- **比較対象 / baseline**: AppWorld では official `ReAct`、`ReAct + ICL`、`ReAct + GEPA`、`ReAct + DC (CU)`、`ReAct + ACE` を比較する。金融では Base LLM、ICL、MIPROv2、GEPA、DC (CU)、ACE を比較する。MIPROv2 と GEPA は official DSPy implementation で `auto="heavy"` を使う。
+- **指標**: AppWorld は Task Goal Completion (TGC) と Scenario Goal Completion (SGC) を test-normal / test-challenge で報告し、Average も出す。FiNER、Formula、DDXPlus は accuracy、BIRD-SQL は GPT-4o-mini による LLM-as-a-judge を用いる。offline は training split で適応し test split で pass@1、online は test split を sequential に処理する。
+- **主な結果**: AppWorld の Table 1 (`tab:appworld-results`) では、DeepSeek-V3.1-671B + ReAct baseline の Average は 42.4。offline の `ReAct + ACE` は GT labels ありで 59.4 (+17.0)、GT labels なしで 57.2 (+14.8) で、ICL 46.0、GEPA 46.4 を上回る。online では DC (CU) 51.9 に対し、ACE は 59.5 (+17.1)。test-challenge TGC は baseline 41.5 から online ACE 66.0 に上がる。
+- **主な結果**: AppWorld leaderboard について、本文は 2025-09-20 時点で `ReAct + ACE` 59.4% average が IBM CUGA 60.3% と同程度であり、online adaptation では test-challenge の TGC で +8.4、SGC で +0.7 上回ると述べる。ただし footnote は、IBM CUGA は rough contextual reference であり methodological baseline ではないと明記している。
+- **主な結果**: 金融の Table 2 (`tab:ds-results`) では、DeepSeek-V3.1 の Base LLM Average は 69.1。offline ACE は GT labels ありで FiNER 78.3、Formula 85.5、Average 81.9 (+12.8) で、ICL 69.6、MIPROv2 70.9、GEPA 72.5 を上回る。online ACE は GT labels ありで Average 76.6 (+7.5)。一方、GT labels なしの online では Average 72.9 (+3.8) だが、FiNER は 67.3 (-3.4) に落ち、feedback quality への依存が見える。
+- **主な結果**: Ablation Table 3 (`tab:ablation`) では、offline AppWorld の full ACE は Average 59.4。`w/o Reflector or multi-epoch` は 55.1、`w/o multi-epoch` は 56.8。online では ACE 単体 56.1 に対し、offline warmup ありで 59.5。Appendix の incremental update ablation (`tab:appworld-ablation-incremental-update`) では、test-normal Average が no incremental update 56.9 から with incremental update 70.3 へ上がる。
+- **主な結果**: Cost and Speed Analysis の Table 4 (`tab:cost-speed`) では、AppWorld offline で GEPA 53,898 s / 1,434 rollouts に対し ACE は 9,517 s / 357 rollouts で、latency -82.3%、rollouts -75.1%。FiNER online では DC 65,104 s / $17.7 に対し ACE は 5,503 s / $2.9 で、latency -91.5%、token cost -83.6%。OpenAI API (GPT-5.1) の prompt-caching study では、evaluation stage の input tokens の 91.8% が cache から供給され、billed input-token cost は raw context token count 比で -82.6%。
+- **著者が主張する貢献**: ACE は agents で平均 +10.6%、domain-specific benchmarks で +8.6% の gain を示し、ラベルなしでも execution feedback / environment signals を使って context を構築でき、rollouts と adaptation latency を下げながら高性能な self-improving LLM systems を実現できる、というのが著者の主張である。
 
-### 使い方は 2 つのモード
+## 妥当性と限界
 
-- **オフライン適応**（offline adaptation）… 学校で言う「予習」。**訓練データで先にプレイブックを作っておいて**、本番のテストではそれを使うだけ。
-- **オンライン適応**（online adaptation）… 学校で言う「実戦で学ぶ」。**本番中に 1 問解くたびに、その経験をプレイブックに足していく**。
+- **この主張を支える根拠**: 主実験は AppWorld と金融の 2 系統で、offline / online、GT labels あり / なし、複数 baselines を分けて比較している。ACE の 3 役を同じ DeepSeek-V3.1 に揃えているため、Reflector だけが強い別モデルだから改善した、という説明を避けている。Table 3 (`tab:ablation`) と Appendix の ablation (`tab:appworld-ablation-incremental-update`) は、Reflector、multi-epoch、offline warmup、incremental update が性能に寄与することを示す。
+- **著者が認めている limitations / future work**: Discussion では、ACE は reasonably strong Reflector に依存し、Reflector が generated traces や outcomes から meaningful insights を抽出できないと、context が noisy or even harmful になりうると述べている。また、HotPotQA のように concise, high-level instructions が効くタスクや、Game of 24 のように single reusable rule で足りるタスクでは、rich / detailed contexts は不要になりうる。
+- **読者として注意すべき点**: Finance の online no-label 設定では、ACE でも FiNER が -3.4 になっており、実行成否や正解ラベルのような reliable feedback signal がないと context adaptation が悪化しうる。AppWorld leaderboard の IBM CUGA 比較は本文 footnote の通り方法論的 baseline ではなく、性能レンジの参考である。KV cache による cost 削減は OpenAI API (GPT-5.1) の prompt-caching study として報告されており、別の serving infrastructure では同様の billed cost になるかを別途確認する必要がある。
+- **追加で確認したい実験 / 疑問**: GEPA や DC と同じ rollout / token budget に厳密に揃えたときの Pareto 比較、Playbook が非常に大きくなったときの人間による review / selective unlearning の運用、semantic embedding による de-duplication が有用 bullet を誤って prune するケース、feedback が弱いタスクで Reflector の信頼度をどう制御するかは、読者として追加で見たい点である。
 
-### 主要な数式
+## 用語メモ
 
-この論文は枠組みの設計が中心で、論文中に「これが核となる数式」と呼べるものはほとんど出てこない。なので無理に数式は出さず、**プレイブックを育てる更新ルール** を言葉で書いておく：
+一般的な辞書的定義ではなく、この論文での使われ方を中心に書く。
 
-- 新しいカード（新 id）→ プレイブックの末尾に **追加**（append）。
-- 既存カード（同じ id）→ その場で **書き換え or カウンタ更新**（in-place update）。
-- 似たカードが増えすぎたら → **意味の近さ**（semantic embedding：文章を数の並びに変えて近さを測る道具）で重複を消す。
-- カード全体の書き換えは **絶対にしない**。
+- **Context adaptation / context engineering**: LLM の weights ではなく入力 context を構築・修正して性能を上げる方法。ACE はこの代表例として提案される。
+- **Context**: system prompt、memory、factual evidence、instructions、reasoning steps、domain-specific formats など、LLM の入力に含まれて振る舞いを変える情報。
+- **Playbook**: ACE が目指す context の形。短い summary ではなく、tool-use rules、domain insights、failure modes などを含む comprehensive, structured な手引き。
+- **Generator**: 現在の Playbook を使って問題を解き、reasoning trajectories と useful / misleading bullet feedback を出す役割。
+- **Reflector**: trajectory と outcome から concrete lessons を抽出する役割。ACE の限界はこの Reflector の質に依存する。
+- **Curator**: lessons を delta entries にまとめ、既存 context に入れる形に整える役割。
+- **Bullet**: Playbook の itemized unit。unique identifier、helpful / harmful counters、content を持つ。
+- **Delta context / delta entry**: 新しい lessons を小さな差分として表した candidate bullets。full rewrite の代わりに merge される。
+- **Grow-and-refine**: 新 bullet を append し、既存 bullet を in-place update し、semantic embeddings による de-duplication で redundancy を減らす仕組み。
+- **Brevity bias**: prompt optimization が短く汎用的な prompt に寄り、詳細な domain knowledge や failure modes を落とす傾向。
+- **Context collapse**: accumulated context を LLM が丸ごと書き直す過程で、急に短い summary に潰れ、性能が下がる現象。AppWorld では 18,282 tokens から 122 tokens への collapse が報告されている。
+- **Offline adaptation**: training split で context を作り、test split では固定して評価する設定。system prompt optimization に近い。
+- **Online adaptation**: test split を順に処理し、各 sample の予測後に context を更新する設定。test-time memory adaptation に近い。
+- **GT Labels**: adaptation 時に ground-truth labels を Reflector が使えるかどうかを表す列。AppWorld では labels なしでも execution feedback を使えるが、金融では labels / reliable feedback がないと劣化しうる。
+- **ReAct**: AppWorld の official baseline として使われる agent 実装。reasoning と action を組み合わせる。
+- **ICL**: training examples を input prompt に demonstration として入れる方法。context window に入る限り全 training samples を入れ、無理なら入るだけ入れる。
+- **MIPROv2**: DSPy の prompt optimizer。system instructions と in-context demonstrations を Bayesian optimization で jointly optimize する。
+- **GEPA**: execution traces と natural-language reflection を使い、genetic Pareto search で prompt variants を進化させる prompt optimizer。
+- **Dynamic Cheatsheet (DC / DC-CU)**: test-time learning の external memory 手法。ACE は DC に着想を得るが、DC の full rewrite による context collapse を問題視する。
+- **TGC / SGC**: AppWorld の Task Goal Completion と Scenario Goal Completion。test-normal と test-challenge で報告される。
+- **XBRL**: FiNER / Formula が依存する financial reporting format。FiNER は XBRL financial documents の tokens を 139 entity types に分類する。
+- **KV cache / prompt caching**: 長い context の共通 prefix を再利用し、prefill cost を amortize する serving 側の仕組み。ACE の長い Playbook が必ずしも線形に高コストにならない根拠として議論される。
 
-これだけが ACE の更新規則の全てで、これが「LLM に丸ごと書き直させない」という安全装置になっている。
+## 読む順番の提案
 
-## 何がすごいの？
-
-数字は全部 TeX のテーブル（Table 1, 2, 3, cost analysis）から拾ったもの。
-
-### AppWorld（エージェントのベンチマーク：メール・カレンダーなど 9 個のアプリを API 経由で操作するタスク）
-
-- ベース LLM は **DeepSeek-V3.1-671B**（オープンソースの巨大 LLM）。
-- 何もしないと（ReAct という標準実装で）平均 **42.4%**。
-- オフラインで ACE を使うと **59.4%**（**+17.0 ポイント**）。
-- ICL（46.0%）・GEPA（46.4%）にも大差で勝つ。
-- オンラインでも Dynamic Cheatsheet（51.9%）に対して **59.5%**（+7.6 ポイント）。
-- **正解ラベルが無くても** 実行が成功したかどうかだけで学習可能。それでも +14.8 ポイント。
-- AppWorld リーダーボード（2025-09-20 時点）で、**GPT-4.1 をエンジンに使う商用エージェント IBM-CUGA（60.3%）と平均でほぼ並ぶ**。難しい test-challenge では TGC（タスク完了率）で +8.4 上回る。
-
-ここで出た用語：
-
-- **ReAct**（Reason + Act）… LLM に「考える → 行動する → 結果を見る」を繰り返させる古典的手法。AppWorld の標準実装。
-- **ICL**（In-Context Learning、文脈内学習）… 解き方の例題をプロンプトに何個か入れて、それを真似させるだけのシンプル手法。
-- **TGC / SGC**（Task / Scenario Goal Completion）… AppWorld の評価指標。タスクごと／シナリオごとの完了率（％）。
-- **GEPA**（Genetic-Pareto）… プロンプトを遺伝的アルゴリズムっぽく進化させる最適化手法。比較対象。
-- **MIPROv2** … DSPy というライブラリ製のプロンプト最適化器。ベイズ最適化（実験結果から効率よく次を試す統計手法）を使う。
-
-### 金融タスク（FiNER と Formula）
-
-- **FiNER** … 金融文書（XBRL という米国 SEC 提出書類フォーマット）のトークンに、139 種類の細かいラベルを付ける問題。
-- **Formula** … 金融用語と式を理解して、数値を計算する問題。
-- 何もしないと平均 **69.1%**。
-- オフラインで ACE：**81.9%**（**+12.8 ポイント**）。同条件の GEPA（72.5%）より +9.4 上。
-- Formula 単体では 67.5% → **85.5%**（**+18.0 ポイント**）。
-- **正直な弱点も論文が報告している**：正解ラベルも実行フィードバックも無い「online ラベルなし」設定では、ACE も Dynamic Cheatsheet も性能が下がることがある（FiNER で -3.4 ポイント）。
-
-### アブレーション（部品を 1 つずつ外して効果を測る実験）
-
-- フル ACE：**59.4%**
-- Reflector も multi-epoch も無し：55.1%
-- Reflector ありで multi-epoch 無し：56.8%
-- → **どの部品も効いている** ことを定量で確認。
-- オンラインでも、最初に offline で軽く準備（warmup）しておくと 56.1 → 59.5。
-
-### コスト・速度
-
-これも論文の主張の柱。プレイブックは長くなるのに、なぜ速い／安いのか：
-
-- AppWorld オフラインで GEPA に対して **適応にかかる時間 -82.3%**（53,898 秒 → 9,517 秒）、**試行回数 -75.1%**（1,434 回 → 357 回）。
-- FiNER オンラインで Dynamic Cheatsheet に対して **時間 -91.5%**（65,104 秒 → 5,503 秒）、**トークン課金 -83.6%**（$17.7 → $2.9）。
-- 評価時はプレイブックが長くて生のトークン数は多いけど、**91.8% が KV cache（後述）から再利用** され、**請求額は生トークン換算より -82.6%**。
-
-### 著者の言う貢献（contribution）
-
-introduction §1 末尾の箇条書きから：
-
-1. 簡潔バイアスと崩壊現象を **問題として明確化** し、AppWorld で具体的な数字で見せた。
-2. Generator / Reflector / Curator + デルタカード + grow-and-refine という **再利用しやすい枠組み** を提案。
-3. オープンソース LLM + ACE で、**GPT-4.1 を使う商用エージェントと並んだ**。
-4. **ラベル無しでも実行フィードバックだけで自己改善できる** ことを示した。
-5. 「長いコンテキスト = 高コスト」を否定し、**KV cache で実は安くなる** ことを実測。
-
-## キーワード辞典
-
-本文に出てきた順番で。
-
-- **LLM**（Large Language Model、大規模言語モデル）… 大量の文章で訓練された、文章を生成できる AI。
-- **エージェント**（agent）… LLM がツールを順番に使って仕事をするモード。
-- **プロンプト**（prompt）… LLM への入力文。
-- **コンテキスト**（context）… LLM が見ている全テキスト。
-- **コンテキスト適応**（context adaptation）… モデルの重み（中身の数値）を変えずに、入力テキストだけ工夫して性能を上げる方針。
-- **重み**（weights）… ニューラルネットの中で学習される「ツマミ」の数。重みを変える＝モデル自体を訓練し直すこと。
-- **ニューラルネット**（neural network）… 大量の「ツマミ」（重み）を持つ数式のかたまり。入力から出力を計算する仕組み。
-- **fine-tuning**（ファインチューニング）… 既存モデルの重みを少しだけ追加学習で書き換える手法。ACE は重みを **変えない**。
-- **prompt optimizer**（プロンプト最適化器）… プロンプトの文面を自動で書き換えて成績を上げるツール。GEPA や MIPROv2 がこれ。
-- **brevity bias**（簡潔バイアス）… 最適化が「短くまとめた指示」に収束してしまう癖。具体例が消えるのが弱点。
-- **context collapse**（コンテキスト崩壊）… メモを LLM が書き直し続けるうちに、ある瞬間に短すぎる要約に潰れる現象。
-- **playbook**（プレイブック）… スポーツ用語で「作戦集」。ACE はコンテキストをこれと見なす。
-- **Generator / Reflector / Curator** … ACE の 3 役。問題を解く人 / 教訓を抽出する人 / カードに整理して足す人。
-- **delta entry**（デルタエントリ）… 「差分カード」。新しい教訓 1 つ分のカード。id とカウンタと本体を持つ。
-- **bullet**（バレット、箇条書き 1 項目）… ACE のプレイブックを構成するカード 1 枚のこと。
-- **grow-and-refine**（育てて磨く）… 新カードを足す → 重複を embedding で消す、というメンテ方針。
-- **embedding**（埋め込み）… 文章を「数の並び」に変換したもの。近い数の並び同士は意味も近いとみなせる。
-- **ReAct**（Reason + Act）… 「考える → 行動する」を交互にやる古典エージェント設計。AppWorld のベース実装。
-- **AppWorld** … メール・カレンダーなどを操作させる難しいエージェントベンチマーク。
-- **TGC / SGC** … AppWorld の成功率指標（タスク単位 / シナリオ単位）。
-- **FiNER / Formula** … 金融文書を理解するベンチマーク。
-- **XBRL** … 金融書類を機械可読にする XML 系フォーマット。米国 SEC で使われる。
-- **ICL**（In-Context Learning）… 例題をプロンプトに入れて真似させるだけのシンプル手法。
-- **GEPA**（Genetic-Pareto）… プロンプトを遺伝的アルゴリズムで進化させる最適化器。
-- **MIPROv2** … DSPy 製のプロンプト最適化器。
-- **Dynamic Cheatsheet（DC）** … LLM が自分用メモを更新して使うテスト時学習手法。ACE が最大の比較対象で、かつ着想源。
-- **Reflexion / TextGrad** … 自然言語フィードバックでエージェントを改善する系譜の先行研究。
-- **pass@1** … 1 回答えて正解する確率。最も厳しい評価。
-- **multi-epoch**（多エポック）… 同じ訓練データを何周もする学習法。ここでは ACE が同じ問題でプレイブックを何回も育てること。
-- **offline warmup**（オフラインウォームアップ）… 本番に入る前に、訓練データで先にプレイブックを温めておくこと。
-- **rollout**（ロールアウト）… 1 回エージェントを走らせて完了させること。コストの単位。
-- **KV cache**（key-value cache、キーバリューキャッシュ）… LLM が前に計算した内部状態を保存しておく仕組み。**同じプロンプトの先頭部分は再計算せずに使い回せる** ため、長いコンテキストでも料金が膨らみにくい。
-
-## ちょっと深掘り（中学生は飛ばして OK）
-
-- **なぜ「LLM に書き直させない」のが効くのか**：LLM は確率的にテキストを生成するので、何回か呼ぶうちに「短くまとめよう」モードに勝手に入ってしまうリスクがある。ACE は「カードを足す」操作だけを LLM に任せ、「マージするロジック」は普通のプログラム（決定的な処理）にしているので、要約事故が構造的に起こらない。
-- **「Reflector の質が ACE の上限を決める」**：論文の §5（limitations）で著者自身が認めている弱点。実行が成功／失敗ではっきり分かるタスク（コード実行など）では Reflector が強い教訓を出しやすいが、何が正解か判定しにくいタスク（FiNER の online ラベルなし）では Reflector が誤った教訓を抽出してしまい、プレイブックがむしろ汚染される。
-- **なぜ「長いコンテキスト = 高コスト」とは限らないのか**：商用 API（OpenAI など）は、同じプロンプトの先頭部分を再利用するキャッシュ（prompt caching）を持っている。ACE は同じ大きなプレイブックを毎問題の頭にくっつけて使うので、**頭の部分は 1 回計算すれば後はキャッシュから読むだけ**。論文では GPT-5.1 で 91.8% がキャッシュからヒットしたと実測している。
-- **ハイパーパラ**：Reflector の最大リファイン回数 = 5、オフライン最大エポック = 5、バッチサイズ = 1（1 問につき 1 枚デルタを作る）。
-- **同じ LLM を 3 役にあてる理由**：もし Reflector だけ別の強い LLM にすると「強い Reflector のおかげで弱い Generator も賢くなった」という疑いが出る。著者は **全部 DeepSeek-V3.1 で揃えて** 比較し、「ACE の効果は context の作り方そのものから来る」と示した。
-- **論文が認めている適用範囲の限界**：HotPotQA や Game of 24 のように「短い指示で十分」な単純タスクには ACE は不要。**ドメイン固有の知識や複雑なツール使用が要るタスク向け**。
-- **TeX 上の小ネタ**（正規ノートで verified）：本文 §2.1 で `krause2019dynamic` を Dynamic Cheatsheet として引用しているのは TeX 側の citation バグ。本来の Dynamic Cheatsheet は Suzgun ほか (`suzgun2025dynamic`)。
+- まず `sections/abstract_CR.tex` と `sections/introduction_CR.tex` を読み、ACE が weight update ではなく context adaptation の論文であること、また "comprehensive, structured playbooks" を主張していることを押さえる。正規ノートでは `Summary（著者の主張）` と `Takeaway` の前半につながる。
+- 次に `sections/background_CR.tex` の brevity bias と context collapse を読む。特に Figure 2 (`fig:context-collapse`) と 18,282 tokens / 122 tokens / 66.7 / 57.1 / 63.7 の数値は、ACE の設計理由を理解するアンカーになる。正規ノートでは `Notes / Quotes` の context collapse 引用に対応する。
+- その後 `sections/design_CR.tex` を読み、Generator / Reflector / Curator、Incremental Delta Updates、Grow-and-Refine を押さえる。正規ノートの `Summary` の手法 bullets と、`Takeaway` の「LLM に context を書き直させない」に対応する。
+- 実験は `sections/results_CR.tex` の Table 1 (`tab:appworld-results`)、Table 2 (`tab:ds-results`)、Table 3 (`tab:ablation`)、Table 4 (`tab:cost-speed`) を先に見る。AppWorld、Finance、ablation、cost の主要な主張はここで確認できる。正規ノートでは `Summary` の結果 bullets と `Critical Thoughts` の強み / 弱みにつながる。
+- 最後に `sections/limitations_CR.tex` と `sections/extended_results_CR.tex` を読む。Reflector 依存、ACE が不要なタスク、他 LLM / DDXPlus / BIRD-SQL / cost breakdown / hyperparameter sensitivity は、主張の射程を判断するために必要である。
 
 ## もとの論文・正規ノート
 

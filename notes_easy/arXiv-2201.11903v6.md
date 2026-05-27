@@ -1,4 +1,4 @@
-# Chain-of-Thought Prompting Elicits Reasoning in Large Language Models（大きな言語モデルに「途中の考え」を書かせると、難しい問題も解けるようになるよ）
+# Chain-of-Thought Prompting Elicits Reasoning in Large Language Models（プロンプト内の中間推論が大規模言語モデルの多段推論を引き出す実証）
 
 - arXiv: https://arxiv.org/abs/2201.11903
 - 一次ソース: ../papers/arXiv-2201.11903v6/
@@ -8,142 +8,128 @@
 
 ## 一言で言うと
 
-「お手本を見せるときに、答えだけじゃなく **途中の考え方** も一緒に書いてあげる」だけで、大きな AI が算数や常識問題を一気に解けるようになるよ、という話。
+few-shot prompting の exemplar を従来の `input--output` ペアから `〈input, chain of thought, output〉` の 3 つ組にするだけで、十分大きい言語モデルに算数・常識・記号操作の多段推論を促せる、という実証論文。PaLM 540B では GSM8K が standard prompting 17.9% から chain-of-thought prompting 56.9% へ上がる一方、著者はこの効果が主に `~100B parameters` 級で現れる emergent ability だと主張する。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- **困りごと**: ChatGPT みたいな AI（=「大きな言語モデル」、以下 LLM と呼ぶよ。← これは「人間が書いた大量の文章を読み込んで、次に来る単語を当てるのが超得意になった巨大なプログラム」のこと）は、ふつうの会話は得意なのに、**算数の文章題**（例: 「ロジャーはテニスボールを 5 個持ってる。あと 2 缶買って、1 缶に 3 個入ってる。今いくつ？」）になると、急にポンコツになる。
-- 例えるなら、**おしゃべりは超得意なクラスの友達が、文章題のテストになるとなぜか「8 個！」とテキトーに即答してハズす** ようなもの。
-- これまでのやり方には 2 つの道があったよ。
-  - **道 1**: AI に「途中式の書き方」を山ほど追加で勉強させる（これを **fine-tuning** という。← 「もとのモデルに追加で教科書を読ませて、特訓させる」こと）。これは教材を大量に作るのが大変。
-  - **道 2**: お手本を数個だけ見せて、それを真似してもらう（これを **few-shot prompting** という。← 「テストの前に例題を 5〜8 個見せて、『これと同じ形式で解いてね』とお願いするだけ」のやり方）。簡単だけど、難しい問題には全然効かなかった。
-- 著者たちは「道 2 のお手本に **途中の考えも一緒に書く** だけで、道 1 並みに賢くなるんじゃない？」と思いついた。
+- **問題設定**: 大規模言語モデルはスケールすると多くの NLP タスクで良くなるが、arithmetic reasoning、commonsense reasoning、symbolic reasoning のような多段推論では、モデルサイズを増やすだけでは高性能になりにくい。標準的な few-shot prompting は `input--output pairs` を見せるだけなので、推論を要するタスクで性能が伸びにくい、というのが出発点である。
+- **対象範囲 / 仮定**: 対象は off-the-shelf language models への prompting-based inference であり、本文は `No language models were finetuned` と明記する。実験モデルは GPT-3、LaMDA、PaLM、UL2 20B、Codex。decoding は基本 greedy decoding で、LaMDA は exemplar 順序を 5 seed で平均し、他モデルは計算節約のため単一 exemplar order を報告する。
+- **既存研究との差分**: 既存の rationale-augmented training / finetuning は高品質 rationale を大量に作るコストがある。Brown et al. 2020 型の standard few-shot prompting は追加学習不要だが推論タスクに弱い。この論文は、訓練データや勾配更新ではなく、prompt の出力側に自然言語の中間ステップを入れる点で差分がある。
+- **この論文で答えたい問い**: 数個の chain-of-thought demonstrations だけで多段推論能力を引き出せるか。その効果はモデルスケール、タスク種類、prompt の書き方、exemplar の違いに対してどの程度頑健か。効果の理由は単なる式生成、追加 token による variable compute、事前学習知識の活性化ではなく、答えの前に自然言語の中間推論を生成すること自体なのか。
 
-## どうやって解いたの？
+## 背景と前提
+
+- **few-shot prompting** は、テスト入力の前に少数の exemplar を置き、同じ形式で出力させる方法である。この論文の standard prompting baseline は、質問と最終答えだけからなる `input--output pairs` である。
+- **chain of thought** は、本文で `a series of intermediate natural language reasoning steps that lead to the final output` と定義される。ここでは「説明を後から付ける」自然言語説明ではなく、最終答えの前に生成される中間推論列である。
+- **rationale / natural language intermediate steps** は先行研究にもあり、Ling et al. 2017 や Cobbe et al. 2021 は算数文章題で rationale を使う。ただしそれらは training from scratch や finetuning を使うのに対し、本論文は prompting だけで行う。
+- **モデルスケール** が中心的な変数である。LaMDA は本文では 422M, 2B, 8B, 68B, 137B と書かれ、実験表では最小モデルが 420M と表記される。PaLM は 8B, 62B, 540B、GPT-3 系は text-ada-001, text-babbage-001, text-curie-001, text-davinci-002 を用いる。GPT-3 のサイズ対応は TeX では `presumably correspond to InstructGPT models of 350M, 1.3B, 6.7B, and 175B parameters` と慎重に書かれている。
+- **評価指標** は主に accuracy / solve rate (%) である。Table `tab:flagship-table` は arithmetic について `All metrics are accuracy (%)` と明記し、図の軸は `Solve rate (%)` で統一されている。
+
+## 提案手法
 
 ### コアアイデア
 
-人間が文章題を解くとき、頭の中で「えーと、ボールはもともと 5 個で、2 缶 × 3 個 = 6 個増えて、合計 11 個…」と **段階を踏んで** 考えるよね。これと同じことを AI にもさせよう、という発想。
+提案手法は、few-shot prompting の各 exemplar の答え側に、最終答えへ至る自然言語の中間ステップを入れるだけである。本文の中心表現は `prompt that consists of triples: 〈input, chain of thought, output〉` であり、モデル自体のパラメータ更新、タスク専用 head、外部 symbolic solver は使わない。
 
-例えるなら、**算数の宿題で「答えだけ書く」 vs 「途中式も書く」の違い**。先生から「答えだけじゃ部分点ないよ、式も書いて」と言われるのと同じで、AI に「途中の考え（=chain of thought、考えの鎖）」を書かせると、その途中ステップを足場にして、最後の答えにたどり着けるようになる。
+著者がこの形式に期待する性質は 4 つある。多段問題を intermediate steps に分解できること、生成された chain がモデル挙動を debug する窓になること、math word problems だけでなく commonsense reasoning や symbolic manipulation にも使えること、そして十分大きな既存モデルなら few-shot exemplar に chain を含めるだけで elicited できることである。
 
-そして大事なのは、**追加で勉強させなくていい** こと。お手本を 8 個だけ、人間が手で書いて見せる。これだけ。
+算数では、AQuA 以外の math word problem benchmark に同じ 8 個の手書き CoT exemplar を使う。AQuA は multiple choice なので 4 個の training-set exemplars and solutions を使う。commonsense では CSQA / StrategyQA は training set から exemplar を選び、BIG-bench の Date / Sports は training set がないため evaluation set の先頭 10 例を exemplar として使い残りで評価する。SayCan は本文では six examples from the training set と説明される。symbolic reasoning では last letter concatenation と coin flip の合成タスクを作り、in-domain と OOD length generalization を評価する。
 
-### 仕組み
+### 重要な定義・数式
 
-- **step1**: テストで AI に問題を解かせる前に、お手本を 8 個（AQuA という選択式のデータだけは 4 個）AI に見せる。
-- **step2**: お手本は「問題 → 途中の考え → 答え」という **3 つ組** の形にする。これまでは「問題 → 答え」の 2 つ組だった。
-  - 例: 「Q: ボール 5 個持ってる。2 缶 × 3 個増えた。今いくつ？ / A: もとは 5 個。2 × 3 = 6 個もらった。5 + 6 = 11。答えは 11。」
-- **step3**: そのあとに本番の問題を投げる。すると AI も自然に「えーと…」と途中の考えを書き始め、最後に答えを言う。
-- **step4**: 算数・常識クイズ・記号操作の 3 ジャンル、合計 12 個くらいのテスト（=「ベンチマーク」← 「みんなが共通で使う実力テスト問題集」のこと）で点数を測る。
-- **step5**: いろんなサイズの AI（小さいの〜超でかいの）で比べて、「どのサイズから効くか？」も調べる。
-
-### 主要な数式
-
-この論文には **数学っぽい式は出てこない**（プロンプトの書き方の話なので）。代わりに、論文の核は「お手本の形を変える」という構造そのもの。図にするとこう。
+この論文は新しい学習目的関数や更新式を提案していない。TeX 中の中核的な形式表現は、prompt exemplar の形と、効果が現れるモデルスケールに関する記述である。
 
 $$
-\text{ふつうのお手本: } \{\ \langle\text{問題},\ \text{答え}\rangle\ \}
+\langle \text{input}, \text{output} \rangle
 $$
 
-$$
-\text{この論文のお手本: } \{\ \langle\text{問題},\ \text{途中の考え},\ \text{答え}\rangle\ \}
-$$
+**式の意味**: standard few-shot prompting の exemplar 形式を表す。入力に対して最終出力だけを示し、推論の途中過程は prompt に含めない。
 
-**この式が言ってること**: お手本のペアの真ん中に「途中の考え」を **挟むだけ**。たったこれだけの変更。
+**記号の定義**:
+- $\text{input}$ ... 解かせたい質問・問題文・命令文。
+- $\text{output}$ ... 直接生成させる最終答え。算数なら数値、multiple choice なら選択肢、binary task なら yes/no など。
+- $\langle \cdot,\cdot \rangle$ ... TeX では `input--output pairs` と書かれる exemplar の組を、読みやすく対で表したもの。
 
-**記号の意味**:
-- $\langle \cdot, \cdot \rangle$ … 「セット」を表す書き方。たとえば $\langle$ りんご, 100 円 $\rangle$ なら「りんごと値段のセット」。
-- $\{\ \cdot\ \}$ … 「複数個ある」という意味。お手本は 1 個じゃなくて 8 個くらいセットで見せる。
-- 「問題」 … 解いてほしい質問文（例: 「ボール何個？」）
-- 「途中の考え」 … 答えに至るまでの段階を **人間の言葉** で書いたもの（例: 「5 + 6 = 11 だから…」）
-- 「答え」 … 最終的な数字や単語（例: 「11」）
-
-**身近な例え**: 料理のレシピと同じ。「カレーの完成写真」（=答えだけ）を見せるよりも、「①玉ねぎを切る → ②炒める → ③水を入れる → ④ルーを入れる → 完成」と **手順書** を見せた方が、相手も真似して同じものを作れる。AI も「答えだけのお手本」より「手順付きのお手本」を見た方が、応用が利く。
-
----
-
-もう 1 個だけ大事な「考え方の数式」を補足。論文では「AI のサイズ（パラメータ数）」と「正解率」のグラフが繰り返し出てくる。ざっくりこう。
+**この論文での役割**: 比較対象 baseline の定義である。以後の性能差は、この standard prompting と chain-of-thought prompting の差として測られる。
 
 $$
-\text{正解率}_{\text{CoT}}(N) - \text{正解率}_{\text{ふつう}}(N) \approx 0 \ \ (N < 100\text{B のとき})
+\langle \text{input}, \emph{chain of thought}, \text{output} \rangle
 $$
 
+**式の意味**: 提案する chain-of-thought prompting の exemplar 形式である。最終答えの前に、自然言語の中間推論列を入れる。
+
+**記号の定義**:
+- $\text{input}$ ... standard prompting と同じく、問題文や命令。
+- $\emph{chain of thought}$ ... `a series of intermediate natural language reasoning steps that lead to the final output`。本文では答えの後の explanation ではなく、答えの前に生成される推論過程として扱われる。
+- $\text{output}$ ... chain の後に出す最終答え。
+
+**この論文での役割**: 手法そのものの定義である。算数、常識、記号操作の全実験で、この exemplar 形式が standard prompting と比較される。
+
 $$
-\text{正解率}_{\text{CoT}}(N) - \text{正解率}_{\text{ふつう}}(N) \gg 0 \ \ (N \geq 100\text{B のとき})
+\sim 100\mathrm{B}\ \text{parameters}
 $$
 
-**この式が言ってること**: AI のサイズ（=パラメータ数 $N$。← パラメータは「AI の脳のつまみの数」みたいなもの。多いほど大きい脳）が **1000 億個（100B）より小さい間はぜんぜん効果なし**、でも **1000 億を超えた瞬間に急にドカンと効く**。
+**式の意味**: 著者が chain-of-thought prompting の効果が現れるスケールとして本文で述べる目安である。TeX では `only yields performance gains when used with models of \sim100B parameters` と書かれる。
 
-**記号の意味**:
-- $N$ … AI のサイズ。単位は「個」。100B = 1000 億個。
-- $\text{B}$ … Billion = 10 億。100B = 100 × 10 億 = 1000 億。
-- $\text{正解率}_{\text{CoT}}$ … 「途中の考え」付きで解かせたときの正解率。
-- $\text{正解率}_{\text{ふつう}}$ … 答えだけ書かせたときの正解率。
-- $\approx 0$ … ほぼ差が無い。
-- $\gg 0$ … めっちゃ差がついて、CoT の方が大きい。
+**記号の定義**:
+- $\sim$ ... おおよそ、という意味。
+- $100\mathrm{B}$ ... 100 billion、すなわち約 1000 億パラメータ。
+- $\text{parameters}$ ... 言語モデルの学習済みパラメータ数。
 
-**身近な例え**: 自転車に **補助輪を付ける効果**。3 歳児（=小さい AI）に補助輪を付けても、そもそも脚力が足りなくて漕げない。でも 10 歳児（=大きい AI）に補助輪を付けると、急にスイスイ走れるようになる。「途中の考え」も、AI が一定以上大きくないと、足場として活かせない。
+**この論文での役割**: 実験結果の解釈軸である。小さいモデルは流暢だが論理的でない chain を出して性能を落とすことがあり、CoT の利得は主に大規模モデルで現れる、という emergent ability の主張につながる。
 
-## 何がすごいの？
+### 実装 / アルゴリズム上の要点
 
-論文に出てくる **実際の数字** を並べると、こうなる（PaLM 540B = 5400 億パラメータの巨大 AI を使ったとき）:
+- step1: 各タスクについて few-shot exemplars を用意する。standard prompting では `Question -> Answer`、CoT では `Question -> intermediate natural language steps -> Answer` にする。
+- step2: off-the-shelf language model に prompt を与え、greedy decoding で出力を生成する。LaMDA では exemplar order を 5 種類に shuffle し平均する。
+- step3: 最終答えを accuracy / solve rate (%) で評価する。算数では GSM8K, SVAMP, ASDiv, AQuA, MAWPS、常識では CSQA, StrategyQA, Date, Sports, SayCan、記号では Last Letter Concatenation と Coin Flip を使う。
+- step4: ablation として `Equation only`, `Variable compute only`, `Chain of thought after answer` を比較する。GSM8K ではこれらが CoT の利得を説明できないことを示す。
+- step5: 算数では post-hoc external calculator も試す。TeX は Python `eval` を用い、generated chain 内の equation にだけ外部電卓を適用すると説明している。
 
-- **算数の文章題（GSM8K というベンチマーク）**: ふつうのやり方だと **17.9%** しか正解できなかったのが、CoT だと **56.9%** にジャンプ。3 倍以上。
-- **SVAMP**（少しひねった算数）: 69.4% → **79.0%**
-- **MAWPS**（算数の総合テスト）: 79.2% → **93.3%**
-- **AQuA**（選択式の代数）: 25.2% → **35.8%**
-- **常識クイズ（StrategyQA）**: 68.6% → **75.6%**（それまでの最強記録 69.4% を超えた！）
-- **スポーツの常識**: 84%（スポーツ好きな人間）→ **95.4%**（CoT 付き AI）。AI が人間に勝った。
-- **記号操作（コインの表裏 / 名前の最後の文字つなぎ）**: ほぼ **100% 正解** にまで上がった。
-- さらに、**短い問題で練習させて、長い問題を解かせる**（=応用問題）でも、CoT 付きなら通用する。ふつうのやり方だと壊れる。
+## 実験・結果
 
-著者が「自分たちの貢献」として挙げているのは:
+- **データセット / ベンチマーク**: arithmetic は GSM8K (N=1,319), SVAMP (N=1,000), ASDiv (N=2,096), AQuA (N=254), MAWPS の SingleOp (562), SingleEq (508), AddSub (395), MultiArith (600)。commonsense は CSQA, StrategyQA, Date Understanding, Sports Understanding, SayCan。symbolic は Last Letter Concatenation と Coin Flip で、同じ step 数の in-domain と、より長い入力の OOD を見る。
+- **比較対象 / baseline**: standard prompting、prior best mostly finetuning、ablation 3 種、異なる annotator / exemplar / exemplar order / exemplar 数の robustness、Sports では unaided sports enthusiast 84% との比較もある。
+- **指標**: accuracy (%) または solve rate (%)。表の数値は基本的に最終答えの正誤であり、chain 自体の正しさは GSM8K の一部サンプルを手動分析している。
+- **主な結果**: Table `tab:flagship-table` では PaLM 540B が GSM8K 17.9 -> 56.9、SVAMP 69.4 -> 79.0、ASDiv 72.1 -> 73.9、AQuA 25.2 -> 35.8、MAWPS 79.2 -> 93.3 と改善する。external calculator 付きでは PaLM 540B の GSM8K は 58.6、MAWPS は 93.5。GPT-3 175B は GSM8K 15.6 -> 46.9、Codex `code-davinci-002` は 19.7 -> 63.1。
+- **主な結果**: commonsense の Table `tab:all-lm-commonsense` では PaLM 540B が CSQA 78.1 -> 79.9、StrategyQA 68.6 -> 77.8、Date 49.0 -> 65.3、Sports 80.5 -> 95.4、SayCan 80.8 -> 91.7。本文では StrategyQA について 75.6% vs prior state of the art 69.4% と書かれており、表の 77.8% と差がある。
+- **主な結果**: symbolic の Table `tab:all-lm-symbolic` では PaLM 540B が Last Letter Concatenation の in-domain 2 words で 7.6 -> 99.4、OOD 3 words で 0.2 -> 94.8、OOD 4 words で 0.0 -> 63.0。Coin Flip は in-domain 2 flips で 98.1 -> 100.0、OOD 3 で 49.3 -> 98.6、OOD 4 で 54.8 -> 90.2。
+- **著者が主張する貢献**: 追加学習なしで chain-of-thought prompting を提案したこと、arithmetic / commonsense / symbolic の 3 領域で改善を示したこと、効果が model scale の emergent property として現れること、ablation と robustness で「答えの前の自然言語中間ステップ」が重要だと切り分けたこと、記号操作で OOD length generalization を示したこと。
 
-1. **追加学習ゼロ・お手本 8 個だけ** で多段の考え（=何ステップも考える問題）を AI に解かせる方法を提案したこと。
-2. 算数・常識・記号という **3 ジャンル × 12 個のテスト** で、3 系統の AI（GPT-3、LaMDA、PaLM）すべてで効くと実証したこと。
-3. これが **1000 億パラメータを超えてはじめて出てくる現象**（=emergent ability、急に現れる能力）だと示したこと。
-4. 「効くのは『途中の考えを **答えの前** に自然言語で出す』こと自体だ」と、いろんな比較実験で切り分けたこと。
+## 妥当性と限界
 
-特に 4 番が大事で、論文では 3 つの「もしかしてこっちが本当の理由？」を全部潰している:
+- **この主張を支える根拠**: モデル系列をまたいだスケール実験がある。LaMDA, GPT-3, PaLM で小さいモデルから大きいモデルまで比較し、Table `tab:all-lm-math` / `tab:all-lm-commonsense` / `tab:all-lm-symbolic` が standard prompting と CoT を並べる。
+- **この主張を支える根拠**: ablation が比較的よく設計されている。LaMDA 137B の GSM8K では standard 6.5, CoT 14.3 に対し、equation only 5.4、variable compute only 6.4、reasoning after answer 6.1 であり、少なくとも GSM8K では「式だけ」「token 数だけ」「答え後の説明だけ」では足りない。
+- **この主張を支える根拠**: robustness 実験では、Annotator B / C、concise style、GSM8K training set から sampled exemplars でも arithmetic で standard prompting を大きく上回る。FAQ では異なる exemplar order や exemplar 数でも効果が概ね残ると述べる。
+- **著者が認めている limitations / future work**: chain of thought が人間の思考過程を模倣しても、ニューラルネットが実際に `reasoning` しているかは open question。few-shot では annotation cost は小さいが、finetuning 用に大量 CoT を作るなら高コスト。`no guarantee of correct reasoning paths` があり、正しい答えでも誤った reasoning path の場合がある。効果が大規模モデルでしか出にくいため real-world applications で serving cost が高い。小さいモデルに reasoning を誘導する研究が future work とされる。
+- **読者として注意すべき点**: GSM8K の正解 50 例分析は、本文では「2 例を除き正しい」と書かれるが、Appendix `subsec:correct-chain-of-thought` は 50 例中 1 例が `correct by chance`、49 例が correct logic and math と述べる。Table `tab:appendix-gsm8k-correct-analysis` の caption は 7 salient cases / other 43 と書くため、細かい分類は本文と付録を照合して読む必要がある。
+- **読者として注意すべき点**: prior best との比較は、Table `tab:flagship-table` 自身が prior best を `N/A (finetuning)` としており、CoT は prompting only である。これは「タスク専用 finetuning なしでも強い」という著者主張を支える一方、訓練条件をそろえた apples-to-apples 比較ではない。
+- **追加で確認したい実験 / 疑問**: commonsense や binary classification では偶然正解が起きやすいと著者自身が述べるため、chain の factuality / faithfulness を大規模に評価したい。prompt engineering は完全には消えておらず、Coin Flip では Annotator A 99.6% に対して Annotator C 71.4% と大きく揺れる。GPT-3 175B は CSQA 79.5 -> 73.5、StrategyQA 65.9 -> 65.4 と CoT が効かない例もあり、モデル間転移の条件も未解決である。
 
-- **「式だけ書かせる」**: ダメだった。GSM8K は式だけだと解けない。
-- **「ドット `…` を式の文字数ぶん書かせる」**（=ただ考える時間を増やすだけ）: ダメだった。時間じゃなく内容が大事。
-- **「答えを言ってから途中の考えを書かせる」**: ダメだった。**答えの前に** 考えを出さないと意味がない。
+## 用語メモ
 
-## キーワード辞典
+一般的な辞書的定義ではなく、この論文での使われ方を中心に書く。
 
-- **LLM（Large Language Model、大規模言語モデル）** … 大量の文章を読み込んで、次の単語を予測するのが超得意になった巨大プログラム。ChatGPT や Gemini の中身もこれ。
-- **prompting（プロンプティング）** … AI への「お願い文」を工夫すること。AI を再学習させずに、入力の書き方だけで挙動を変える。
-- **few-shot prompting（少数事例プロンプト）** … お手本を数個だけ見せてから本番問題を解かせるやり方。
-- **chain of thought（CoT、考えの鎖）** … 答えに至るまでの中間ステップを、人間の言葉で順番に書いたもの。
-- **exemplar（イグゼンプラ）** … お手本。論文では 8 個（AQuA だけ 4 個）。
-- **fine-tuning（ファインチューニング）** … もとの AI に追加で勉強させて特訓すること。CoT は **使わない**（ここがすごい）。
-- **parameter（パラメータ）** … AI の「脳のつまみ」。多いほど大きな AI。B = Billion = 10 億。
-- **GPT-3 / LaMDA / PaLM / UL2 / Codex** … 5 種類の LLM。論文ではこれら全部で実験。PaLM 540B（5400 億パラメータ）が最大で、一番強い結果を出す。
-- **GSM8K** … 小学校レベルの算数文章題 8500 問のテスト集。
-- **SVAMP / MAWPS / ASDiv / AQuA** … いろんなタイプの算数テスト集。
-- **StrategyQA / CSQA / Date / Sports / SayCan** … 常識クイズ系のテスト集。
-- **last letter concatenation** … 「単語の最後の文字をつなげる」記号操作タスク（例: Amy Brown → yn）。
-- **coin flip** … 「コインを誰がひっくり返した／返さなかった」を追って表裏を答えるタスク。
-- **emergent ability（創発的能力）** … AI が一定サイズを超えたとたん、急にできるようになる能力。CoT もその例。
-- **benchmark（ベンチマーク）** … 共通の実力テスト問題集。AI 同士を公平に比べるために使う。
-- **baseline（ベースライン）** … 比較の土台にする「ふつうのやり方」。ここでは答えだけ書かせる few-shot。
-- **state of the art（SOTA、最強記録）** … その時点でいちばん良い成績。CoT は GSM8K・SVAMP・MAWPS・StrategyQA で当時の SOTA を更新。
-- **greedy decoding（グリーディーデコーディング）** … AI が単語を生成するとき、**毎ステップで一番確率の高い単語を選ぶ** やり方（最もシンプルな出力方法）。
-- **ablation study（アブレーション）** … 「ここを抜いたらどうなる？」と部品を 1 個ずつ外して、本当に効いてる部品はどれか調べる実験。
-- **OOD（out-of-domain、領域外）** … 練習で見せたものよりも難しい／長い問題でテストすること。
-- **annotator（アノテーター）** … お手本の文章を書く人。論文では著者 3 人が独立に書いて比較した。
+- **chain of thought**: 最終答えへ至る自然言語の中間推論列。本文では `solutions/explanations typically come after the final answer` と区別し、CoT は答えの前に置く。
+- **chain-of-thought prompting**: few-shot exemplar を `〈input, chain of thought, output〉` に拡張する方法。モデルは finetune されない。
+- **standard prompting**: `input--output pairs` の few-shot baseline。最終答えを直接生成させる。
+- **exemplar**: prompt 内に置く例題。算数では AQuA 以外で 8 個、AQuA で 4 個を使う。
+- **emergent ability**: 小さいモデルの性能曲線から単純には予測できず、十分な scale で急に現れる能力としての位置づけ。本文は CoT の成功が `~100B parameters` 級で現れると述べる。
+- **Equation only**: chain の代わりに数式だけを書かせる ablation。GSM8K では効果が小さいが、SVAMP / ASDiv / MAWPS のような少数 step 問題では改善する場合がある。
+- **Variable compute only**: equation の文字数に合わせて dots を出させ、追加 token だけの効果を切り分ける ablation。本文では baseline とほぼ同等とされる。
+- **Reasoning after answer / Chain of thought after answer**: 先に答えを出してから chain を書かせる ablation。答え前の sequential reasoning が必要かを調べるための比較である。
+- **OOD length generalization**: few-shot exemplars より長い入力で評価すること。Last Letter Concatenation では 2-word exemplars から 3/4-word names へ、Coin Flip ではより多い flip step へ一般化できるかを見る。
+- **external calculator**: generated chain 内の arithmetic equation に Python `eval` を後処理で適用する設定。モデルの推論文生成と純粋な計算ミスを分けるために使われる。
+- **prompt engineering**: prompt の具体的な書き方を調整すること。著者は arithmetic では比較的 robust としつつ、FAQ で `Prompt engineering still matters` と明記する。
 
-## ちょっと深掘り（中学生は飛ばして OK）
+## 読む順番の提案
 
-- **なぜ大きい AI でしか効かないのか？** 著者は「小さい AI でも CoT 風の文を書くことはできるけど、内容が **流暢だけど論理的にめちゃくちゃ**（fluent but illogical）になる」と分析している。8B（80 億）くらいだと、文法は通るのに途中の計算が間違ってる、みたいな chain ができる。100B 超えると、ようやく途中ステップを **論理的にも** 正しく書けるようになる。
-- **失敗の中身を手作業で分類**: LaMDA 137B が GSM8K で間違えた 50 問を著者が手で見たら、46% は「計算ミスや 1 ステップ抜け」みたいな **ちょっとしたミス**。残り 54% は「問題文の意味を取り違えた」みたいな **重大なミス**。これらの大半は、PaLM を 62B → 540B にスケールアップすると消える。
-- **正解 50 問のうち 48 問は途中の考えも完全に正しかった**: 残り 2 問は「途中はおかしいのに偶然答えだけ合ってた」というケース。つまり CoT は **見せかけのウソ説明ではなく、本当に推論として機能してる** ことが多い。
-- **お手本の書き方への頑健性**: 著者 A・B・C が独立に書いた 3 種類のお手本、さらに GSM8K の練習問題からランダムに取った 8 個、どれを使っても、ふつうの few-shot より大きく勝つ。
-- **prompt engineering は完全には消えない**: コイン投げタスクでは、著者 A の書き方だと 99.6% なのに、著者 C だと 71.4% という大差がついたケースもある。完全に書き方フリーではない。
-- **著者自身の limitation（弱み告白）**: (1) これが本当に「推論」なのかは未解決。 (2) **正しい考えの保証はない**（合ってるように見える chain が間違ってることも、間違った chain が偶然正解することもある）。 (3) 100B 超の AI を動かすのは高コスト。
-- **この論文が拓いた道**: その後の Self-Consistency（複数 chain の多数決）、Zero-shot CoT（「Let's think step by step.」と書くだけ）、Tree-of-Thoughts（枝分かれ思考）など、現代の「考える AI」はだいたいこの論文の延長線上にある。
+- まず Abstract と Introduction を読み、問題意識を押さえる。正規ノートでは `Summary（著者の主張）` の「問題」「手法」に対応する。
+- 次に Section 2 `Chain-of-Thought Prompting` と Figure `fig:pull-figure` / `fig:dataset-examples` を見る。ここで `〈input, chain of thought, output〉` と、答え前に chain を置く理由を確認する。
+- 算数の主結果は Section 3、Figure `fig:main-math`、Table `tab:flagship-table`、Table `tab:all-lm-math` を読む。正規ノートの「算数」「emergent」「ablation」の数値はここに対応する。
+- 妥当性を見るには Section 3.3 `Ablation Study`、Section 3.4 `Robustness of Chain of Thought`、Appendix `tab:ablations-arithmetic` / `tab:ablations-commonsense-symbolic` を読む。正規ノートの `Critical Thoughts` の強み・弱みを検証する場所である。
+- 常識・記号の結果は Section 4, Section 5 と Table `tab:all-lm-commonsense` / `tab:all-lm-symbolic` を読む。StrategyQA の本文値 75.6 と表値 77.8 の差、Sports の表値などは TeX 上で確認しておく。
+- 最後に Discussion と FAQ、Appendix の correct / incorrect chain analysis を読む。limitations、prompt engineering、faithfulness の注意点は正規ノートの `Notes / Quotes` と `Critical Thoughts` に直接つながる。
 
 ## もとの論文・正規ノート
 

@@ -1,4 +1,4 @@
-# Training Compute-Optimal Large Language Models（計算量に対してちょうど良い大きさの大規模言語モデルを訓練する）
+# Training Compute-Optimal Large Language Models（大規模言語モデルの compute-optimal training を見直したスケーリング則の論文）
 
 - arXiv: https://arxiv.org/abs/2203.15556
 - 一次ソース: ../papers/arXiv-2203.15556v1/
@@ -8,152 +8,174 @@
 
 ## 一言で言うと
 
-同じ電気代でAIを賢くするなら、モデルを「大きくする」より「同じ分だけデータも増やす」方がずっと得だよ、と証拠つきで示した論文。
+固定された訓練 FLOPs 予算 $C$ の下で、dense autoregressive Transformer language model のパラメータ数 $N$ と訓練トークン数 $D$ をどう配分すべきかを、400 超の訓練 run から推定した論文。著者らは、既存の大規模 LM は model size に対して training tokens が少ない「undertrained」な状態であり、compute-optimal training では $N$ と $D$ をほぼ同じ割合で増やすべきだと主張し、その検証として Gopher と同じ compute budget で Chinchilla 70B を 1.4T tokens 訓練して、多数の downstream task で Gopher 280B を上回ることを示す。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- 大きな「言語モデル」（← 文章を読んで次の単語を当てる AI。例えば ChatGPT の中身）は、訓練に莫大な電気代と時間がかかる。世界中の計算機を借りても、訓練のチャンスは大体「1 回だけ」。
-- だから、「使える計算量（電気代）が決まっているとき、AI のサイズと読ませる文章の量、どっちにどれくらい配分するのが一番賢くなるのか？」が大事な問いになる。
-- これまでの常識（2020 年の Kaplan さんたちの論文）はこう言っていた:「電気代を 10 倍にできるなら、モデルのサイズを 5.5 倍に、文章量は 1.8 倍にすればいい」。つまり「とにかくモデルを大きくしろ」。
-- その結果、GPT-3（1750 億パラメータ）も Gopher（2800 億パラメータ）も MT-NLG（5300 億パラメータ）も、みんな「約 3000 億単語」しか読まずに大きくなりすぎていた。
-- 著者たちは「本当にそれで正しいの？」を疑った。
+- **問題設定**: 事前に決まった training compute budget の下で、final pre-training loss $L(N,D)$ を最小にする model parameters $N$ と training tokens $D$ の組を選ぶ問題。TeX の中心的な問いは “Given a fixed FLOPs budget, how should one trade-off model size and the number of training tokens?”（main.tex, Section `Introduction` / `sec:method`）。
+- **対象範囲 / 仮定**: 対象は autoregressive Transformer language model。主解析では compute と optimal model size / token count の関係を power law と仮定する。FLOPs は model parameters と seen training tokens の決定的関数として扱われ、Approach 3 では近似 $\text{FLOPs}(N,D) \approx 6ND$ も使う（main.tex, Eq. `eq:model`, Section `FLOPs computation`）。
+- **既存研究との差分**: Kaplan et al. (2020) は、compute が増えると model size を training data より速く増やすべきだとし、表では $N_{opt} \propto C^{0.73}$, $D_{opt} \propto C^{0.27}$ と比較される。一方、この論文の 3 手法はおおむね $a \approx b \approx 0.5$ を得る（Table `tab:comparison`）。
+- **この論文で答えたい問い**: 近年の大規模 dense LM が本当に compute-optimal か、もし同じ FLOPs でより小さいモデルをより長く訓練したら性能が上がるか。具体的には、Gopher と同じ $5.76 \times 10^{23}$ FLOPs 付近で、70B parameters / 1.4T tokens の Chinchilla が 280B parameters / 300B tokens の Gopher より良いかを検証する。
 
-> **用語メモ**
-> - **パラメータ**: AI の中にある「ツマミ」の数。たくさんあるほど複雑なことを覚えられるけど、回すのに電気代がかかる。
-> - **トークン**: AI が読む「単語のかけら」。たとえば "playing" → "play" + "ing" のように分けられる。論文中の「1.4T tokens（1.4 兆トークン）」は本何千万冊分のような量。
-> - **FLOPs**: 「計算量」の単位。たし算かけ算を 1 回やったら 1 FLOP。$10^{23}$ FLOPs とは 10 のあとに 0 が 23 個ついた回数の計算で、家庭の電気代では到底買えない量。
+## 背景と前提
 
-## どうやって解いたの？
+- この論文での **compute budget** は、訓練に使える FLOPs の総量を指す。著者は「利用できる accelerator 数と利用時間は実務上しばしば事前に決まっている」と述べ、巨大モデルは通常 1 回しか訓練できないため、事前に $N$ と $D$ を決めることが重要だとする。
+- **$N$** は model parameters の数、**$D$** は training tokens の数、**$L(N,D)$** はそのモデルをその token 数だけ訓練した後の final pre-training loss。簡単化のため、解析では smoothed training loss を test loss の unbiased estimate として扱う。脚注では infinite data regime、すなわち training tokens が corpus 全体の token 数より少ない条件を挙げている（main.tex, Eq. `eq:model` 前の脚注）。
+- **compute-optimal** とは、同じ FLOPs で最も低い loss に到達する設定のこと。ここでの最適性は主に pre-training loss と、その検証としての downstream evaluation で議論される。
+- 既存の代表的 dense Transformer LM は、LaMDA 137B / 168B tokens、GPT-3 175B / 300B tokens、Jurassic 178B / 300B tokens、Gopher 280B / 300B tokens、MT-NLG 530B / 270B tokens と整理される（Table `tab:llms`）。著者は、LaMDA 以外の多くが約 300B tokens で訓練されている点を問題視する。
+- Kaplan et al. (2020) との重要な違いは learning rate schedule の扱い。著者は、Kaplan et al. が固定 token 数・固定 schedule を使ったため、短い training horizon の intermediate loss が、対応する短い schedule で最適化した場合の final loss を過大評価し、結果として data より model size を速く増やす結論につながったと説明する（main.tex, Section `Related Work`, Figure `fig:cosine`）。
+- Chinchilla の評価は Gopher 論文の task subset を大きく踏襲し、直接比較できるようにする。ただし、Chinchilla は Gopher と同じ dataset family を使うものの、sampling distribution、optimizer、tokenizer、optimizer state の precision などにも差がある（main.tex, Section `Model and training details`）。
+
+## 提案手法
 
 ### コアアイデア
 
-「予算（電気代）が決まったお小遣いだとして、ケーキ（モデルサイズ）と飲み物（読ませるデータ量）を何個ずつ買えば一番満足できる？」を、お小遣いを変えながら **400 回以上のお買い物実験** をして調べた、という話。
+著者らは、固定 FLOPs で loss を最小にする $N$ と $D$ の関係を 1 つの fitting 手法だけに依存せず、3 つの独立した empirical approach で推定する。すべての approach は、under 70M から over 16B parameters のモデルを、5B から数百B tokens の範囲で訓練した run に基づく。Abstract では “5 to 500 billion tokens”、Introduction では “5B to over 400B tokens” と書かれている。
 
-具体的には小さな AI から中くらいの AI まで 400 種類以上を実際に訓練して、「電気代をいくら使ったときに、どのサイズ・どの量が一番賢くなるか」のデータを集める。同じ問いを **3 つの違う角度** から解いてみて、全部同じ答えに行き着いたから「信用できる」と主張する。
+1 つ目は training curve envelope を使う方法で、固定 model size ごとに異なる training horizons を走らせ、各 FLOP count で最も低い loss を与える run を選ぶ。2 つ目は IsoFLOP profiles で、FLOP 予算を固定し、model size を変えたときの final loss の谷を探す。3 つ目は $\hat L(N,D)$ という parametric loss function を全 run の final loss に fit し、そこから efficient frontier を閉形式で求める。
 
-### 仕組み
+3 手法の推定が近いため、著者は「model size と training tokens は compute の増加に対してほぼ等しい割合で増やすべき」と結論づける。この予測を実物で試すため、Gopher と同じ compute budget で Chinchilla 70B を 1.4T tokens 訓練する。
 
-- step1: **方法 1（訓練カーブの外側を見る）**: 7000 万〜100 億パラメータの AI を、それぞれ「短く・中くらい・長く・もっと長く」の 4 通りで訓練する。出来上がった「電気代 vs 賢さ」のグラフを重ねて、その一番下のフチ（envelope = 包絡線。外側の輪郭）を取れば「同じ電気代で一番賢いやり方」が見える。
-- step2: **方法 2（IsoFLOP = 同じ電気代で比べる）**: 「電気代をぴったり○○に固定する」を 9 通り決めて、その電気代の中でモデルのサイズを変えてみる。すると「ちょっと小さすぎ → 賢くない／ちょうどいい → 一番賢い／大きすぎ → データが足りなくて賢くない」の **谷型のグラフ** が出る。その谷底をピンポイントで探す。
-- step3: **方法 3（数式モデルでフィット）**: 集めたデータ全部を 1 つの数式（後述）に当てはめて、未来を予測できる関数にする。
-- step4: 3 つの方法とも「モデルとデータは **同じ割合で** 増やすべき」と言ったので、その予想に従って実際に **Chinchilla（チンチラ）** という 700 億パラメータの AI を、Gopher と同じ電気代で **1.4 兆トークン**（Gopher の 4 倍の量の文章）で訓練して、本当に賢くなるか確かめた。
+### 重要な定義・数式
 
-### 主要な数式
+$$
+N_{opt}(C), D_{opt}(C) = \argmin_{N, D \text{ s.t. } \text{FLOPs}(N, D) = C} L(N, D).
+$$
 
-#### 式①: 「最適な配分」を決める設定そのもの
+**式の意味**: 固定された compute budget $C$ の下で、final pre-training loss $L(N,D)$ を最小にする model size と training tokens の組を定義する式（main.tex, Eq. `eq:model`）。
 
-$$ N_{opt}(C),\ D_{opt}(C) = \arg\min_{N, D\ \text{s.t.}\ \text{FLOPs}(N,D)=C}\ L(N, D) $$
+**記号の定義**:
+- $C$ ... training compute budget。FLOPs 単位で測られる。
+- $N$ ... model parameters の数。
+- $D$ ... training tokens の数。
+- $L(N,D)$ ... $N$ parameters のモデルを $D$ tokens 訓練した後の loss。
+- $\text{FLOPs}(N,D)$ ... $N$ と $D$ から決まる訓練計算量。
+- $N_{opt}(C), D_{opt}(C)$ ... compute budget $C$ に対して loss を最小にする最適な配分。
 
-**この式が言ってること**: 「使える電気代 $C$ が決まったら、その中で AI のサイズ $N$ と読ませるデータ量 $D$ をどう組み合わせれば、 AI の『間違いの少なさ』 $L$ が一番小さくなるか」を探そう、という設定の宣言だよ。
+**この論文での役割**: 論文全体の問題設定そのもの。3 つの approach はすべて、この関数 $N_{opt}(C),D_{opt}(C)$ を経験的に推定する方法として位置づけられる。
 
-**記号の意味**:
-- $C$ … 使ってよい計算量（電気代の予算）。FLOPs という単位で測る。
-- $N$ … モデルのパラメータ数（AI の中のツマミの数）。
-- $D$ … 読ませるトークン数（読書量）。
-- $L(N, D)$ … サイズ $N$ のモデルに $D$ だけ読ませたあとに残る「間違い度合い」。小さいほど賢い。$L$ は loss（ロス、間違いの大きさ）の頭文字。
-- $\arg\min$ … 「一番小さくなる組み合わせを返す」という命令の記号。
-- $\text{s.t.}$ … 「ただし〜という条件のもとで」という意味（subject to の略）。
-- $\text{FLOPs}(N,D)=C$ … 「電気代がちょうど $C$ になるように選ぶ」というルール。
-- $N_{opt}(C),\ D_{opt}(C)$ … 求めたい答え（最適な $N$ と $D$）。opt は optimal（最適）の略。
+$$
+N_{opt} \propto C^a, \qquad D_{opt} \propto C^b.
+$$
 
-**身近な例え**: 文化祭の予算が 5000 円とする。タピオカ（モデルサイズ）の杯数と、トッピング（トークン数）の種類、どっちにいくら使えば「お客さんの満足度（賢さ）」が一番上がるか、を決める問題。条件は「合計でぴったり 5000 円」。
+**式の意味**: compute budget が増えたとき、最適な model size と training tokens が power law で増えるという仮定・推定結果の表現。Table `tab:comparison` はこの $a,b$ を比較する。
 
-#### 式②: 3 通りの実験結果（賢さ予測のかたち）
+**記号の定義**:
+- $C$ ... training FLOPs。
+- $a$ ... compute を増やしたときの optimal parameter count の scaling exponent。
+- $b$ ... compute を増やしたときの optimal training tokens の scaling exponent。
+- $\propto$ ... 比例関係を表す。
 
-$$ N_{opt} \propto C^{a}, \qquad D_{opt} \propto C^{b} $$
+**この論文での役割**: Kaplan et al. (2020) との主要な対立点。Table `tab:comparison` では、Approach 1 が $a=0.50$, $b=0.50$、Approach 2 が $a=0.49$, $b=0.51$、Approach 3 が $a=0.46$, $b=0.54$、Kaplan et al. が $a=0.73$, $b=0.27$ と報告される。
 
-**この式が言ってること**: 「ちょうど良いモデルの大きさ」と「ちょうど良いデータ量」は、電気代をある決まった『くらい』で増やしていけばいい、という関係になっている。3 つの方法のどれでも、$a$ も $b$ も **だいたい 0.5** だった。つまり電気代を 4 倍にしたいなら、モデルも 2 倍・データも 2 倍にすればちょうど良い（2 × 2 = 4 だから）。Kaplan さんたちは $a=0.73$, $b=0.27$ と言っていたので、それより **モデルは小さめ・データはずっと多め** が正解だった。
+$$
+\hat L(N,D) \triangleq E + \frac{A}{N^\alpha} + \frac{B}{D^\beta}.
+$$
 
-**記号の意味**:
-- $\propto$ … 「比例する」という記号（イコールに似てるけど「同じ比で増える」という意味）。
-- $C$ … 電気代の予算。
-- $a$, $b$ … 「電気代を増やしたとき、$N$ と $D$ をそれぞれどのくらいの『くらい』で増やすか」の数。$a+b=1$ になるようにしてある。
-- $C^a$ … 「$C$ を $a$ 回かけ合わせたくらい」を表す書き方（$a$ が 0.5 ならルート、$a$ が 1 ならそのまま）。「乗（じょう）」と呼ぶよ。
+**式の意味**: Approach 3 で使う parametric loss function。loss を、理想的生成過程の loss、有限の model size による近似誤差、有限の training tokens / optimization steps による誤差の 3 項に分ける（main.tex, Eq. `eq:decompose`）。
 
-**身近な例え**: ピザの値段が「直径」と「枚数」で決まると思ってみよう。お小遣いが 2 倍になったとき、「直径だけ 1.7 倍にする」（古い説）か、「直径も 1.4 倍、枚数も 1.4 倍にする」（この論文）か、どっちが満腹になるか、という話。この論文は「直径も枚数も同じ比で増やすのが正解」と言っている。
+**記号の定義**:
+- $\hat L(N,D)$ ... $N,D$ から予測される loss。
+- $E$ ... ideal generative process on the data distribution の loss。Appendix では Bayes risk、つまり “entropy of natural text” と説明される。
+- $A/N^\alpha$ ... transformer の hypothesis space が有限の $N$ parameters に制限されることによる項。
+- $B/D^\beta$ ... 有限個の data points / optimization steps で訓練することによる stochastic approximation / optimization suboptimality の項。
+- $A,B,\alpha,\beta$ ... run の loss から fit される係数。
 
-> 結果の数字: 方法 1 → $a=0.50, b=0.50$ ／ 方法 2 → $a=0.49, b=0.51$ ／ 方法 3 → $a=0.46, b=0.54$。3 つともほぼ 0.5。
+**この論文での役割**: 全 run の final losses を統合して、明示的な efficient frontier を導くためのモデル。Appendix `app:parametric` では empirical fit として $E=1.69$, $A=406.4$, $B=410.7$, $\alpha=0.34$, $\beta=0.28$ が報告される。
 
-#### 式③: 賢さを予測する公式（方法 3）
+$$
+\min_{A, B, E, \alpha, \beta}\quad \sum_{\text{Runs }i} \text{Huber}_\delta \Big(\log \hat L(N_i, D_i) - \log L_i\Big).
+$$
 
-$$ \hat L(N, D) = E + \frac{A}{N^{\alpha}} + \frac{B}{D^{\beta}} $$
+**式の意味**: Approach 3 の model fitting objective。予測 log loss と観測 log loss の差を Huber loss で測り、$(A,B,E,\alpha,\beta)$ を推定する（main.tex, Eq. `eq:huber`）。
 
-**この式が言ってること**: AI の「間違いの大きさ」は **3 つの部品の足し算** でだいたい予測できる、という公式。
-1 つ目（$E$）は「世界一賢い AI でも 100% 当てるのは無理な、文章が持つもともとのデタラメさ」。
-2 つ目（$A/N^{\alpha}$）は「モデルが小さいせいで覚えきれないぶんの間違い」（モデルを大きくすると小さくなる）。
-3 つ目（$B/D^{\beta}$）は「読んだ文章が足りないぶんの間違い」（データを増やすと小さくなる）。
-$\alpha=0.34$, $\beta=0.28$ で実データに当てはまった。
+**記号の定義**:
+- $i$ ... 各 training run。
+- $N_i,D_i,L_i$ ... run $i$ の model parameters、training tokens、観測 loss。
+- $\text{Huber}_\delta$ ... 外れ値に比較的頑健な loss。TeX では $\delta=10^{-3}$ を使う。
+- L-BFGS ... この最適化に使われる algorithm。local minima 対策として grid of initialisations から best fit を選ぶ。
 
-**記号の意味**:
-- $\hat L(N, D)$ … 予測された「間違いの大きさ」。$\hat{}$（ハット）は「これは予測値ですよ」の印。
-- $E$ … 絶対に避けられない最小の間違い（言葉そのものの揺らぎ。例えば「明日は雨」と書きかけて「晴れ」とも続けられる、みたいな多義性）。実際の数値は **$E = 1.69$**。
-- $A, B$ … 部品の大きさを決める数。実データから決まった値は **$A = 406.4,\ B = 410.7$**。
-- $N$ … パラメータ数（AI のツマミの数）。
-- $D$ … トークン数（読んだ単語のかけらの数）。
-- $\alpha, \beta$ … 「モデルやデータを増やしたとき、間違いがどのくらいの速さで減るか」の数。**$\alpha = 0.34, \beta = 0.28$**。
-- $\frac{A}{N^{\alpha}}$ … $N$ が大きくなるほど小さくなる項（「割り算の下が大きくなると答えが小さい」を思い出して）。
+**この論文での役割**: Approach 3 の推定が、単に手で曲線を引いたものではなく、明示的な objective と optimization procedure による fit であることを示す。小 compute regime への過剰適合を避けるため Huber loss が重要だと著者は述べる。
 
-**身近な例え**: テスト勉強の点数の伸び方に似ている。点数 = 100 − (生まれつきの限界) − (勉強時間が足りないぶんの失点) − (使ってる参考書が薄いぶんの失点)。参考書を厚くする（モデルを大きくする = $N$ を大きくする）と 2 つ目の失点が減り、勉強時間を増やす（データを増やす = $D$ を大きくする）と 3 つ目の失点が減る。でも 1 つ目の「テストには毎回出る勘違いを誘うトラップ問題」（= $E$）はどうしようもない、というイメージ。
+$$
+N_{opt}(C) = G {\left(\frac{C}{6}\right)}^{a}, \quad
+D_{opt}(C) = G^{-1} {\left(\frac{C}{6}\right)}^{b}, \quad
+G = {\left(\frac{\alpha A}{\beta B} \right)}^{\frac{1}{\alpha + \beta}},\quad
+a = \frac{\beta}{\alpha+\beta}, \quad b = \frac{\alpha}{\alpha + \beta}.
+$$
 
-## 何がすごいの？
+**式の意味**: $\hat L(N,D)$ と $\text{FLOPs}(N,D) \approx 6ND$ から得られる efficient computational frontier の閉形式（main.tex, Approach 3）。
 
-数字はぜんぶ TeX に書いてあるものから持ってきている。
+**記号の定義**:
+- $G$ ... $A,B,\alpha,\beta$ から決まる比例係数。
+- $a,b$ ... optimal parameter count と token count の scaling exponent。
+- $C/6$ ... FLOPs 近似 $C \approx 6ND$ による項。
+- $\alpha,\beta,A,B$ ... parametric loss の fit parameters。
 
-- **MMLU（57 種類の学校テストみたいな問題集）**: Chinchilla 67.6%（5-shot）vs Gopher 60.0%。**+7.6 ポイント** で人類のプロが「2023 年にはこれくらいになっているだろう」と予想した 63.4% も超えた。57 タスク中 51 勝・2 引き分け・4 敗（負けたのは大学数学・計量経済・道徳場面・形式論理）。
-  - 90% を超えたタスクが 4 つもある: high_school_gov_and_politics, international_law, sociology, us_foreign_policy。
-- **BIG-bench（62 種類のいろんな問題集）**: Chinchilla 65.1% vs Gopher 54.4%。**+10.7 ポイント**。負けたのはたった 4 タスク。
-- **読解（LAMBADA, RACE-h, RACE-m）**: LAMBADA 77.4 vs Gopher 74.5 / MT-NLG 76.6、RACE-h 82.3 vs 71.6、RACE-m 86.8 vs 75.1。
-- **常識（0-shot）**: HellaSWAG 80.8、Winogrande 74.9、BoolQ 83.7、SIQA 51.3、PIQA 81.8。**5300 億パラメータの MT-NLG にもほぼ全勝**。
-- **クローズドブック質問応答**（教科書を見ずに答える形式）: Natural Questions 5-shot 31.5%（当時の世界記録）、TriviaQA filtered 5-shot 64.1%。
-- **TruthfulQA（事実でない答えを言わないかのテスト）**: 0-shot 43.6 → 10-shot 66.7。Gopher は 29.5 / 43.7 だったので圧勝。
-- **Pile（書籍・論文などの集合）の bits-per-byte**: 全部のサブセットで Gopher を上回る。WikiText103 の perplexity は 7.16 vs Gopher 7.75（perplexity = 当てづらさ。小さいほど賢い）。
-- **公平性 (Winogender)**: 代名詞を当てる問題で全体 78.3 vs Gopher 71.4。特に「ステレオタイプに反する女性例」で +10 ポイント。
-- **有害な発言**: PerspectiveAPI の平均スコアは Chinchilla 0.087 vs Gopher 0.081 で **ほぼ変わらず**。「賢い AI = 暴言が増える」ではなかった。
+**この論文での役割**: Approach 3 が $a=0.46$, $b=0.54$ を出す直接の理由を与える。$\alpha=0.34$, $\beta=0.28$ を入れると、data 側を model 側よりやや速く増やす予測になる。
 
-著者が論文で「貢献（contribution）」として強調しているのは:
+### 実装 / アルゴリズム上の要点
 
-1. **3 つの独立な方法** で「モデルとデータは同じ割合で増やせ」という同じ結論に到達した（だから恣意的なフィットではない）。
-2. Kaplan+ 2020 のズレた予測の **原因を特定した**: 全モデルで同じ学習率スケジュールを使い、本当はもっと長く訓練すべき短い実験の途中値を「終点の値」として使っていたから、データが少ないモデルが過小評価されていた。学習率は実際の訓練長さに合わせて落とすべき（Fig. cosine）。
-3. 予言どおりに **実物の Chinchilla 70B** を作って、Gopher 280B・GPT-3 175B・Jurassic-1 178B・MT-NLG 530B にほぼ全タスクで勝つことを示した。
-4. **副産物として、推論（使うとき）も微調整（追加訓練）もコストが 4 分の 1 になる**。サイズが 1/4 だから。
+- **Approach 1: training curve envelope**。70M から 10B parameters の範囲で、各 model size を 4 種類の cosine cycle length / training horizon で訓練する。各 run の training loss curve を smoothing / interpolation し、1500 個の logarithmically spaced FLOP values で最小 loss を達成する model size と token count を取り、$N_{opt} \propto C^a$, $D_{opt} \propto C^b$ を fit する。結果は $a=0.50$, $b=0.50$（Figure `fig:approach1`, Table `tab:comparison`）。
+- **Approach 2: IsoFLOP profiles**。$6 \times 10^{18}$ から $3 \times 10^{21}$ FLOPs までの 9 種類の fixed FLOP budgets で、model size を変えて final loss を見る。各 IsoFLOP curve の loss が最小になる model size を parabola fit で推定し、そこから scaling exponent を fit する。結果は $a=0.49$, $b=0.51$（Figure `fig:isoflop`, Table `tab:comparison`）。
+- **Approach 3: parametric loss fitting**。Approach 1 と 2 の final losses を $\hat L(N,D)$ に fit し、Huber loss + L-BFGS で parameters を求める。結果は $E=1.69$, $A=406.4$, $B=410.7$, $\alpha=0.34$, $\beta=0.28$、scaling exponent は $a=0.46$, $b=0.54$（main.tex, Appendix `app:parametric`）。
+- **Learning rate schedule の扱い**。著者は cosine cycle length を target number of training steps に合わせるべきだとする。Figure `fig:cosine` では、cosine cycle length が training steps より 25% を超えて長いと性能低下が明確になると説明される。
+- **FLOPs の計算**。Embedding、attention、dense block、final logits、backward pass まで含める。Appendix `sec:flops` では、一般的な近似 $C=6DN$ との比を比較し、差は小さく分析に影響しないと述べる。
+- **Chinchilla の訓練**。Gopher compute budget での optimal model size は 40B から 70B parameters の間と予測されるため、著者は dataset と computational efficiency を考慮して range の大きい側である 70B を採用し、1.4T tokens で訓練する（main.tex, Section `Chinchilla`）。
 
-## キーワード辞典
+## 実験・結果
 
-- **言語モデル (Language Model, LM)** … 文章を読んで「次の単語は何か」を予想する AI。
-- **大規模言語モデル (LLM)** … 上の AI のうち、巨大（数十億〜数千億パラメータ）なもの。
-- **パラメータ ($N$)** … AI の中の「ツマミ」の数。多いほど複雑なことが覚えられる。
-- **トークン ($D$)** … 単語のかけら（"play" + "ing" など）。AI が読む文の最小単位。
-- **FLOPs ($C$)** … たし算かけ算 1 回が 1 FLOP。AI の電気代の目安。
-- **Transformer (トランスフォーマー)** … 今の AI が使っている設計図の名前。たくさんの文を一気に見て関係を学ぶ仕組み。
-- **autoregressive（自己回帰）** … 「今までの単語から次の単語を予想する」やり方。本を 1 文字ずつ書き足していくのに似ている。
-- **loss（ロス）/ $L$** … 「どれだけ間違えたか」の点数。低いほど賢い。
-- **perplexity（パープレキシティ）** … 「次の単語をどれだけ当てづらく感じているか」の数。小さいほど賢い。
-- **bits-per-byte (bpb)** … 1 バイトの文章を表すのに何ビット必要か。小さいほど予想が当たっている。
-- **scaling law（スケーリング則）** … 「AI を大きくするとどのくらい賢くなるか」の経験則。
-- **compute-optimal（計算最適）** … 同じ電気代で一番賢くなる設定のこと。
-- **MMLU** … 57 教科の選択問題集。AI の総合学力テスト。
-- **BIG-bench** … 62 種類の風変わりな問題集。
-- **few-shot / 5-shot / 0-shot** … 問題を解く前に「お手本」を AI に何問見せるか。5-shot = 5 個お手本を見せて 6 問目を解かせる。0-shot = いきなり本番。
-- **fine-tuning（微調整）** … できあがった AI に、もう少し特定の仕事を覚えさせる追加訓練。
-- **AdamW** … AI の訓練に使う「ツマミの回し方アルゴリズム」の 1 つ。Adam という有名な方法に、ツマミが大きくなりすぎないようにする工夫を加えたもの。
-- **SentencePiece** … 文章をトークンに切る道具の名前。NFKC は文字の正規化ルールで、今回はあえて切らずに数学や化学の記号をそのまま残した。
-- **bfloat16 / float32** … コンピュータが小数を持つときの「桁数の細かさ」。bfloat16 は粗いけど速く・軽い、float32 は細かいけど重い。Chinchilla は計算は粗く・記憶は細かく、と使い分けた。
-- **cosine schedule（コサイン学習率スケジュール）** … 訓練中、ツマミを動かす勢い（学習率）を、コサインカーブのようにじわじわ小さくしていくやり方。
-- **Huber loss** … 数式を実データに当てはめるときに、外れ値（変な点）に引きずられにくくする工夫がされた誤差の測り方。
-- **L-BFGS** … 数式を実データに当てはめる方法の 1 つ（賢い試行錯誤アルゴリズム）。
-- **MoE (Mixture of Experts)** … 「専門家の AI を何人も用意して、問題ごとに最適な人に答えさせる」設計。この論文では使っていないが比較対象として登場。
-- **TPU** … Google が作った AI 専用の計算機。Chinchilla の訓練に使われた。
+- **データセット / ベンチマーク**: 訓練には MassiveText を使い、Chinchilla では subset distribution を Gopher から少し変える。Table `tab:data_makeup` では MassiveWeb 45% (Gopher 48%)、Books 30% (27%)、C4 10% (10%)、News 10% (10%)、GitHub 4% (3%)、Wikipedia 1% (2%)。1.4T tokens では MassiveWeb が 1.24 epochs、Wikipedia が 3.40 epochs 使われる。評価は Language Modelling 20 tasks、Reading Comprehension 3 tasks、Question Answering 3 tasks、Common Sense 5 tasks、MMLU 57 tasks、BIG-bench 62 tasks（Table `tab:task_summary`）。
+- **比較対象 / baseline**: 主比較は同じ compute budget の Gopher 280B。ほかに GPT-3 175B、Jurassic-1 178B、MT-NLG 530B、いくつかの supervised / open-book SOTA、人間評価者・人間 expert・human forecasters が表に出る。Scaling exponent の比較対象は Kaplan et al. (2020)。
+- **指標**: pre-training / language modelling では loss、perplexity、bits-per-byte (bpb)。Downstream では accuracy、QA では exact match accuracy として扱われる値、toxicity では PerspectiveAPI score、Winogender では pronoun coreference resolution の accuracy。
+- **Scaling の主結果**: Table `tab:comparison` では、Approach 1 が $a=0.50$, $b=0.50$、Approach 2 が $a=0.49$, $b=0.51$、Approach 3 が $a=0.46$, $b=0.54$。Kaplan et al. の $0.73/0.27$ と対照的に、model size と training data をほぼ同じ割合で増やす結論になる。C4 と GitHub code の IsoFLOP analysis でも、C4 は $a=0.50,b=0.50$、GitHub は $a=0.53,b=0.47$（Table `tab:comparison_c4_github`）。
+- **Compute frontier の予測**: Table `tab:compute` では、67B parameters に $5.76\times10^{23}$ FLOPs / 1.5T tokens、175B に $3.85\times10^{24}$ FLOPs / 3.7T tokens、280B に $9.90\times10^{24}$ FLOPs / 5.9T tokens、1T に $1.27\times10^{26}$ FLOPs / 21.2T tokens を挙げる。本文では別途、175B には $4.41\times10^{24}$ FLOPs と 4.2T tokens 超、280B Gopher-like model には約 $10^{25}$ FLOPs と 6.8T tokens と書かれており、Table の数値とは少し異なる表現が併存する。
+- **Chinchilla の構成**: Chinchilla 70B は Gopher 280B と同じ FLOPs で訓練されるが、parameters は 1/4、training tokens は 1.4T。Table `tab:arch` では、Chinchilla は 80 layers、64 heads、key/value size 128、$d_{\text{model}}=8192$、max LR $1\times10^{-4}$、batch size 1.5M $\rightarrow$ 3M tokens。Gopher は 80 layers、128 heads、$d_{\text{model}}=16384$、max LR $4\times10^{-5}$、batch size 3M $\rightarrow$ 6M tokens。訓練実装では forward / backward を `bfloat16`、distributed optimiser state の weight copy を `float32` とする。
+- **MMLU**: Table `tab:mmlu` では Chinchilla 5-shot accuracy が 67.6%、Gopher 60.0%、GPT-3 43.9%、random 25.0%、average human rater 34.5%、average human expert 89.8%。June 2023 forecast は 63.4%。Figure `fig:mmlu` では Chinchilla が 57 tasks 中 51 tasks で Gopher を上回り、2 tasks で同点、4 tasks（`college_mathematics`, `econometrics`, `moral_scenarios`, `formal_logic`）で下回る。
+- **BIG-bench**: Chinchilla は 62 tasks の平均 accuracy 65.1%、Gopher は 54.4%。差は 10.7%。Gopher より悪いのは `crash_blossom`, `dark_humor_detection`, `mathematical_induction`, `logical_args` の 4 tasks（main.tex, Section `BIG-bench`, Table `tab:bigbench`）。
+- **Reading comprehension**: LAMBADA zero-shot は Chinchilla 77.4、Gopher 74.5、GPT-3 76.2、MT-NLG 76.6。RACE-m few-shot は 86.8 vs Gopher 75.1、RACE-h few-shot は 82.3 vs Gopher 71.6。TeX は RACE-h/m について GPT-3 と MT-NLG は prompt format が違うため Gopher / Chinchilla と直接比較できないと注記する（Table `tab:reading`）。
+- **Common sense / TruthfulQA**: HellaSWAG 80.8%、PIQA 81.8%、Winogrande 74.9%、SIQA 51.3%、BoolQ 83.7%。PIQA では MT-NLG 82.0% が Chinchilla 81.8% をわずかに上回るが、その他では Chinchilla が Gopher と GPT-3 を上回り、MT-NLG もほぼ上回る（Table `tab:commonsense`）。TruthfulQA は 0-shot 43.6%、5-shot 58.5%、10-shot 66.7%。Gopher は 0-shot 29.5%、10-shot 43.7%。
+- **Closed-book QA**: Natural Questions (dev) は Chinchilla 0-shot 16.6%、5-shot 31.5%、64-shot 35.5%。Gopher は 10.1%、24.5%、28.2%。TriviaQA unfiltered は 0-shot 67.0%、5-shot 73.2%、64-shot 72.3%。TriviaQA filtered は 0-shot 55.4%、5-shot 64.1%、64-shot 64.6%（Table `tab:QA`）。
+- **Language modelling**: The Pile の全 subset で Chinchilla は Gopher より低い bpb を示す。Jurassic-1 は `dm_mathematics` と `ubuntu_irc` の 2 subsets で Chinchilla より良い（Table `tab:pile_nums`）。WikiText103 perplexity は Chinchilla 7.16、Gopher 7.75。
+- **Bias / toxicity**: Winogender では全体 78.3% vs Gopher 71.4%、male 71.2% vs 68.0%、female 79.6% vs 71.3%、neutral 84.2% vs 75.0%。gotcha examples では female gotcha が 76.7% vs 66.7% で +10%。著者は改善が pronoun groups 間で uneven であり、bias を示唆すると述べる（Table `tab:fairness`）。Toxicity は 25,000 unprompted samples の PerspectiveAPI score で、mean / median が Chinchilla 0.087 / 0.066、Gopher 0.081 / 0.064、95th percentile が 0.238 vs 0.230。差は negligible とされる。
+- **著者が主張する貢献**: 3 つの異なる empirical approach が近い scaling exponent を出すこと、Kaplan et al. との差を learning rate schedule / training horizon の扱いから説明すること、Gopher と同じ compute で小さく長く訓練した Chinchilla が広い評価で上回ること、そして小さいモデルであるため inference と downstream fine-tuning の compute / memory footprint が小さくなること。
 
-## ちょっと深掘り（中学生は飛ばして OK）
+## 妥当性と限界
 
-- **方法 3 の式の中身**: $\hat L = E + A/N^\alpha + B/D^\beta$ は教科書的に「リスク分解」と呼ばれる考え方から自然に出てくる。$E$ = どうしようもないバラつき（「明日は雨」「明日は晴れ」のどっちも文として自然、みたいな）、$A/N^\alpha$ = モデルが小さすぎて表現しきれない誤差、$B/D^\beta$ = まだ訓練が終わってない（読書が足りない）誤差。理論的には $\alpha, \beta$ は 0.5 が下限のはずだが、現実は 0.34, 0.28。つまり今の Transformer + AdamW はまだ理論限界に届いていない＝改善の余地がある、と著者は読み解いている。
-- **方法 3 の $a, b$ の閉じた式**: $a = \beta / (\alpha + \beta)$, $b = \alpha / (\alpha + \beta)$。$\alpha=0.34, \beta=0.28$ を入れると $a \approx 0.45, b \approx 0.55$。
-- **Kaplan さんたちのズレの原因**: 彼らは全部のモデルで「13 万億トークン分の長さでコサイン減衰」と決めていた。だから短い訓練の途中で測ったロスは、実際の「短い予算で最適に訓練したモデルのロス」より高くなる。短いほど過大評価されるので、結論として「短い訓練は損→モデルを大きくしろ」になってしまった。
-- **Chinchilla の細かい設計** (Table tab:arch): 80 層・ヘッド数 64（Gopher は 128）・d_model 8192（Gopher は 16384）・最大学習率 $1\times10^{-4}$（Gopher は $4\times10^{-5}$）・バッチサイズ 1.5M → 3M トークン（途中で 2 倍に）。
-- **データの内訳** (Table tab:data_makeup): MassiveWeb 45%・Books 30%・C4 10%・News 10%・GitHub 4%・Wikipedia 1%（合計 1.4T トークン中、Wikipedia は 3.4 epoch 繰り返し）。
-- **外挿表** (Table tab:compute): 1750 億パラメータの AI には $4.41\times10^{24}$ FLOPs と 4.2 兆トークンが最適。Gopher サイズ 2800 億には $\sim10^{25}$ FLOPs と 6.8 兆トークン。1 兆パラメータの AI を最適に訓練するには Gopher の **250 倍以上の電気代** と 21.2 兆トークンが必要 → 「1 兆パラメータをやる前にもっとデータを集めろ」というメッセージ。
-- **著者自身が認めている弱点**: (1) 大スケールでの実物比較は Chinchilla と Gopher の 2 点しかない。(2) $\log N_{opt}$ のグラフは少し曲がっており、大規模では予測が「最適サイズを大きめに見積もりすぎ」かもしれない。(3) 全部 1 epoch 未満で訓練しており、データを 2 周以上回したときの挙動は未検証。
-- **言語モデリングのリーク警告**: Chinchilla は 4× のデータを読むので、テストデータが訓練データに紛れ込んでいる可能性がある。著者は「言語モデリング系（Pile, WikiText）はその懸念があるので強調しすぎないでね」と注意し、MMLU・BIG-bench・常識問題などを主な根拠にしている (main.tex L506-507)。
+- **この主張を支える根拠**: 最も強い根拠は、Approach 1 / 2 / 3 が異なるデータの使い方と仮定を持つにもかかわらず、いずれも $a,b$ をほぼ 0.5 付近に推定している点。また、Gopher と同じ FLOPs で訓練した Chinchilla が、多くの downstream tasks で Gopher を上回るため、単なる loss fitting ではなく大規模実物モデルで予測を検証している。
+- **この主張を支える評価設計**: Chinchilla と Gopher はどちらも DeepMind の MassiveText 系 dataset と類似 architecture を使い、同じ compute budget で比較されるため、「同じ FLOPs なら大きいモデルを短く訓練するより、小さいモデルを長く訓練する方が良い」という主張を直接試している。評価も Gopher 論文の task subset を大きく踏襲する。
+- **著者が認めている limitations / future work**: 大規模で直接比較できる訓練 run は Chinchilla と Gopher の 2 点だけで、中間スケールの追加検証はない。Efficient frontier を power-law と仮定しているが、高 compute budgets で $\log(N_{opt})$ に concavity が見られ、large models の optimal size をまだ過大評価している可能性がある。Scaling analysis の training runs はすべて 1 epoch 未満であり、multiple epoch regime は future work とされる（main.tex, Section `Discussion & Conclusion`, Appendix `Curvature of the FLOP-loss frontier`）。
+- **データと leakage への注意**: Chinchilla は Gopher より 4 倍多い data で訓練されるため、The Pile や WikiText103 のような language modelling benchmarks では train/test leakage が結果を人工的に良くする可能性がある。著者はそのため MMLU、BIG-bench、closed-book QA、common sense など、leakage が less of a concern とする task をより重視すると明記する（main.tex, Section `Language modelling`）。
+- **読者として注意すべき点**: Chinchilla と Gopher は model size / token count 以外にも、AdamW vs Adam、NFKC normalization なしの SentencePiece、data mixture、`bfloat16` / `float32` precision handling などの違いがある。Appendix `Other differences between Chinchilla and Gopher` では AdamW などの ablation が示されるが、downstream task 全体の改善が純粋に $N,D$ の配分だけに由来するとは切り分けきれない。
+- **社会的・安全性の限界**: Model card では、Chinchilla は English data で訓練され、公開予定はなく、primary intended users は DeepMind researchers とされる。Downstream applications には additional safety and fairness mitigations が必要と書かれる。Intersectional biases は調べておらず、training data には toxic / biased content や private information が含まれる可能性がある。
+- **追加で確認したい実験 / 疑問**: 175B など中間スケールで compute-optimal frontier を実物訓練で検証する実験、decontamination した evaluation で MMLU / BIG-bench の改善がどの程度残るか、multi-epoch で同じ scaling law が成り立つか、MoE や retrieval-augmented models でも同じ $N$ と $D$ の trade-off が出るか、AdamW / tokenizer / data mixture の差を大規模で分離する ablation があると主張の範囲がより明確になる。
+
+## 用語メモ
+
+- **compute-optimal training**: この論文では、固定された FLOPs 予算で final pre-training loss を最小にする model size と training tokens の配分を選ぶこと。
+- **undertrained**: model size に対して training tokens が少なく、同じ compute でより小さいモデルをより長く訓練した方が良い状態。著者は近年の大規模 LM の多くをこの状態だと見る。
+- **FLOPs budget $C$**: 訓練に使える総計算量。実務上の accelerator 数と訓練時間に対応するものとして導入される。
+- **$N$ / $D$**: $N$ は model parameters、$D$ は training tokens。論文の主張は、この 2 つを compute の増加に対してほぼ同じ割合で増やすべきという点にある。
+- **IsoFLOP profile**: FLOPs を固定し、その予算内で model size を変えたときの final loss の曲線。谷の位置が、その FLOP budget での optimal model size を与える。
+- **training curve envelope**: 複数の model size / training horizon の training curves を重ね、各 FLOPs で最小 loss を達成する点を集めた frontier。
+- **cosine cycle length**: learning rate を cosine schedule で下げる horizon。著者は target training steps に合わせるべきだとし、25% を超える過大な overshoot は性能を悪化させるとする。
+- **MassiveText / MassiveWeb**: Gopher と Chinchilla が使う訓練 corpus family と、その web subset。Chinchilla は同じ dataset family を使うが sampling proportion は少し異なる。
+- **Chinchilla**: この論文で訓練された 70B parameters の autoregressive Transformer LM。Gopher と同じ compute budget で、1.4T tokens を使って訓練される。
+- **Gopher**: 主 baseline の 280B parameters LM。Chinchilla と同じ compute budget の比較対象として使われる。
+- **MMLU**: 57 の academic subjects からなる exam-like benchmark。Chinchilla の中心的な downstream evidence の 1 つ。
+- **BIG-bench**: 62 tasks の subset で評価される benchmark。Chinchilla は平均 65.1%、Gopher は 54.4%。
+- **bits-per-byte (bpb)**: language modelling benchmark で使われる指標。小さいほど圧縮・予測が良い。The Pile の表では Chinchilla が Gopher より低い。
+- **train/test leakage**: 訓練データに評価データが混入している可能性。Chinchilla は Gopher より多い data を見るため、language modelling benchmarks では特に注意が必要だと著者が述べる。
+- **PerspectiveAPI toxicity score**: generated samples の toxicity を自動 classifier で測る指標。この論文では unprompted 25,000 samples の distribution を Gopher と比較する。
+
+## 読む順番の提案
+
+- まず `main.tex` の `Introduction` を読み、Eq. `eq:model` と Table `tab:llms` で、論文が「固定 FLOPs 下の $N,D$ 配分」を問うていることを確認する。正規ノートの `Summary（著者の主張）` の問題設定に対応する。
+- 次に `Related Work` を読み、Kaplan et al. (2020) との差が model size だけでなく learning rate schedule / training horizon の扱いにあることを押さえる。正規ノートの Kaplan+ への反論の箇条書きにつながる。
+- その後 `Estimating the optimal parameter/training tokens allocation` を、Approach 1 → Approach 2 → Approach 3 の順に読む。特に Figure `fig:approach1`, Figure `fig:isoflop`, Eq. `eq:decompose`, Eq. `eq:huber`, Table `tab:comparison` が中心。
+- Chinchilla の実物検証は `Chinchilla` セクションで読む。Table `tab:arch` と Table `tab:task_summary` を見て、Gopher との比較条件と評価範囲を確認する。正規ノートの Chinchilla architecture / data mixture の記述に対応する。
+- 結果は MMLU と BIG-bench を先に読む。Table `tab:mmlu`, Figure `fig:mmlu`, Table `tab:bigbench` が著者の主要な downstream evidence。次に reading comprehension、common sense、closed-book QA、language modelling を読む。
+- 最後に `Discussion & Conclusion` と Appendix の `Training dataset`, `Optimal cosine cycle length`, `Consistency of scaling results across datasets`, `Curvature of the FLOP-loss frontier`, `Other differences between Chinchilla and Gopher`, `Model Card` を読む。正規ノートの `Critical Thoughts（評価・疑問）` の根拠になる。
 
 ## もとの論文・正規ノート
 

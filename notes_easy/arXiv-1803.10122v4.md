@@ -1,4 +1,4 @@
-# World Models（世界モデル）
+# World Models（VAE+MDN-RNN による世界モデルと小さな Controller の分離学習）
 
 - arXiv: https://arxiv.org/abs/1803.10122
 - 一次ソース: ../papers/arXiv-1803.10122v4/
@@ -8,130 +8,161 @@
 
 ## 一言で言うと
 
-ゲームの「頭の中での予想」を AI に作らせて、その夢の中だけで運転や避けゲームの練習をさせ、現実のゲームでもクリアできるようにした研究。
+ピクセル観測から VAE と MDN-RNN で環境の圧縮表現と未来予測を学習し、その特徴を入力にする小さな線形 Controller だけを報酬で最適化する論文。CarRacing-v0 では Full World Model が 906 $\pm$ 21 を達成し、VizDoom Take Cover では MDN-RNN が作る dream 環境内だけで学習した方策が actual 環境で 1092 $\pm$ 556 を達成した、というのが著者の主な実験的主張である。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- 人間は野球でボールを打つとき、わざわざ「ボールが秒速何 m で…」と考えない。脳が「次にどこに来るか」を勝手に予想して、体が勝手に動く。AI にも同じことをやらせたい。
-- これまでの AI（強化学習 ← ゲームをプレイしながら「うまくいった行動」にご褒美をあげて学習するやり方）は、画面のピクセル（点の色）を直接見て上手くなろうとしていた。でも画面は数万ピクセルもあって情報が多すぎて、AI の脳みそ（ニューラルネット ← たくさんの数字をかけ算・足し算して答えを出す仕組み）を大きくすると学習が全然うまくいかなかった。
-- だから AI は仕方なく小さい脳で頑張っていたが、それだとレースゲームで道に沿って走るのが精一杯で、ちゃんとクリアできなかった。
+- **問題設定**: 高次元の RGB 画像列を直接扱う強化学習で、環境の空間的・時間的構造を大きな world model に学習させ、報酬最大化を担当する Controller を小さく保てるかを調べる。Introduction では model-free RL が credit assignment problem によって大規模モデルの重みを学習しにくく、実用上は小さなネットワークが使われがちだと述べる。
+- **対象範囲 / 仮定**: 実験対象は OpenAI Gym の `CarRacing-v0` と VizDoom の `Take Cover`。どちらも、まず random policy から 10,000 rollouts を集め、V と M は報酬なしで学習する。CarRacing では C を actual 環境で訓練し、VizDoom では C を virtual/dream 環境だけで訓練して actual 環境に転移する。
+- **既存研究との差分**: 論文自身は model-based RL 全体のレビューではなく、1990--2015 年の RNN-based world models and controllers 系列の key concepts を、VAE、MDN-RNN、CMA-ES で簡略に実証することを目的にしている。Related Work では PILCO、video prediction、RNN hallucination、`Learning to Think` などと接続する。
+- **この論文で答えたい問い**: 1) world model から得た $z_t$ と $h_t$ だけで、小さな線形 Controller が pixel-based continuous control を解けるか。2) learned dynamics model を actual 環境の代替にして、dream 内で訓練した policy が actual 環境に transfer するか。3) learned world model の不完全性を Controller が exploit する問題に、MDN-RNN と temperature $\tau$ がどう効くか。
 
-## どうやって解いたの？
+## 背景と前提
+
+- **World model**: この論文では、agent が直接見る高次元観測を圧縮し、次の潜在表現 $z$ の分布を予測する内部モデルを指す。Agent Model 節では、agent を Vision (V), Memory (M), Controller (C) の 3 要素に分ける。
+- **Model-based RL と model-free RL**: model-based RL は環境の dynamics model を学び、それを policy 学習や planning に使う。著者は、model-free RL では credit assignment のため大きな RNN agent を直接学習しにくいという問題意識を置く。
+- **VAE / latent vector**: V は Variational Autoencoder で、各画像フレームを潜在ベクトル $z$ に圧縮する。Appendix の ConvVAE 説明では、入力を 64x64x3 に resize し、$\mu$ と $\sigma$ を出し、$z$ を $N(\mu,\sigma I)$ から sample する。
+- **MDN-RNN**: M は LSTM と Mixture Density Network の組み合わせで、次の latent vector の確率分布を出す。単一点予測ではなく mixture of Gaussian distribution を使うため、Doom の fireball が撃たれる/撃たれないような discrete random events を表しやすい、という説明が Cheating the World Model 節にある。
+- **CMA-ES**: C は線形モデルなのでパラメータ数が少なく、black-box optimization である Covariance-Matrix Adaptation Evolution Strategy を使える。Appendix では population size 64、各 agent 16 random rollouts、fitness は 16 rollout の average cumulative reward と記載されている。
+- **先行研究との関係**: `main.bbl` では VAE は Kingma & Welling (2013)、MDN は Bishop (1994)、LSTM は Hochreiter & Schmidhuber (1997)、CMA-ES は Hansen、C--M 系の源流は Schmidhuber の 1990 年代の研究として引かれている。
+
+## 提案手法
 
 ### コアアイデア
 
-AI を **3 つの専門家チーム** に分ける、というアイデア。学校でいうと、
+モデルを「表現学習・未来予測」と「報酬最大化」に分ける。V は観測フレーム $x_t$ を小さな $z_t$ に圧縮し、M は $z_t$ と行動 $a_t$ と内部状態 $h_t$ から次の $z_{t+1}$ の分布を予測する。C は $z_t$ と $h_t$ を受け取り、行動 $a_t$ を出す小さな線形モデルである。
 
-- **V（目）チーム**: いま画面に何が映ってるかを「短い暗号」にまとめる係。写真を見て「赤い車、左カーブ、緑の芝生」みたいに 32 個の数字でメモする。
-- **M（記憶と予想）チーム**: V チームが作った暗号を時系列で受け取り、「次の瞬間どうなるか」を予想する係。「いまアクセル踏んでるから 0.1 秒後はもっと前進してるはず」と未来予想図を書く。
-- **C（決める）チーム**: V と M の情報を受け取って「じゃあハンドルをこう切る」と決める係。これだけがご褒美（点数）を見て学習する。
+重要なのは、V と M は random policy で集めた観測・行動列から報酬なしで学習され、C だけが環境の cumulative reward を見て最適化される点である。CarRacing では world model が特徴抽出器として使われ、VizDoom では M に `gym.Env` インターフェースをかぶせて virtual environment とし、C をその dream 内だけで学習する。
 
-V と M はものすごく大きくて賢く作って、画面を見るだけで勝手に学習させる（ご褒美なし）。一方 C はめちゃくちゃ小さく（たった 867 個の数字だけ！）作って、ご褒美を頼りに進化（CMA-ES ← 後で説明）で鍛える。
+この分離により、表現の大部分は数百万パラメータの V/M に置き、credit assignment は数百から千程度の C の探索空間に押し込める。TeX の短い根拠は、Introduction の "large world model and a small controller model" と、Controller 節の "most of our agent's complexity resides in the world model (V and M)" である。
 
-さらにすごいのは、M が「未来予想」できるなら、その予想を本物の代わりに使って練習すればいい、という発想。AI が **自分の頭の中で夢を見て、その夢の中だけで** ゲームの練習をする。そして練習が終わってから現実のゲームに連れてくると、ちゃんとクリアできてしまう。
+### 重要な定義・数式
 
-### 仕組み
+$$
+z \sim N(\mu, \sigma I)
+$$
 
-- **step 1**: ゲーム（CarRacing：上から見た車のレース、または VizDoom Take Cover：火の玉を避けるゲーム）でランダムに 10,000 回プレイして、画面と操作の記録を集める。
-- **step 2**: V チーム（VAE ← 後述）に画面を見せて、「64×64 ピクセル × 赤緑青 3 色 = 約 12,000 個の数字」を「32 個（または 64 個）の数字」にギュッと圧縮する練習をさせる。元の画面に戻せるように、と頑張らせる。
-- **step 3**: M チーム（MDN-RNN ← 後述）に、V が作った 32 個の数字の列と「そのとき押したボタン」を見せて、「次の瞬間の 32 個の数字」を当てさせる練習をさせる。決まった 1 つの答えでなく、「だいたいこのへんに来るっぽい」という **確率の山** で答えさせるのがミソ。
-- **step 4**: C チーム（たった 1 段の線形モデル ← 「入力に決まった重みをかけて足すだけ」のシンプル計算）が、V と M の出力を見てハンドル・アクセル・ブレーキを決める。
-- **step 5**: C を **進化（CMA-ES）** で鍛える。これは「64 人の C を生まれさせる → ゲームを 16 回ずつやらせる → 高得点の C ほど次世代に子供を多く残す → 何百世代も繰り返す」という、生き物の進化を真似したやり方。
-- **step 6**（Doom の場合のみ）: M が予想する「夢のゲーム」を本物のゲームの代わりに用意し、C はそこでだけ練習する。練習が終わってから、本物のゲームに送り込んで本当にクリアできるか試す。
+**式の意味**: ConvVAE が画像を潜在ベクトルに圧縮するとき、encoder が出した $\mu$ と $\sigma$ から $z$ を sampling する、という Appendix の V model の定義である。TeX では "The latent vector $z$ is sampled from the Gaussian prior $N(\mu, \sigma I)$" と書かれている。
 
-### 主要な数式
+**記号の定義**:
+- $z$ ... V model が各フレームから作る latent vector
+- $\mu$ ... ConvVAE encoder が出す平均ベクトル
+- $\sigma$ ... ConvVAE encoder が出すスケール側のベクトルとして TeX に出る記号
+- $I$ ... 対角共分散を表す単位行列
+- $N_z$ ... latent vector の次元。CarRacing では 32、Doom では 64
 
-#### 数式 1: コントローラーの行動の決め方
+**この論文での役割**: 高次元の 64x64x3 RGB 入力を、M と C が扱える低次元表現に変換する。VAE の Gaussian prior は、M が生成する非現実的な $z$ に対して world model を robust にする、と Appendix で説明される。
 
-$$ a_t = W_c\,[z_t\;h_t] + b_c $$
+$$
+P(z_{t+1} \; | \; a_t, z_t, h_t)
+$$
 
-**この式が言ってること**: 今の瞬間 $t$ に C チームが取る行動 $a_t$（ハンドルをどう切るか、アクセルを踏むか、など）は、「目の暗号 $z_t$」と「記憶の暗号 $h_t$」を並べた数字の列に、決まった重み $W_c$ をかけて、$b_c$ を足すだけで決まる。本当にそれだけ。中学校の数学でいう $y = ax + b$ の親戚。
+**式の意味**: M model が、現在の行動、現在の latent vector、RNN の hidden state から、次時刻の latent vector の確率分布を予測する式である。Agent Model と Car Racing Procedure の両方に出る。
 
-**記号の意味**:
-- $a_t$ … 時刻 $t$ で AI が取る行動（ハンドル左／アクセル など、数字の組）
-- $z_t$ … V チームが今の画面を圧縮した暗号（数字の列。CarRacing なら 32 個、Doom なら 64 個）
-- $h_t$ … M チームの「記憶」を表す暗号（数字の列。CarRacing なら 256 個、Doom なら 512 個）
-- $[z_t\;h_t]$ … この 2 つの数字の列を横にくっつけて 1 本にした列
-- $W_c$ … この列にかけ算する「重み」の表（CarRacing なら全部で 864 個の数字）
-- $b_c$ … 最後に足す調整値（3 個の数字、ハンドル・アクセル・ブレーキ用）
+**記号の定義**:
+- $z_{t+1}$ ... 次時刻に V が出すと期待される latent vector
+- $a_t$ ... 時刻 $t$ で取った行動
+- $z_t$ ... 時刻 $t$ の観測を V が圧縮した latent vector
+- $h_t$ ... 時刻 $t$ の RNN hidden state
 
-**身近な例え**: 学校のテストの内申点の決まり方。「数学のテスト点 ×3 + 英語のテスト点 ×2 + 提出物 ×5 + おまけ点」みたいに、各教科の点数（$z_t, h_t$）に決まった重み（$W_c$）をかけて足し、最後に下駄（$b_c$）を足して内申点（$a_t$）を出すのと同じ。重み $W_c$ を進化でいい感じに調整する作業が、この AI を賢くする作業。
+**この論文での役割**: M が「未来の分布」を出すことで、$h_t$ が未来予測に関する特徴量になる。CarRacing では C に $z_t$ だけでなく $h_t$ も渡すことで 632 $\pm$ 251 から 906 $\pm$ 21 へ改善する、という主張の中心になる。
 
-#### 数式 2: M チームが予想する「次の暗号の確率」
+$$
+a_t = W_c \; [z_t \; h_t]\; + b_c
+$$
 
-$$ P(z_{t+1}\mid a_t, z_t, h_t) $$
+**式の意味**: Controller が、V の latent vector と M の hidden state を連結した入力から行動を線形写像で出す式である。TeX の Eq. `controller_equation` と Car Racing Procedure に出る。
 
-**この式が言ってること**: 「いま取った行動 $a_t$ と、いまの目の暗号 $z_t$ と、いまの記憶 $h_t$」が与えられたとき、「次の瞬間の目の暗号 $z_{t+1}$」がどんな値になりそうか、その確率を答えてくれる関数。1 つに決めるのではなく「だいたいこのへん」という **山型の確率分布** を出す（← つまり「自信あり」のときは尖った山、「ぜんぜん分からない」ときはなだらかな山を出す）。
+**記号の定義**:
+- $a_t$ ... 時刻 $t$ の action vector
+- $W_c$ ... Controller の重み行列
+- $[z_t \; h_t]$ ... $z_t$ と $h_t$ を連結した特徴ベクトル
+- $b_c$ ... Controller の bias vector
 
-**記号の意味**:
-- $P(\cdots)$ … 確率。 ← サイコロでいう「1 の目が出る確率は 1/6」の P。何かが起きる起きやすさを 0〜1 の数字で表す
-- $z_{t+1}$ … 次の瞬間 $t+1$ の目の暗号（まだ起きていない未来の画面の圧縮版）
-- $\mid$ … 「〜という条件のもとで」の意味。「右の情報が分かっているときの」
-- $a_t$ … いま取った行動
-- $z_t$ … いまの目の暗号
-- $h_t$ … いまの記憶の暗号
+**この論文での役割**: C を単純化し、CMA-ES で探索可能な小さな問題にする。CarRacing の Controller は 867 parameters。Doom Procedure では式が $a_t = W_c [z_t \; h_t]$ と書かれ、bias は明示されていない。
 
-**身近な例え**: 天気予報。「いま晴れていて、気圧が下がっていて、風が南から吹いている（$a_t, z_t, h_t$）」が分かっているとき、「明日の天気（$z_{t+1}$）」を「雨 70%・くもり 25%・晴れ 5%」みたいに **確率の山** で答えるのと同じ。決して「明日は雨です！」と言い切らないのがポイントで、これによって AI が「予想の隙間」を悪用できなくなる（後述の「ズル防止」につながる）。
+$$
+P(z_{t+1}, d_{t+1} \; | \; a_t, z_t, h_t)
+$$
 
-#### 数式 3: 温度 $\tau$ で予想のばらつきを変える
+**式の意味**: VizDoom Take Cover で M が、次の latent vector に加えて、次フレームで agent が死ぬかどうかの binary event $done_t$、略して $d_t$、も予測する式である。
 
-論文には専用の数式は載っていないが、**温度 $\tau$（タウ）** という調整つまみがある。これは「M チームの予想を、どのくらい『ブレた』ものにするか」を決める数字。
+**記号の定義**:
+- $d_{t+1}$ ... 次時刻の done/death event
+- $z_{t+1}$ ... 次時刻の latent vector
+- $a_t, z_t, h_t$ ... 現在の行動、現在の latent vector、RNN hidden state
 
-- $\tau = 0.1$（小さい）: M の予想がほぼ 1 つに決まる。夢が「決まりきった世界」になる。
-- $\tau = 1.0$（普通）: M が学習したとおりの確率で予想する。
-- $\tau = 1.3$（大きい）: M の予想がブレブレで、夢がカオスになる。
+**この論文での役割**: M だけで OpenAI Gym 風の virtual environment を作るために必要な式である。done を予測できるため、DoomRNN の中で rollout を終了し、C の survival time を reward として最適化できる。
 
-**この調整つまみが言ってること**: 「夢の世界をどのくらい予測不能にするか」を決める。小さくすると夢が簡単になりすぎて、C が「夢の中でしか通用しないズル技」を覚えてしまう。大きくすると夢が難しすぎて、C が何も学べない。ちょうどいい $\tau$ を探す必要がある。
+$$
+P(x_{t+1}, r_{t+1}, a_{t+1}, d_{t+1} | x_t, a_t, h_t)
+$$
 
-**身近な例え**: ゲームの難易度設定。難易度を「とても簡単」にしてクリアしても本番では通用しないし、「悪夢」にすると練習にすらならない。「ちょっと難しい」あたりが一番伸びる、というのと同じ感覚。
+**式の意味**: Iterative Training Procedure 節で、より複雑なタスクのために M が次の observation、reward、action、done を予測する形として提示される式である。
 
-## 何がすごいの？
+**記号の定義**:
+- $x_t$ ... 時刻 $t$ の observation
+- $x_{t+1}$ ... 次時刻の observation
+- $a_t$ ... 時刻 $t$ で取った action
+- $r_{t+1}$ ... 次時刻の reward
+- $a_{t+1}$ ... 次時刻の action
+- $d_{t+1}$ ... 次時刻の done event
+- $h_t$ ... M の hidden state
 
-- **CarRacing-v0**（このゲームは「100 回プレイの平均点が 900 以上ならクリア認定」というルール）で、**906 ± 21 点** を取って **史上初のクリア** を達成。
-  - 比較：DQN（昔の有名な AI 手法）343 ± 18、A3C（連続）591 ± 45、A3C（離散）652 ± 10、当時のリーダーボード 1 位 838 ± 11。「V 目だけ」だと 632 ± 251、「V + 隠れ層 1 個追加」だと 788 ± 141。**V + M を両方使った Full World Model** で初めて 900 を超えた。
-- **VizDoom Take Cover**（火の玉を 750 ステップ以上避け続ければクリア）で、**夢の中だけで練習した AI** が現実のゲームで **1092 ± 556 ステップ** 生き残った（$\tau=1.15$ のとき）。ランダム行動だと 210 ± 108、当時のリーダーボード 1 位は 820 ± 58。
-- 温度 $\tau$ の効果が劇的: $\tau=0.10$ だと夢の中スコア 2086 なのに現実だとたった 193（← 夢の中だけのズル技を覚えてしまった）。$\tau=1.15$ だと夢の中 918 だが現実 1092（← 難しい夢で練習した方が現実で強い、という直感に反する発見）。
-- C チームの数字がたったの **867 個**（CarRacing）/ **1,088 個**（Doom）。普通の AI は何万〜何百万個の数字を使うので、これは超軽量。
-- V と M の学習は **1 枚の GPU で 1 時間未満** で終わる。C の進化は 64 コア CPU で 1800 世代。
-- 著者が論文で挙げている **貢献**:
-  1. ピクセル画面だけから V+M+C のシンプル構成で CarRacing-v0 を史上初クリア。
-  2. AI が自分の **夢の中だけで** 練習して現実に転移できることを示した。
-  3. 温度 $\tau$ を「夢の難しさ」のつまみとして導入し、ズル防止と転移性能の関係を明らかにした。
-  4. 1990 年代の古い「コントローラー＋世界モデル」のアイデアを、現代の深層学習（VAE+LSTM+CMA-ES）で組み直して見せた。
+**この論文での役割**: 本実験の実装済み手法というより、複雑な環境へ拡張する future work の枠組みである。著者は、本論文の単純なタスクでは training loop の one iteration で十分だったが、より難しいタスクでは iterative training と exploration が必要だと述べる。
 
-## キーワード辞典
+### 実装 / アルゴリズム上の要点
 
-- **強化学習（Reinforcement Learning, RL）** … AI に「ゲームをプレイさせて、高得点を取ったら『えらい』、低得点なら『ダメ』と教える」やり方で学習させる方法。
-- **モデルベース RL（model-based RL）** … 強化学習のうち、AI が「世界の仕組みのコピー（モデル）」を自分の中に作って、それを使って練習するタイプ。
-- **モデルフリー RL（model-free RL）** … 強化学習のうち、世界のコピーを作らず、ひたすら本物のゲームをプレイして学ぶタイプ。
-- **ニューラルネット** … たくさんの数字（重み）をかけ算・足し算して答えを出す仕組み。脳の神経細胞を真似したと言われる。
-- **ピクセル** … 画像を構成する 1 つの点。赤・緑・青の 3 つの数字で色を表す。
-- **VAE（Variational Auto-Encoder、変分オートエンコーダ）** … 画像を「短い数字の列」に圧縮し、また画像に戻せるように練習したニューラルネット。本論文では V チームに使われている。
-- **潜在ベクトル $z$（latent vector）** … VAE が作った「画像を圧縮した短い数字の列」。CarRacing では 32 個、Doom では 64 個の数字。
-- **RNN（Recurrent Neural Network、再帰型ニューラルネット）** … 過去の情報を覚えながら、時系列のデータを順番に処理できるニューラルネット。今は LSTM という改良版が使われる。
-- **LSTM（Long Short-Term Memory）** … RNN の改良版。長い時間前のことも忘れずに覚えられる仕組み。
-- **MDN（Mixture Density Network、混合密度ネット）** … 「答えは A の可能性 70%、B の可能性 30%」のように、**複数の山型の確率分布** で答えを出すニューラルネット。
-- **MDN-RNN** … MDN と RNN を組み合わせたもの。「過去を覚えつつ、次の瞬間の確率を山型で答える」係。本論文では M チームに使われている。
-- **隠れ状態 $h_t$（hidden state）** … RNN が時刻 $t$ までの記憶を覚えているための「内部メモ」。数字の列。
-- **温度 $\tau$（temperature）** … 確率分布のブレ具合を調整するつまみ。小さいと予想が尖り、大きいと予想がボケる。
-- **CMA-ES（Covariance Matrix Adaptation Evolution Strategy）** … 進化で答えを探す方法の一種。「世代ごとにたくさんの候補を生み出し、点数のいい方向に少しずつ進化させる」アルゴリズム。本論文では C チームを鍛えるのに使う。
-- **進化戦略（Evolution Strategies, ES）** … 生き物の進化を真似て、いい答えを探す手法の総称。CMA-ES はそのうちの一つ。
-- **ロールアウト（rollout）** … ゲームを 1 回プレイすること。
-- **クレジット割り当て問題（credit assignment）** … 「ゲームに勝った／負けた」というご褒美が、過去のどの行動のおかげ／せいなのかを切り分ける問題。AI が大きくなると、ここがとても難しくなる。
-- **ベースライン（baseline）** … 比較のための「すでに知られた方法」のこと。今回は DQN や A3C など。
-- **ドリーム / ハルシネーション（dream / hallucination）** … M チームが想像で作り出した「夢のゲーム世界」。本物の代わりに練習場として使う。
-- **モード崩壊（mode collapse）** … 確率分布の「複数の山」のうち一部しか出さなくなる現象。本論文では $\tau$ が低すぎるときに、夢の中で「火の玉が一切撃たれない」という偏った世界になる例として登場。
-- **転移（transfer）** … ある場所（夢）で覚えたことを別の場所（現実）で使うこと。
-- **アドバーサリアル方策（adversarial policy）** … 世界モデルのバグや隙を突いてズルする AI の戦略。本論文では「夢の中で火の玉を魔法のように消す AI」が例。
+1. Random policy で 10,000 rollouts を集め、観測フレームと行動 $a_t$ を保存する。
+2. VAE (V) を訓練し、各フレームを $z$ に変換する。Appendix では ConvVAE は 64x64x3 入力、4 convolutional layers と 4 deconvolutional layers、VAE training は random policy データに対して 1 epoch、loss は reconstruction の $L^2$ distance と KL loss とされる。
+3. MDN-RNN (M) を訓練する。Appendix では MDN-RNN は 20 epochs、CarRacing は LSTM 256 hidden units、Doom は 512 hidden units、両タスクで 5 Gaussian mixtures、相関 $\rho$ はモデル化せず factored Gaussian と書かれている。Car Racing 節の脚注では、V と M は別々に訓練しても各モデルが single GPU で 1 時間未満だったと述べる。
+4. Controller (C) を線形モデルとして定義する。CarRacing では steering left/right、acceleration、brake の 3 continuous actions を出す。Doom では discrete actions を -1 から 1 の continuous action space に変換し、三分割して left / stay / right を表す。
+5. CMA-ES で C を最適化する。population size は 64、各 agent は 16 random rollouts、fitness は average cumulative reward。CarRacing では 1800 generations 後に 1024 random rollouts 平均 900.46 の agent が得られた。
+6. VizDoom では M を `gym.Env` のように wrap し、C を actual 環境ではなく virtual/dream 環境で訓練する。M が予測する death probability が 50% を超えると virtual environment で `done=true` にする。Appendix の DoomRNN 節は、実際の VizDoom で C を訓練しておらず、VizDoom は random policy の training data 収集に使っただけだと明記する。
 
-## ちょっと深掘り（中学生は飛ばして OK）
+## 実験・結果
 
-- M の予想は **5 つのガウス分布の混合（5 個の山）** として作っている。「次の暗号は山 A の可能性 40%、山 B の可能性 30%、…」と複数の山で表すので、「火の玉が撃たれる／撃たれない」みたいな分岐がある世界もちゃんと表現できる。
-- 温度 $\tau$ は **ガウス分布の幅（標準偏差）に $\sqrt{\tau}$ をかける** ことでブレを大きくする仕組み（論文本文では具体式は省略、SketchRNN 由来）。
-- C を非線形（隠れ層あり）にすると数字の数が爆発して CMA-ES が回せなくなるので、「C を線形に絞ったから進化で鍛えられる」という設計判断が肝。
-- VAE は「画像 → 暗号 → 画像」で復元の質を上げる学習なので、**ご褒美に関係ない部分**（Doom の壁のレンガ模様）まで丁寧に再現してしまい、肝心の部分（CarRacing の道のタイル）を捨てたりする弱点が著者自身によって指摘されている。
-- iterative training（くり返し学習）の提案はあるが、本論文では実装していない（CarRacing も Doom もランダムプレイ 1 周のみ）。複雑な世界では「世界モデルが知らない場所」が出るので、AI に好奇心を持たせて探索させる必要がある、と未来課題として書かれている。
-- 著者の正規ノートにも書かれているとおり、これは Schmidhuber が 1990 年代から提唱していた「C–M スキーム（コントローラー＋世界モデル）」を、現代の深層学習で復活させた歴史的位置づけの論文でもある。
+- **データセット / ベンチマーク**: `CarRacing-v0` と `DoomTakeCover-v0` / VizDoom Take Cover。CarRacing は random generated tracks で、100 consecutive trials の average reward が 900 以上なら solving。Take Cover は fireballs を避けるタスクで、各 rollout は最大 2100 time steps（約 60 秒）、100 consecutive rollouts の平均 survival time が 750 time steps（約 20 秒）を超えると solved。
+- **比較対象 / baseline**: CarRacing 表 `car_racing_table` では DQN、A3C (continuous)、A3C (discrete)、ceobillionaire (Gym Leaderboard)、V model、V model with hidden layer、Full World Model を比較する。Take Cover 表 `doom_virtual_table` では temperature ごとの virtual/actual score に加え、Random Policy と Gym Leader を置く。
+- **指標**: CarRacing は average score。Take Cover は生存 time steps を cumulative reward / score とする。両方とも 100 random/consecutive trials の平均と標準偏差が中心で、Appendix には 1024 rollouts での評価も出る。
+- **主な結果**: CarRacing の Full World Model は 906 $\pm$ 21 で、DQN 343 $\pm$ 18、A3C (continuous) 591 $\pm$ 45、A3C (discrete) 652 $\pm$ 10、ceobillionaire 838 $\pm$ 11、V model 632 $\pm$ 251、V model with hidden layer 788 $\pm$ 141 を上回る。著者は "first reported solution to solve this task" と主張する。
+- **主な結果**: Parameter count は、CarRacing の表 `car_racing_param_count_table` で VAE 4,348,547、MDN-RNN 422,368、Controller 867。VizDoom の表 `doom_cover_table` で VAE 4,446,915、MDN-RNN 1,678,785、Controller 1,088。
+- **主な結果**: Take Cover では $\tau=1.15$ の agent が actual 環境で 1092 $\pm$ 556 を得る。temperature 表の値は、$\tau=0.10$: Virtual 2086 $\pm$ 140 / Actual 193 $\pm$ 58、$\tau=0.50$: 2060 $\pm$ 277 / 196 $\pm$ 50、$\tau=1.00$: 1145 $\pm$ 690 / 868 $\pm$ 511、$\tau=1.15$: 918 $\pm$ 546 / 1092 $\pm$ 556、$\tau=1.30$: 732 $\pm$ 269 / 753 $\pm$ 139。Random Policy は Actual 210 $\pm$ 108、Gym Leader は 820 $\pm$ 58。
+- **著者が主張する貢献**: 1) raw RGB pixel stream から spatial-temporal representation を学び、CarRacing-v0 を解く compact policy を得た。2) learned world model の hallucinated dream 内だけで学習した policy を actual VizDoom に転移できた。3) temperature $\tau$ によって realism と exploitability の tradeoff を調整できることを示した。4) C--M 系の古い枠組みを、VAE + MDN-RNN + ES の実験系として再構成した。
+
+## 妥当性と限界
+
+- **この主張を支える根拠**: CarRacing では $z_t$ のみ、$z_t$ + hidden layer、Full World Model の ablation があり、$h_t$ を使う効果が score と挙動説明の両方で示される。Take Cover では temperature を変えた virtual/actual score 表があり、低温度では virtual score が高くても actual transfer が失敗することを示している。
+- **この主張を支える根拠**: Cheating the World Model 節では、agent が fireballs を出させない adversarial policy を見つけた初期実験を説明し、learned dynamics model を actual 環境の完全な代替にする危険を明示する。その上で MDN-RNN と $\tau$ を、不完全な M を exploit しにくくするための設計として位置づける。
+- **著者が認めている limitations / future work**: VAE を standalone unsupervised model として訓練すると、task-relevant でない特徴も符号化する。Discussion では Doom の壁の brick tile patterns は再構成したが、CarRacing の road tiles はうまく再構成しない例が挙げられる。
+- **著者が認めている limitations / future work**: LSTM-based world model の容量は限られ、catastrophic forgetting の問題がある。Future work として higher capacity models や external memory module が挙げられる。
+- **著者が認めている limitations / future work**: 本手法は early RNN-based C--M systems と同様に possible futures を time step by time step に simulate するもので、人間的な hierarchical planning や abstract reasoning から利益を得ていない。`Learning to Think` や `One Big Net` 的な一般化は future work とされる。
+- **読者として注意すべき点**: 本論文の 2 タスクは著者自身が "relatively simple" と述べる範囲で、random policy から集めた 10,000 rollouts だけで reasonable world model が訓練できている。より複雑な環境で同じ分離訓練が成立するとは、TeX 中では実証されていない。
+- **読者として注意すべき点**: Doom では C を actual VizDoom 環境で訓練していないことが強い主張である一方、actual fine-tuning との比較は TeX 中には示されていない。また、C は M の hidden states にアクセスするので、ゲーム観測だけを見る通常の policy とは情報条件が異なる。
+- **追加で確認したい実験 / 疑問**: より難しいタスクで iterative training を何回回す必要があるか、$\tau$ の最適値が環境ごとにどれだけ敏感か、C を非線形にした場合に CMA-ES 以外の最適化が必要になるかは、この TeX だけでは未解決である。
+
+## 用語メモ
+
+- **World model**: 本論文では V と M を合わせた、観測圧縮と未来予測のモデル。CarRacing では特徴抽出器、VizDoom では virtual environment として使われる。
+- **Vision (V)**: ConvVAE。64x64x3 の画像を latent vector $z$ にする。CarRacing は $z \in \mathcal{R}^{32}$、Doom は $z \in \mathcal{R}^{64}$ と TeX に書かれる。
+- **Memory (M)**: LSTM + MDN。$P(z_{t+1}|a_t,z_t,h_t)$、Doom では $P(z_{t+1},d_{t+1}|a_t,z_t,h_t)$ をモデル化する。
+- **Controller (C)**: $z_t$ と $h_t$ から action を出す線形モデル。報酬を見るのは C の最適化だけで、V/M は reward signal を知らない。
+- **Latent vector $z$**: VAE がフレームを圧縮した連続ベクトル。M は raw pixel ではなく $z$ の時系列を予測する。
+- **Hidden state $h_t$**: RNN の内部状態。CarRacing では LSTM output vector $h$、Doom では cell vector $c$ と output vector $h$ の両方が Controller 入力になる。
+- **MDN-RNN**: RNN の出力を mixture density にしたモデル。Appendix では 5 Gaussian mixtures、diagonal covariance、相関 $\rho$ なし。
+- **Temperature $\tau$**: M から $z_{t+1}$ を sampling するときの uncertainty 調整パラメータ。低すぎると mode collapse 的に fireballs が出なくなり、高すぎると virtual 環境が難しくなりすぎる。
+- **Dream / hallucinated environment**: M が生成する latent space 上の virtual environment。DoomRNN はスクリーンショットを毎 step render せず、latent space だけで動く。
+- **Cheating the World Model**: C が不完全な M の誤りや hidden state を exploit して、actual 環境では通用しない policy を学ぶ問題。
+- **Iterative training**: まず actual 環境でデータを集め、M と C を更新し、未完了ならまた actual 環境で新しいデータを集める手順。本論文の実験では one iteration で十分だったが、複雑タスクでは必要とされる。
+
+## 読む順番の提案
+
+- 最初に `main.tex` の Abstract と Introduction を読み、"large world model and a small controller model" という分業の動機を確認する。正規ノートでは Summary の「問題」と Takeaway の「巨大な world model + 極小 controller」に対応する。
+- 次に Agent Model 節を読み、VAE (V)、MDN-RNN (M)、Controller (C)、Eq. `controller_equation` を押さえる。正規ノートの「手法」箇条書きの V/M/C の理解に直結する。
+- その後、Car Racing Experiment の Procedure、`car_racing_param_count_table`、`car_racing_table` を読む。906 $\pm$ 21、867 parameters、V-only / hidden-layer ablation の根拠はここにある。
+- 次に VizDoom Experiment の Procedure、Cheating the World Model、`doom_virtual_table` を読む。dream-only training、done prediction、temperature $\tau$、mode collapse、1092 $\pm$ 556 の根拠がつながる。
+- 最後に Appendix の Variational Autoencoder、Recurrent Neural Network、Controller、Evolution Strategies、DoomRNN を読む。$N_z$、hidden units、5 mixtures、20 epochs、CMA-ES population 64、16 rollouts など、正規ノートの数値を裏取りする場所である。
+- Discussion と Iterative Training Procedure は、正規ノートの Critical Thoughts の「限界」「future work」「iterative training は未実装」に対応する。ここは著者の主張と読者側の疑問を分けて読むとよい。
 
 ## もとの論文・正規ノート
 

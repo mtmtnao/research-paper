@@ -1,4 +1,4 @@
-# Training language models to follow instructions with human feedback（人間からのフィードバックで「指示に従う」言葉のAIを育てる）
+# Training language models to follow instructions with human feedback（RLHF による instruction-following LM alignment の実証）
 
 - arXiv: https://arxiv.org/abs/2203.02155
 - 一次ソース: ../papers/arXiv-2203.02155v1/
@@ -8,171 +8,141 @@
 
 ## 一言で言うと
 
-人間が「こっちの返事の方が好き」と教えてあげることで、巨大な文章AIを「ちゃんと指示に従って、嘘や悪口を減らして」答えるように育て直した話。
+GPT-3 の事前学習目的「internet 上の次 token 予測」と、ユーザが望む「指示に helpful / honest / harmless に従う」目的のずれを、人間の demonstration と preference を使った RLHF で補正する論文。OpenAI API Playground 由来の実プロンプト分布上で、175B InstructGPT は 175B GPT-3 より 85 ± 3%、few-shot 175B GPT-3 より 71 ± 4% の頻度で好まれると報告する（`neurips_2021.tex` §1, §4.1）。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- 「言葉のAI（言語モデル）」← これはネット上の大量の文章を読み込んで、次に来る単語を予想する練習を死ぬほどやったコンピュータプログラムのこと。GPT-3 みたいなやつ。
-- でも、ただ「次の単語を当てる」練習をしただけのAIは、人にとって役に立つ答えを返してくれるとは限らない。
-  - たとえば 「夏休みの自由研究のアイデア教えて」と聞いたのに、関係ない文章を作り出したり、平気で嘘をついたり、悪口や差別的なことを言ったりする。
-  - これを論文は「**ミスアライン (misaligned)**」と呼んでいる。← 「ズレている」という意味。AIが学んだ目的（次の単語当て）と、人間が本当にやってほしいこと（ちゃんと答える）がズレている状態。
-- これまでのやり方の何が足りなかったか:
-  - AIを単に「もっと大きく（パラメータをいっぱい）」しても、自動的にお行儀よくなるわけじゃない、と論文は言っている。
-  - 公開されている練習問題集（FLAN や T0 みたいな、いろんなNLPタスクをまとめたデータ）で追加学習しても、実際にユーザーがAPI経由で投げてくる質問にはあまり対応できなかった。
-- たとえるなら: 百科事典を端から端まで丸暗記した子（GPT-3）に「友達に道案内して」とお願いしても、暗記した知識を披露するだけで道案内にならない、という感じ。**知ってる量と「言うこと聞ける」かは別の能力**。
+- **問題設定**: 大規模 LM は prompt によって多様な NLP task を解けるが、事実の捏造、biased or toxic text、指示不遵守を起こす。論文はこの原因を、LM objective が「predicting the next token on a webpage from the internet」であり、ユーザ目的「follow the user's instructions helpfully and safely」と異なる点に置く（§1）。
+- **対象範囲 / 仮定**: 対象は GPT-3 architecture の 1.3B / 6B / 175B モデル。主な prompt 分布は、初期 InstructGPT model を OpenAI API Playground で使った顧客の prompt と、bootstrap 用の labeler-written prompt である。train/valid/test は user ID または organization ID で分割し、training split から PII を filter する（§3.2, Appendix A）。
+- **既存研究との差分**: Ziegler et al. 2019 と Stiennon et al. 2020 の RLHF 手順を、summarization など狭いタスクではなく「broad distribution of language tasks」へ適用する。FLAN / T0 のような public NLP instruction tuning との比較も行い、API 実分布ではこれらが SFT baseline より弱いと主張する（§2, §4.1）。
+- **この論文で答えたい問い**: 人間の demonstration と preference による fine-tuning は、API ユーザの多様な instruction に対して GPT-3 の振る舞いをどの程度 align できるか。その改善は truthfulness / toxicity / bias / public NLP benchmark の性能低下、さらに計算コストとどう trade off するか。
 
-## どうやって解いたの？
+## 背景と前提
+
+- **alignment の定義**: 本文は Leike et al. 2018 に従い、モデルが user intentions に沿って振る舞うことを alignment とする。実用上は Askell et al. 2021 の helpful / honest / harmless に近い枠組みで評価する（§3.6）。
+- **helpful / honest / harmless**: helpful はユーザの task 解決を助けること、honest は情報を fabricate したり mislead しないこと、harmless は人や環境へ physical / psychological / social harm を与えないこと。honesty はモデルの内部 belief が分からないため、実験では truthfulness と hallucination を proxy にする（§1, §3.6）。
+- **RLHF の位置づけ**: 人間の preference を reward signal として使う fine-tuning。過去の robot / Atari / summarization の RLHF を、自然言語 instruction-following に拡張する（§2, §3.1）。
+- **評価分布の重要性**: この論文の主評価は public benchmark ではなく、held-out customer の API prompt 分布上の labeler preference である。したがって「ユーザ意図に従う」の実験的意味は、OpenAI API Playground prompt、labeler instructions、研究者が設計した評価基準に強く依存する（§3.6, §5.2）。
+- **baseline**: GPT-3、few-shot prefix を付けた GPT-3 (`GPT-3-prompted`)、SFT、PPO、PPO-ptx、FLAN fine-tuned 175B GPT-3、T0++ fine-tuned 175B GPT-3 が比較対象として出る（§3.5）。
+
+## 提案手法
 
 ### コアアイデア
 
-「人間が**お手本を見せる**」「人間が**どっちの答えが好きか教える**」、この2つを使ってAIを追加で訓練しよう、というアイデア。これを **RLHF（Reinforcement Learning from Human Feedback の略 ＝ 人間のフィードバックを使った強化学習）** と呼ぶ。← 「強化学習」というのは、ゲームで言うと「上手くやれたらご褒美ポイントを増やす、下手だったら減らす」ことで上達させていく学び方のこと。
+論文の手法は Figure 2 の 3 段階で構成される。
 
-たとえ話: ピアノを習うときに、
+1. **SFT**: labeler が prompt に対する望ましい response を demonstration として書き、GPT-3 を supervised learning で fine-tune する。SFT は 16 epochs、cosine learning rate decay、residual dropout 0.2 で訓練され、validation loss では 1 epoch 後に overfit するが、RM score と human preference はより長く訓練した方がよかったと述べる（§3.5, Appendix C）。
+2. **RM**: SFT model の final unembedding layer を外し、prompt と completion から scalar reward を出す reward model を訓練する。labeler には同一 prompt に対する $K=4$ から $K=9$ 個の response を ranking してもらい、そこから ${K \choose 2}$ 個の pairwise comparison を作る。175B RM は不安定だったため、本文では 6B RM のみを使う（§3.5）。
+3. **PPO / PPO-ptx**: RM の scalar reward を使い、SFT policy を PPO で fine-tune する。SFT model からの per-token KL penalty を加え、reward model の over-optimization を抑える。PPO-ptx は PPO gradient に pretraining gradient を混ぜ、public NLP datasets 上の performance regressions を軽減する。本文では特に断らない限り InstructGPT は PPO-ptx model を指す（§3.5）。
 
-1. まず先生が **お手本** を弾いて見せる（これが Step1 の SFT）
-2. 次に生徒が弾いた何パターンかの演奏を、先生が「これが一番良かった、これが2番目」と **順位付け** する（Step2 の RM）
-3. その先生の好みを覚えた「採点ロボット」を作って、生徒は**そのロボットに高得点を取ろうとしながら**毎日練習する（Step3 の PPO）
+この手順は「human values」一般への alignment ではなく、training labelers、研究者の instruction、API Playground の顧客 prompt によって定まる specific human reference group への alignment である、と著者は §5.2 で明示している。
 
-この3段階を、文章AIに対してやる。
-
-### 仕組み
-
-論文では3つのステップを順番に踏む。
-
-- **step1: SFT（Supervised Fine-Tuning ＝ 教師あり微調整）**
-  - 「教師あり学習」← 正解の文章をAIに見せて「これを真似しなさい」と教える学び方。
-  - 40人くらいの作業者（ラベラー）に、「こういう質問にはこう答えるべき」というお手本を約 13,000 個書いてもらう。
-  - そのお手本データで GPT-3 を 16 周（16 epochs ← 同じデータを 16 回繰り返し見せる）追加学習する。
-- **step2: RM（Reward Model ＝ 報酬モデル）の訓練**
-  - SFT したAIに、同じ質問に対して 4〜9 通りの違う答えを作らせる。
-  - 作業者にその 4〜9 個を「良い順」に並べてもらう。
-  - そのランキングを真似するように、別のAI（採点係）を訓練する。これが報酬モデル。
-  - 大事な細部: 採点係は **60 億パラメータ (6B)** のサイズにした。1750 億 (175B) で訓練しようとしたら**訓練が不安定**になったから。
-- **step3: PPO（Proximal Policy Optimization ＝ 「安全な近場で動く」強化学習アルゴリズム）**
-  - 「強化学習」← 上で説明した、ご褒美を増やす方向に行動を変えていく学び方。
-  - SFT したAIを「生徒」、Step2 で作った報酬モデルを「採点ロボット」として、生徒の答えの点数が上がる方向に微調整する。
-  - **KL ペナルティ** という工夫を入れる。← KL は「Kullback-Leibler divergence」の略で、簡単に言うと「2つの確率の出し方がどれくらい違うか」を測るものさし。これで「もとの SFT モデルから離れすぎないように」ブレーキをかける。離れすぎると採点ロボットを騙すような変な答え方を覚えてしまう（これを reward hacking ＝ ご褒美ハッキング、と呼ぶ）から。
-  - **PPO-ptx** バージョンでは、もとの GPT-3 の事前学習データも混ぜて学習する。← こうすると、後で説明する「アライメント税」を減らせる。
-- 出来上がったモデルを **InstructGPT** と呼ぶ。サイズは 1.3B / 6B / 175B の3種類。
-
-### 主要な数式
-
-論文には大事な式が2つ出てくる。
-
-#### 式1: 報酬モデル（採点係）の学習に使う式
+### 重要な定義・数式
 
 $$
-\operatorname{loss}(\theta) = -\frac{1}{\binom{K}{2}} E_{(x, y_w, y_l) \sim D}\left[\log\left(\sigma\left(r_\theta(x, y_w) - r_\theta(x, y_l)\right)\right)\right]
+\operatorname{loss}\left(\theta \right)=-\frac{1}{{K \choose 2}}E_{\left(x, y_{w}, y_{l}\right) \sim D}\left[\log \left(\sigma\left(r_{\theta}\left(x, y_{w}\right)-r_{\theta}\left(x, y_{l}\right)\right)\right)\right]
 $$
 
-**この式が言ってること**: 「人間が好きと言った答え $y_w$ には高い点を、人間が嫌いと言った答え $y_l$ には低い点を付ける」ように採点係 $r_\theta$ を訓練する、という意味。式の値（loss ＝ 損失 ＝ 間違い度）が小さくなるほど、採点係は人間の好みに似てくる。
+**式の意味**: Eq. (1) の reward model loss。人間が pairwise comparison で好んだ completion $y_w$ の reward が、好まれなかった completion $y_l$ より高くなるように学習する。
 
-**記号の意味**:
-- $\theta$ … 採点係（報酬モデル）の中の調整つまみ全部。これを動かしていく。
-- $x$ … 質問文（プロンプト）
-- $y_w$ … 同じ質問に対する2つの答えのうち、人間が**好き**と言ったほう（w は winner ＝ 勝ち、の頭文字）
-- $y_l$ … 同じ質問に対する2つの答えのうち、人間が**嫌い**と言ったほう（l は loser ＝ 負け）
-- $r_\theta(x, y)$ … 採点係が質問 $x$ と答え $y$ を見て付ける点数
-- $\sigma$ … シグモイド関数。← どんな数を入れても 0〜1 の間の数を返す変換器。入力がプラスに大きいほど 1 に近づき、マイナスに大きいほど 0 に近づく、ぐにゃっとした S 字カーブ。「勝ち答えの点が負け答えより高い」ほどシグモイドの出力は 1 に近づく。
-- $\log$ … 対数。← 「だいたい何桁の数か」を表す関数。$\log 1 = 0$、$\log 0.5 \approx -0.69$、$\log 0.1 \approx -2.3$ で、**0 に近づくほど大きなマイナス**になる。だから「シグモイドの出力が 0 に近い（＝予想を外した）」ときに大きなマイナス値になり、それに前のマイナスがかかって**大きな罰**になる。
-- $E_{(x, y_w, y_l) \sim D}$ … 「データセット $D$ からたくさん（質問, 勝ち答え, 負け答え）の組を取ってきて、その平均をとる」という意味。$E$ は Expected value ＝ 期待値（≒ 平均）。
-- $\binom{K}{2}$ … $K$ 個から 2 個を選ぶ組み合わせの数。$K = 4$ なら $\binom{4}{2} = 6$、$K = 9$ なら $\binom{9}{2} = 36$。同じ質問につき複数の答えを並べたとき、できるペアの数。これで割って 1 ペアあたりの平均にしている。
-- $D$ … 人間が比較してくれた（質問, 勝ち, 負け）の組み合わせを集めた箱（データセット）。
+**記号の定義**:
+- $x$ ... prompt
+- $y_w$ ... pair のうち labeler が preferred とした completion
+- $y_l$ ... pair のうち preferred でない completion
+- $r_\theta(x,y)$ ... parameters $\theta$ を持つ reward model の scalar output
+- $D$ ... human comparisons の dataset
+- $K$ ... 同一 prompt に対して labeler に ranking させる response 数。本文では $K=4$ から $K=9$
+- $\sigma$ ... sigmoid function
 
-**身近な例え**: テストの採点者を養成する話。生徒が同じ問題に対して 4〜9 通りの答えを書いた。本物のベテラン先生（人間ラベラー）は「これが一番、これが二番…」と順位を付けた。新人の採点者見習い（採点係 $r_\theta$）に、その全部のペアを見せて「ベテランと同じ順位を付けられるように」練習させる、というのがこの式。新人がベテランと違う順位を付けるたびに大きな罰（loss）が増え、合う度に罰が減る。
-
-#### 式2: PPO（生徒モデル）の学習に使う目的関数
+**この論文での役割**: SFT 後の policy を PPO で最適化するための reward function を作る中心式。論文は、同一 prompt から得た ${K \choose 2}$ comparisons を独立 data point として shuffle せず、1 batch element として扱うことで overfitting を避けたと説明する（§3.5）。
 
 $$
-\operatorname{objective}(\phi) = E_{(x,y) \sim D_{\pi_\phi^{\mathrm{RL}}}}\left[r_\theta(x, y) - \beta \log\left(\pi_\phi^{\mathrm{RL}}(y \mid x) / \pi^{\mathrm{SFT}}(y \mid x)\right)\right] + \gamma E_{x \sim D_{\mathrm{pretrain}}}\left[\log(\pi_\phi^{\mathrm{RL}}(x))\right]
+\operatorname{objective}\left(\phi\right)=E_{\left(x, y\right) \sim D_{\pi_{\phi}^{\mathrm{RL}}}}\left[r_{\theta}(x, y)-\beta \log \left(\pi_{\phi}^{\mathrm{RL}}(y \mid x) / \pi^{\mathrm{SFT}}(y \mid x)\right)\right] + \gamma E_{x \sim D_\textrm{pretrain}}\left[\log(\pi_{\phi}^{\mathrm{RL}}(x))\right]
 $$
 
-**この式が言ってること**: 生徒AI（$\pi_\phi^{\mathrm{RL}}$）の調整つまみ $\phi$ を、この式の値が**大きくなる方向**に動かす。値が大きくなるためには、(a) 採点係から高い点をもらい、(b) SFT のときの自分から離れすぎず、(c) もとのネット文章もちゃんと予測できる、の 3 つを同時に満たす必要がある。3 つの目標のバランスを取りながら学習する式。
+**式の意味**: Eq. (2) の RL objective。RL policy が RM reward を高くしつつ、SFT policy から離れすぎないよう KL penalty を受け、PPO-ptx では pretraining distribution の log likelihood も高く保つ。
 
-**記号の意味**:
-- $\phi$ … 生徒AI（PPO で動かしているモデル）の中の調整つまみ全部
-- $\pi_\phi^{\mathrm{RL}}(y \mid x)$ … 生徒AIが「質問 $x$ を見たときに答え $y$ を返す確率」。$\pi$ はポリシー（方針）の略で、AI の答え方の癖のこと。
-- $\pi^{\mathrm{SFT}}(y \mid x)$ … Step1 で作った SFT モデルの同じ確率（こちらは固定で動かない、お手本役）
-- $r_\theta(x, y)$ … 採点係が付ける点数（式1で訓練した報酬モデル）
-- $\beta$ … KL ペナルティの強さの調整つまみ。大きいほど「SFT から離れたら強く叱る」。
-- $\gamma$ … 事前学習を混ぜる強さ。$\gamma = 0$ なら混ぜない（これを PPO と呼ぶ）。$\gamma > 0$ で混ぜると PPO-ptx（pretraining mix）。
-- $\log(\pi_\phi^{\mathrm{RL}}(y \mid x) / \pi^{\mathrm{SFT}}(y \mid x))$ … 生徒と SFT モデルの確率の比の対数。← 比が 1（同じ）なら 0、比が 1 から離れるほど大きくなる「ズレ具合の物差し」。
-- $D_{\pi_\phi^{\mathrm{RL}}}$ … 生徒が今の方針で実際に出した（質問, 答え）の組
-- $D_{\mathrm{pretrain}}$ … もとの GPT-3 を訓練したときの大量のネット文章
-- $\log(\pi_\phi^{\mathrm{RL}}(x))$ … 生徒AIが、もとの事前学習文章 $x$ をどれくらい上手く予測できるか（高いほど良い）
-- $E_{...}$ … 期待値（平均）
+**記号の定義**:
+- $\phi$ ... learned RL policy の parameters
+- $\pi_{\phi}^{\mathrm{RL}}$ ... PPO で学習される policy
+- $\pi^{\mathrm{SFT}}$ ... supervised trained model
+- $D_{\pi_{\phi}^{\mathrm{RL}}}$ ... 現在の RL policy が生成する prompt-response の分布
+- $D_\textrm{pretrain}$ ... GPT-3 の pretraining distribution
+- $\beta$ ... KL reward coefficient。Appendix C では default $\beta=0.02$
+- $\gamma$ ... pretraining loss coefficient。PPO では $\gamma=0$、PPO-ptx では Appendix C で $\gamma=27.8$
 
-**身近な例え**: 部活の練習に 3 つのルールが同時にある状態。
-1. **試合で勝つ**（採点係から高得点を取る ＝ $r_\theta$ を最大化）
-2. **コーチが教えたフォームから大きく外れない**（SFT から離れすぎない ＝ KL ペナルティ）
-3. **基礎練習も毎日続ける**（事前学習データの予測も上手いまま ＝ $\gamma$ の項）
+**この論文での役割**: PPO-ptx の定義そのもの。public NLP datasets 上の alignment tax を減らすため、単に KL coefficient を大きくするのではなく pretraining gradients を混ぜるという設計を支える（§3.5, §4.2, Appendix D）。
 
-3 つのバランスを取って練習することで、「試合に勝つために変なクセが付いて、普段の基礎が崩れる」のを防ぐ。$\beta$ と $\gamma$ はそれぞれのルールをどれだけ重く見るかのダイヤル。
+$$
+H = -\sum_{i \in \rm choices} P_i \log_2 P_i
+$$
 
-## 何がすごいの？
+**式の意味**: bias evaluation で使う entropy。binary choice で最大 entropy は 1 で、高いほど model がどちらかの completion に強く偏っていないことを表す（Appendix D, “Toxicity and bias evaluation details”）。
 
-- **小さい InstructGPT が、巨大な GPT-3 より好かれる**: 1.3B（13億）パラメータの InstructGPT の答えのほうが、100 倍大きい 175B（1750億）の GPT-3 の答えより、人間に好まれる。
-- **175B 同士でも圧勝**: 175B の InstructGPT は 175B の素の GPT-3 に **85±3%** の確率で勝つ。few-shot プロンプト（お手本を3つくらい付けて聞くやり方）を与えた GPT-3 にも **71±4%** で勝つ。
-- **FLAN や T0（公開データで微調整した GPT-3）にも勝つ**: 175B SFT を基準に比べると、InstructGPT は **73.4±2%** の勝率、T0 は **26.8±2%**、FLAN は **29.8±2%** で、InstructGPT が圧勝。
-- **嘘が減る（truthfulness 向上）**: TruthfulQA というベンチマーク（← AI がどれだけ正直に答えるかを測る問題集）で、InstructGPT は真実かつ役立つ答えを返す割合が GPT-3 の約 2 倍。論文の自動評価表では "QA prompt" 設定で 175B PPO が **0.752**、GPT-3 が **0.251**。
-- **でっちあげ（hallucination ＝ ハルシネーション）が減る**: 「入力にない情報を勝手に作る」率が 41% → **21%** に半減（closed-domain タスク）。
-- **悪口（toxicity ＝ トキシシティ ＝ 毒性）も減る**: RealToxicityPrompts というベンチマークで、「丁寧にね」と指示したときの毒性が GPT-3 より約 **25% 減**。
-- **バイアスは減らない**: ただし Winogender や CrowS-Pairs という「性別や人種の偏見」を測るベンチマークでは改善は見られなかった。これは論文も正直に書いている弱点。
-- **アライメント税（alignment tax）は減らせる**: 素の PPO だと SQuADv2, DROP, HellaSwag, WMT15 仏→英翻訳などで性能が落ちる（これを論文は「アライメント税」と呼ぶ ＝ お行儀を良くするために他の能力を犠牲にする税金のような損失）。でも PPO-ptx（式2の $\gamma$ の項）を入れると大部分が取り戻せる。
-- **コスパが良い**: 175B PPO-ptx の追加訓練に必要だった計算量はおよそ **60 ペタフロップ・日** だけ。GPT-3 の事前学習には **3,640 ペタフロップ・日** かかっていた。← ペタフロップ・日というのは、1 秒間に 10 の 15 乗回の計算を 1 日続けたときの計算量。つまり「**モデルを 100 倍大きくする**より、**RLHF でアラインする**ほうが、はるかに安く同じ満足度に到達できる」と論文は主張している。
-- 著者が論文で挙げている貢献:
-  1. RLHF を「広い API プロンプト分布」へ拡張し、SFT → RM → PPO のレシピを具体的に公開
-  2. InstructGPT が helpful / 真実性 / 毒性で公開 LM を上回ることを大規模人手評価で実証
-  3. PPO-ptx という単純な方法でアライメント税を緩和
-  4. 公開 NLP データの微調整（FLAN, T0）が API 実分布では効きにくいと示した
-  5. アライメントは事前学習よりはるかに少ない計算で大きな効果を出せると示した
+**記号の定義**:
+- $i$ ... Winogender / CrowS-Pairs の choice
+- $P_i$ ... model が completion $i$ に割り当てた total probability に比例する binary distribution の確率
+- $H$ ... bits 単位の entropy
 
-## キーワード辞典
+**この論文での役割**: InstructGPT が bias を減らしたかを測る指標。本文は、この metric では InstructGPT は GPT-3 より less biased ではなく、respectful prompt では PPO-ptx の entropy が下がり higher bias を示す場合があると述べる（§4.2）。
 
-出現順で。
+### 実装 / アルゴリズム上の要点
 
-- **言語モデル (Language Model)** … 「文章の続きを予想する」AI のこと。
-- **GPT-3** … OpenAI の作った巨大な言語モデル。1750 億パラメータ。本論文の出発点。
-- **アライメント (alignment)** … AI の振る舞いを、人間がやってほしいことに**揃える**こと。
-- **ミスアラインド (misaligned)** … 「揃ってない」状態。AI が学んだ目的と人間がやってほしいことがズレている。
-- **helpful / honest / harmless** … 「役に立つ / 正直 / 害がない」。論文がアライメントの基準として使う3つの言葉。
-- **RLHF** … Reinforcement Learning from Human Feedback の略。人間のフィードバックを報酬として強化学習する手法。
-- **強化学習 (Reinforcement Learning, RL)** … ご褒美を最大化する方向に行動を変えていく学び方。
-- **fine-tuning（ファインチューニング ＝ 微調整）** … すでに訓練済みのAIに、追加で少しデータを見せて性質を変えること。
-- **SFT (Supervised Fine-Tuning)** … 人間が書いたお手本を真似させる教師あり微調整。
-- **RM (Reward Model ＝ 報酬モデル)** … 「答えに点数を付ける係」をする小さめのAI。
-- **PPO (Proximal Policy Optimization)** … 「今のやり方から離れすぎないように」気を付けながら強化学習する代表的なアルゴリズム。
-- **KL ペナルティ** … 2つの確率分布の違い（Kullback-Leibler divergence）を罰として加える仕組み。「もとから離れすぎない」ためのブレーキ。
-- **PPO-ptx** … PPO に事前学習データの予測も混ぜたバージョン。アライメント税を減らすため。
-- **ハルシネーション (hallucination)** … AI が事実でない情報を作り出してしまうこと。
-- **トキシシティ (toxicity ＝ 毒性)** … 出力に悪口・差別・暴力的表現が含まれること。
-- **バイアス (bias)** … 性別・人種・職業などについての偏見が出力に出ること。
-- **アライメント税 (alignment tax)** … お行儀を良くする代わりに、他のベンチマーク性能が落ちてしまう損失。
-- **InstructGPT** … 本論文の成果物。GPT-3 を SFT + RM + PPO で追加訓練したモデル群。
-- **プロンプト (prompt)** … ユーザーが AI に入力する質問・指示の文。
-- **ラベラー (labeler)** … お手本を書いたり、答えを順位付けしたりする作業者。論文では 40 名くらい。
-- **few-shot プロンプト** … 質問の前に 3〜5 個くらいお手本を付けて、「こんな感じで答えてね」とほのめかすやり方。
-- **FLAN / T0** … 公開されている「いろいろな NLP タスク＋指示」を集めたデータセット。これで GPT-3 を微調整したものを baseline として比較した。
-- **TruthfulQA** … AI がどれだけ正直に答えるかを測る問題集。
-- **RealToxicityPrompts** … AI の毒性を測るために作られたプロンプト集。
-- **Winogender / CrowS-Pairs** … 偏見・ステレオタイプを測るデータセット。
-- **シグモイド関数 ($\sigma$)** … どんな数も 0〜1 に押し込める変換器（S 字カーブ）。
-- **対数 ($\log$)** … 「だいたい何桁の数か」を返す関数。0 に近づくほど大きなマイナス値になる。
-- **期待値 ($E$)** … 平均のこと。
-- **ペタフロップ・日 (petaflop/s-day)** … 1 秒あたり 10 の 15 乗回の計算を 1 日続けたときの計算量。
-- **パラメータ** … AI 内部の「調整つまみ」の数。1.3B = 13 億個、175B = 1750 億個。
+- **データ収集**: prompt は labeler-written prompt と API Playground prompt。API prompt は deduplication、1 user ID あたり最大 200 prompt、user ID / organization ID による split、training split の PII filtering を行う（§3.2, Appendix A）。
+- **データサイズ**: Table `dataset-size` によると、SFT train は labeler 11,295 + customer 1,430、RM train は labeler 6,623 + customer 26,584、PPO train は customer 31,144。PPO valid は customer 16,185。
+- **prompt 分布**: API prompt dataset の use-case は Generation 45.6%、Open QA 12.4%、Brainstorming 11.2%、Chat 8.4%、Rewrite 6.6%、Summarization 4.2%、Classification 3.5%、Other 3.5%、Closed QA 2.6%、Extract 1.9%（Table `instruction-categories`）。
+- **言語**: training tasks は over 96% English。Appendix A では langid.py により 110k datapoints の around 96% が English と分類され、classifier inaccuracies により実際は 99% 以上かもしれないと述べる。
+- **labeler**: Upwork と ScaleAI から約 40 人の contractors を hiring し、sensitive prompt への対応や researcher labels との agreement などで screening する。training labelers の inter-annotator agreement は 72.6 ± 1.5%、held-out labelers は 77.3 ± 1.3%（§3.4）。
+- **RM のサイズ選択**: すべての PPO model で single 6B reward model と 6B value function を使う。Appendix C は、175B RM は validation loss が下がる可能性はあるが training が不安定で PPO value function 初期化にも不向き、計算量も増えると説明する。
+- **RL 設定**: Appendix C では RL models を 256k episodes 訓練し、about 31k unique prompts を用いる。batch size 512、minibatch size 64、PPO clip ratio 0.2、rollout sampling temperature 1。PPO-ptx では RL episode 数の 8 倍の pretraining examples を使う。
 
-## ちょっと深掘り（中学生は飛ばして OK）
+## 実験・結果
 
-- **RM を 6B にした理由**: 175B の RM だと訓練が不安定で、強化学習の中で「価値関数（value function）」として使うのにも向かなかった、と論文は言う。6B サイズが安定 & 計算節約の両面で勝ち。
-- **K-way ランキングを 1 バッチ要素にまとめる工夫**: 同じプロンプトから出た $K$ 個の答えのペアを別々のデータ点扱いするとオーバーフィット（過学習）した。同一プロンプトのペアを 1 つの塊として扱うことで、forward pass（モデルに通す計算）が 1 回で済み、汎化性能も上がった。実装上の地味だが大事な工夫。
-- **SFT は 1 epoch で validation loss は過学習する**のに、16 epoch 訓練したほうが RM スコアも人間の好みも上がるという経験則を採用した。
-- **「誰の好みに合わせているか」を著者自身が明示**: アラインしている相手は「OpenAI の研究者 40 名 + Upwork/ScaleAI 経由のラベラー + API 課金顧客」であって、「人類全体の価値観」ではない、と §3.5 / §5.2 で明確に書いている（多くが英語話者で米国または東南アジア在住）。
-- **「丁寧に答えて (respectful)」と指示するとバイアスは増す**: 毒性は下がるのに、CrowS-Pairs ではエントロピー（出力の多様さ）が下がってより**確信を持って**ステレオタイプを返す、という非対称な結果が出ている。「安全プロンプト」が常に良いとは限らない。
-- **held-out labelers** での RM 精度は 69.6±0.9%、訓練ラベラーでは 72.4±0.4%。新しいラベラーへの汎化はそこそこできている。
-- **ラベラー間の一致率**: 訓練ラベラーは 72.6±1.5%、held-out ラベラーは 77.3±1.3%。これは Stiennon+2020 の研究者間一致率 73±4% と同程度で、「正解が完全には決まらないタスク」としては妥当な高さ。
-- **データセットサイズ**: SFT 訓練データは 11,295 ラベラー作 + 1,430 API 顧客作、RM 訓練データは 6,623 ラベラー作 + 26,584 API 顧客作、PPO 訓練データは 31,144 API 顧客作（人間ラベル無し）。
-- **限界として論文自身が認めていること**: (a) toxic / 性的 / 暴力的コンテンツを依然として出す、(b) false premise（前提が間違っている質問）に弱い、(c) 多数の制約を同時に守るのが苦手、(d) ユーザーが有害なことを指示すると従ってしまう、(e) ほとんどの比較は 1 ラベラーのみの評価。「アライメントは方向であって完成ではない」と明示。
+- **データセット / ベンチマーク**: 主評価は held-out customer の API prompt distribution。public NLP datasets として、TruthfulQA、RealToxicityPrompts、Winogender、CrowS-Pairs、DROP、QuAC、SQuADv2、HellaSwag、SST、RTE、WSC、WMT 2015 French to English、CNN/Daily Mail Summarization、Reddit TLDR Summarization を使う（§3.6, Appendix D）。
+- **比較対象 / baseline**: GPT-3、GPT-3-prompted、SFT、PPO、PPO-ptx、FLAN fine-tuned 175B GPT-3、T0++ fine-tuned 175B GPT-3。FLAN は 1.2M datapoints、T0 は 96M datapoints から 1 million に subsample して比較可能にし、どちらも 6B RM score で checkpoint を選ぶ（§3.5, Appendix C）。
+- **指標**: API 分布では winrate against 175B SFT、1-7 Likert scale、metadata binary labels（hallucination、instruction following、customer assistant appropriateness など）。public eval では TruthfulQA の true / true+info、RealToxicityPrompts の Perspective API toxicity と human toxicity、bias entropy、accuracy、F1、BLEU、ROUGE-L を使う（§3.6, Table `metadata_types`, Table `autoevals`）。
+- **主な結果**: 175B InstructGPT は 175B GPT-3 に 85 ± 3%、few-shot GPT-3 に 71 ± 4% の頻度で好まれる。Figure 1 caption は、1.3B PPO-ptx output が 175B GPT-3 output より好まれると述べるが、caption 内にその exact winrate は載っていない。
+- **FLAN / T0 との比較**: 175B InstructGPT output は FLAN model より 78 ± 4%、T0 model より 79 ± 4% の頻度で好まれる。Intro では InstructGPT の winrate が 73.4 ± 2%、T0 が 26.8 ± 2%、FLAN が 29.8 ± 2% と報告される（§1, §4.1）。
+- **truthfulness / hallucination**: 本文は TruthfulQA で truthful and informative answers が GPT-3 の約 2 倍と述べる。Table `autoevals` では “QA prompt” の true+info が 175B GPT-3 0.251、175B PPO 0.752、175B PPO-ptx 0.689。closed-domain API tasks の hallucination rate は InstructGPT 21% vs GPT-3 41%（§1, Table `autoevals`）。
+- **toxicity**: RealToxicityPrompts では respectful prompt 時に InstructGPT が GPT-3 より about 25% fewer toxic outputs と本文が述べる。Table `autoevals` の 175B では respectful の toxicity が GPT 0.233、PPO 0.205、PPO-ptx 0.196。一方 basic prompt では 175B GPT 0.231、PPO-ptx 0.234 で優位は消える。biased prompt では 175B GPT 0.285 に対し 175B PPO 0.427、175B PPO-ptx 0.400 と高くなる。
+- **bias**: Winogender / CrowS-Pairs では有意な改善はない。Table `autoevals` では CrowS-Pairs respectful entropy が 175B GPT 0.362、175B PPO-ptx 0.243 で、本文は respectful instruction 下で lower entropy つまり higher bias を示すと解釈している（§4.2）。
+- **alignment tax**: PPO without pretraining mix は SQuADv2、DROP、HellaSwag、WMT15 Fr to En などで性能低下を起こす。PPO-ptx はこの低下を大きく緩和し、Table `autoevals` では HellaSwag 175B zero-shot が GPT 0.781 に対し PPO-ptx 0.807、few-shot が GPT 0.791 に対し PPO-ptx 0.820。ただし本文は PPO-ptx が DROP、SQuADv2、translation では GPT-3 にまだ遅れると述べる（§4.2）。
+- **held-out labelers / RM generalization**: held-out labelers も training labelers と似た preference ranking を示す。5-fold cross validation の RM accuracy は training-set labelers への prediction が 72.4 ± 0.4%、held-out group が 69.6 ± 0.9%（§4.1, Appendix D）。
+- **著者が主張する貢献**: RLHF を広い API prompt distribution に適用し、InstructGPT が preference、truthfulness、toxicity で GPT-3 より改善することを示したこと。PPO-ptx により alignment tax を軽減したこと。現時点の顧客自然言語 task distribution では、175B SFT 4.9 petaflops/s-days、175B PPO-ptx 60 petaflops/s-days が GPT-3 pretraining 3,640 petaflops/s-days より小さく、alignment 投資が model scaling より cost-effective だと論じること（§5.1）。
+
+## 妥当性と限界
+
+- **この主張を支える根拠**: 主張の中心は、held-out customer prompt 上の pairwise human preference、Likert / metadata、TruthfulQA / RealToxicityPrompts / bias benchmarks / public NLP datasets の複数評価に支えられている。特に API 分布では GPT-3 → GPT-3-prompted → SFT → PPO の段階的改善を示し、175B direct comparison の 85 ± 3% / 71 ± 4% が強い evidence になっている。
+- **著者が認めている limitations / future work**: InstructGPT は “neither fully aligned nor fully safe” で、toxic / biased outputs、made-up facts、sexual and violent content をまだ生成する。false premise を含む instruction に乗ってしまう、simple question に over-hedge する、multiple explicit constraints に弱い。有害な instruction にも従う傾向があり、biased prompt では同サイズ GPT-3 より toxic output が増える（§4.3, §5.3）。
+- **誰に align しているかの限定**: 著者は、align 先が training labelers、研究者、OpenAI API Playground customers によって決まると書く。labelers は mostly English-speaking people living in the United States or Southeast Asia で、API customers も waitlist と OpenAI employees の network に偏り得る。これは “human values” 一般への alignment ではない（§5.2）。
+- **読者として注意すべき点**: API prompt 分布は early InstructGPT models に投げられた prompt であり、GPT-3 baseline に不利な instruction-following style を含む可能性が本文で指摘されている。評価 labeler は prompt を書いた user ではないため、labeler が推測した intention と user の actual intention がずれる可能性もある（§3.6, §4.1）。
+- **追加で確認したい実験 / 疑問**: labeler 集団を地理・言語・文化・専門性で変えた場合に preference / bias / refusal behavior がどう変わるか。harmful instruction への refusal を training objective に入れた場合、helpfulness と harmlessness の trade-off はどうなるか。PPO-ptx の pretraining mix は regressions を完全には消しておらず、pretraining data に含まれる undesirable behavior を増やす可能性があるため、filtering や synthetic instructions の効果も確認したい（§5.4）。
+
+## 用語メモ
+
+一般的な辞書的定義ではなく、この論文での使われ方を中心に書く。
+
+- **InstructGPT**: GPT-3 architecture を SFT、RM、PPO で fine-tune したモデル群。本文では特に断らない限り PPO-ptx model を指す。
+- **misaligned**: LM の next-token prediction objective と、ユーザが望む helpful and safe instruction following がずれている状態。
+- **user intention**: explicit instruction だけでなく、truthfulness、bias / toxicity 回避など implicit intentions も含む。ただし実験では labeler が prompt から推測する。
+- **SFT**: labeler demonstration を使った supervised fine-tuning。PPO の初期 policy であり、baseline でもある。
+- **RM**: prompt と completion に scalar reward を付ける reward model。人間の ranking から pairwise loss で訓練する。
+- **PPO**: RM reward を最大化する RL fine-tuning。SFT から離れすぎないよう per-token KL penalty を入れる。
+- **PPO-ptx**: PPO gradient に pretraining gradient を混ぜる variant。alignment tax を軽減するための主手法で、$\gamma>0$ の Eq. (2) に対応する。
+- **KL penalty**: RL policy と SFT policy の token 確率のずれを罰する項。reward model over-optimization を抑える目的で使う。
+- **alignment tax**: alignment fine-tuning によって、SQuADv2、DROP、HellaSwag、WMT15 Fr to En など、別に重要な public NLP tasks の性能が落ちること。
+- **held-out labelers**: training data を作っていない別 labeler 集団。モデルが training labelers の preference に過剰適合していないかを見るために使う。
+- **hallucination**: closed-domain tasks で input にない情報を output に含めること。本文では InstructGPT 21% vs GPT-3 41% と報告する。
+- **entropy in bias evaluation**: Winogender / CrowS-Pairs の binary choices に対する確率分布の entropy。高いほど一方の sentence に偏らない。
+- **RealToxicityPrompts prompt types**: basic prompt、respectful prompt、biased prompt の 3 種類。respectful では毒性が下がるが、biased prompt では InstructGPT の毒性が高くなる。
+
+## 読む順番の提案
+
+- まず `neurips_2021.tex` の Abstract と §1 Introduction を読む。ここで misalignment、helpful / honest / harmless、主要結果 85 ± 3% / 71 ± 4%、21% vs 41%、about 25% fewer toxic outputs、FLAN / T0 比較の位置づけを押さえる。
+- 次に §3.1 から §3.5 を読む。Figure 2、Eq. (1)、Eq. (2)、Table `dataset-size`、Table `instruction-categories` を合わせて見ると、SFT → RM → PPO/PPO-ptx の data flow と、API prompt 分布の偏りが分かる。
+- §3.6 Evaluation を読んでから §4 Results に進む。preference winrate、TruthfulQA、RealToxicityPrompts、Winogender / CrowS-Pairs、alignment tax が別々の評価軸であることを区別する。
+- Appendix C / D は実装と表の裏取りに使う。特に 6B RM、$\beta=0.02$、$\gamma=27.8$、256k episodes、Table `autoevals`、bias entropy の式を確認する。
+- §5.2 “Who are we aligning to?” と §5.3 Limitations は最後に必ず読む。正規ノート `notes/arXiv-2203.02155v1.md` の Critical Thoughts は、この 2 節と §3.6 の評価設計への注意につながる。
 
 ## もとの論文・正規ノート
 

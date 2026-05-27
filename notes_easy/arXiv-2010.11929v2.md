@@ -1,4 +1,4 @@
-# An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale（画像は 16×16 個の「単語」だ：大規模学習で画像認識する Transformer）
+# An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale（Vision Transformer による大規模画像認識）
 
 - arXiv: https://arxiv.org/abs/2010.11929
 - 一次ソース: ../papers/arXiv-2010.11929v2/
@@ -8,207 +8,195 @@
 
 ## 一言で言うと
 
-画像を 16×16 の小さなタイルに切って、文章を読む AI（Transformer）にそのまま食わせたら、大量のデータで学習させた場合、これまで最強だった CNN を超えた、という話。
+画像を固定サイズの patch 列として扱い、標準的な Transformer encoder をほぼそのまま画像分類に適用する Vision Transformer（ViT）を提案する論文。ViT は CNN より画像固有の inductive bias が少ないため小さな事前学習データでは弱いが、ImageNet-21k や JFT-300M のような大規模データで事前学習すると複数の画像認識ベンチマークで state-of-the-art CNN に並ぶか上回り、事前学習 compute も少ないと著者は主張する。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- これまで「画像を見分ける AI」（猫か犬か、車か飛行機かを当てる AI）は、**CNN（畳み込みニューラルネット）** という仕組みが王者だった。
-  - CNN ← これは「画像の小さい四角を順にずらしながら模様を探す」ような仕組み。虫眼鏡を画像の上で少しずつ動かして「ここに耳っぽい模様」「ここにヒゲっぽい模様」と探していくイメージ。
-- 一方、**文章を読む AI** の世界では、**Transformer** という別の仕組みが大成功していた。
-  - Transformer ← これは「文中のどの単語とどの単語が関係しているか」を、全部の単語ペアで一気に見比べる仕組み。例えば「彼はリンゴを食べた。それは甘かった」の「それ」と「リンゴ」が結びついていることを、距離に関係なく直接見つけ出せる。
-- 「文章でうまくいった Transformer を、画像にもそのまま使えないの？」というのがこの論文の出発点。
-- それまでの試み：「CNN の一部に Transformer っぽい仕組みをくっつける」「画像専用の特別な Transformer を作る」ばかりで、**文章用とそっくり同じ Transformer をそのまま画像に使う** という実験は、ちゃんと大規模にやられていなかった。
+- **問題設定**: NLP で成功した Transformer を、CNN を主役にせず画像分類へ直接使えるかを調べる。具体的には、画像を patch の sequence に変換し、supervised pre-training と downstream fine-tuning で表現学習能力を評価する。
+- **対象範囲 / 仮定**: 主な対象は image classification と transfer learning。事前学習には ImageNet、ImageNet-21k、JFT-300M を使い、下流評価には ImageNet、ImageNet-ReaL、CIFAR-10/100、Oxford-IIIT Pets、Oxford Flowers-102、VTAB などを使う。detection や segmentation は結論で future work として挙げられており、本文の主張範囲ではない。
+- **既存研究との差分**: 既存の vision self-attention は、CNN に attention を併用する、畳み込みの一部を specialized attention pattern で置き換える、pixel や小 patch に attention を使う、という方向が多かった。この論文は「fewest possible modifications」で標準 Transformer を画像 patch 列へ適用し、大規模事前学習で SOTA CNN と比較する点が差分である。
+- **この論文で答えたい問い**: 純粋な Transformer は画像分類で CNN 依存を減らせるのか。CNN の locality や translation equivariance という inductive bias が少ないことは、データ規模を増やせば補えるのか。性能と pre-training compute の trade-off は ResNet や hybrid と比べてどうか。
 
-### 既存の方法の足りなかった点
+## 背景と前提
 
-- CNN は「隣のピクセルは関係が深い」「物が少しずれても同じ物」という**画像っぽい思い込み（inductive bias / 帰納バイアス）** が最初から組み込まれている。これは少ないデータで学ぶときには有利。
-  - 帰納バイアス ← これは「最初から AI に持たせておく、こういう問題はこう解けという思い込み・ヒント」のこと。CNN には「画像はご近所同士が大事」というヒントが工場出荷時から入っている。
-- でも Transformer はその思い込みが薄い → 少ないデータでは負ける。
-- 「じゃあデータを思いっきり増やせばどうなる？」という疑問が未解決だった。
+- Transformer は 1D sequence の token embeddings を入力にし、multiheaded self-attention（MSA）と MLP block を重ねる。NLP では大規模 corpus で pre-train し、task-specific dataset で fine-tune する流れが標準になっている、という前提から論文は始まる。
+- CNN は locality、two-dimensional neighborhood structure、translation equivariance を各層に持つ。ViT はこの画像固有の inductive bias をほとんど持たず、2D 構造を手で入れる箇所は patch extraction と fine-tuning 時の position embedding の 2D interpolation に限られる、と `03_method.tex` の "Inductive bias" 段落で説明されている。
+- 本論文での patch は、画像 $\mathbf{x}\in\mathbb{R}^{H\times W\times C}$ を $P\times P$ に切ったものを flatten した単位である。例えば $P=16$ のモデルは `ViT-L/16` のように表記され、patch size が小さいほど sequence length が増え、計算量が大きくなる。
+- 主な CNN baseline は Big Transfer（BiT-L, ResNet152x4）と Noisy Student（EfficientNet-L2）。論文内の ResNet baseline は Batch Normalization を Group Normalization に置き換え、standardized convolutions を使う "ResNet (BiT)" として扱われる。
+- 評価は fine-tuning accuracy が中心だが、一部の大規模比較では計算コストを抑えるため、frozen representation に対する regularized least-squares regression による linear few-shot accuracy も使う。
 
-## どうやって解いたの？
+## 提案手法
 
 ### コアアイデア
 
-**画像を「単語の並び」だと思い込ませる。**
-具体的には、1 枚の画像を 16×16 ピクセルの小さなタイルに切り分けて、そのタイル 1 個 1 個を「1 つの単語」だとみなして、文章用 Transformer にそのまま流し込む。
+ViT は画像を 2D grid として畳み込むのではなく、flattened patches の 1D sequence として Transformer encoder に渡す。入力画像を $N=HW/P^2$ 個の patch に分け、各 patch を trainable linear projection $\mathbf{E}$ で $D$ 次元に写す。BERT の `[class]` token と同様に学習可能な classification token を先頭に付け、learnable 1D position embeddings を加算して、pre-LayerNorm 型の Transformer encoder に入力する。
 
-たとえばジグソーパズルを想像してほしい。1 枚の絵を 9×9＝81 個のピースに分けたとき、AI には絵全体ではなく「ピース 1 番、ピース 2 番、ピース 3 番…」と順番に渡す。AI は「ピース 5 番とピース 23 番は関係が深そう（どっちも犬の耳の一部）」みたいに、ピース同士のつながりを学んでいく。これが Vision Transformer（**ViT**、ヴィット）。
+分類には最終層の classification token の状態 $\mathbf{z}_L^0$ を使う。pre-training 時の classification head は hidden layer を 1 つ持つ MLP、fine-tuning 時は single linear layer である。下流データセットへ移すときは pre-trained prediction head を外し、zero-initialized $D\times K$ feedforward layer を付ける。ここで $K$ は downstream classes の数である。
 
-### 仕組み
+モデルサイズは Table 1（`tbl:models`）で定義される。ViT-Base は 12 layers、hidden size $D=768$、MLP size 3072、12 heads、86M params。ViT-Large は 24 layers、$D=1024$、MLP size 4096、16 heads、307M params。ViT-Huge は 32 layers、$D=1280$、MLP size 5120、16 heads、632M params。
 
-- **step 1**: 入力画像（たとえば 224×224 ピクセル）を、16×16 ピクセルのタイルに切る。224÷16＝14 なので、14×14＝196 枚のタイルができる。
-- **step 2**: タイル 1 枚（16×16×3＝768 個の数字。3 は赤緑青）を、決まった大きさ $D$ 次元の数字の並び（**ベクトル**、← 数字を順番に並べたもの。住所みたいに複数の数字で 1 つのものを表す道具）に変換する。これは「行列のかけ算」で行う（行列 ← 数字を縦横に並べた表）。
-- **step 3**: 先頭に「クラストークン」という特別な「お便り係のタイル」を 1 枚追加する。最後にこのタイルから出た答えが「これは犬」「これは猫」を当てる。
-- **step 4**: 各タイルに「お前は左上から何番目」という位置情報（**位置埋め込み**）を足す。AI はタイルがバラバラに渡されるので、これがないと「上下左右」がわからない。
-- **step 5**: 196＋1＝197 個のタイル列を、文章用 Transformer に流す。Transformer は「タイル同士の関係」を内部で何度もこねくり回す。
-- **step 6**: 最後に「クラストークン」が吐き出した答えで分類する。
-- **step 7**: 大量データ（ImageNet-21k：1,400 万枚、JFT-300M：3 億枚）で**事前学習**したあと、本番のタスク（ImageNet 1,000 クラス分類など）で**微調整**する。
-  - 事前学習 ← 先に大量の問題を解かせて AI に「世の中の画像とはこんなもの」という基礎体力をつけさせる練習。
-  - 微調整（fine-tuning） ← その基礎体力のついた AI を、本番の問題（例：犬の品種分類）にちょっとだけ慣らす追加学習。
-
-### 主要な数式
-
-#### ① タイルを並べて Transformer に入れる準備
+### 重要な定義・数式
 
 $$
-\mathbf{z}_0 = [\,\mathbf{x}_\text{class};\; \mathbf{x}^1_p\mathbf{E};\; \mathbf{x}^2_p\mathbf{E};\; \cdots;\; \mathbf{x}^N_p\mathbf{E}\,] + \mathbf{E}_{pos}
+\mathbf{z}_0 = [ \mathbf{x}_\text{class}; \, \mathbf{x}^1_p \mathbf{E}; \, \mathbf{x}^2_p \mathbf{E}; \cdots; \, \mathbf{x}^{N}_p \mathbf{E} ] + \mathbf{E}_{pos},
+\qquad
+\mathbf{E} \in \mathbb{R}^{(P^2 \cdot C) \times D},\,
+\mathbf{E}_{pos} \in \mathbb{R}^{(N + 1) \times D}
 $$
 
-**この式が言ってること**: 画像を切ったタイル $N$ 枚を、それぞれ同じルール（行列 $\mathbf{E}$ をかけ算）で「決まった長さの数字の並び」に変換し、先頭に特別な「お便り係タイル」をくっつけ、最後に「お前は左上から何番目」という位置情報を足し算する。これが Transformer に入る最初の状態。
+**式の意味**: `03_method.tex` の Eq. (1) で、画像 patch を Transformer に入れる初期 sequence $\mathbf{z}_0$ として組み立てる式である。flatten した各 patch を同じ線形射影 $\mathbf{E}$ で $D$ 次元へ写し、先頭に classification token を付け、position embeddings を加える。
 
-**記号の意味**:
-- $\mathbf{z}_0$ … Transformer に入る一番最初の状態（タイルたちが数字の並びに変換されて 1 列に並んだもの）
-- $\mathbf{x}_\text{class}$ … 「お便り係」の特別タイル。最後にこのタイルから「犬」「猫」の答えが出る
-- $\mathbf{x}^i_p$ … $i$ 番目に切ったタイルの中身（16×16×3 個の数字を 1 列に並べたもの）
-- $\mathbf{E}$ … タイルを「決まった長さの数字の並び」に変換するための「変換ルール表」（行列）。すべてのタイルに同じ表を使う
-- $\mathbf{E}_{pos}$ … 「お前は左上から何番目」を表す数字。タイル 1 枚 1 枚に対応した数字の並びがある
-- $N$ … タイルの枚数（224×224 画像を 16×16 に切ると 196 枚）
+**記号の定義**:
+- $\mathbf{x}_\text{class}$ ... 学習可能な classification token。出力側の状態 $\mathbf{z}_L^0$ が画像表現として使われる。
+- $\mathbf{x}^i_p$ ... $i$ 番目の flattened 2D image patch。
+- $\mathbf{E}$ ... flattened patch を $D$ 次元へ写す trainable linear projection。
+- $P$ ... patch の一辺の pixel 数。`ViT-L/16` なら $P=16$。
+- $H,W$ ... 元画像の解像度。
+- $C$ ... 入力画像の channel 数。
+- $D$ ... Transformer の latent vector size。
+- $N=HW/P^2$ ... patch 数であり、Transformer の有効な input sequence length。
+- $\mathbf{E}_{pos}$ ... learnable 1D position embeddings。
 
-**身近な例え**: 教室で出席をとるところを想像してほしい。生徒（タイル）が 196 人いて、全員が同じフォーマットの自己紹介カード（$\mathbf{E}$ という変換ルール）を埋める。先頭に先生（$\mathbf{x}_\text{class}$、お便り係）が立ち、全員に「あなたは出席番号何番」というネームプレート（$\mathbf{E}_{pos}$）をつける。これで Transformer という会議室に入る準備が整う。
-
-#### ② Transformer の中の「お互いを見渡す」層
-
-$$
-\mathbf{z}'_\ell = \operatorname{MSA}(\operatorname{LN}(\mathbf{z}_{\ell-1})) + \mathbf{z}_{\ell-1},\quad \ell = 1, \ldots, L
-$$
-
-**この式が言ってること**: 各層で、まず前の状態を整え（LN）、それからタイル同士で「お互いを見渡し合う処理」（MSA）をして、最後にもとの状態を足し戻す。これを $L$ 回（ViT-Base なら 12 回）繰り返す。
-
-**記号の意味**:
-- $\mathbf{z}_{\ell-1}$ … 1 つ前の層から出てきた、タイルたちの状態
-- $\mathbf{z}'_\ell$ … 今の層の途中の状態
-- $\operatorname{LN}$ … LayerNorm（レイヤーノーム）。数字のばらつきを揃える「目盛り直し」の処理。例えるなら「テストの点数を、平均 50・標準的なバラつきに揃え直す」ような操作
-- $\operatorname{MSA}$ … Multi-head Self-Attention（マルチヘッド・セルフアテンション）。「全タイルがお互いに『あなたとどれくらい関係ある？』を見比べて、関係の深い相手の情報を多めに受け取る」処理。複数の見方（ヘッド）で同時に見比べる
-- $L$ … 層の数（ViT-Base なら 12、Large なら 24、Huge なら 32）
-- 最後の $+\;\mathbf{z}_{\ell-1}$ … 「もとの状態をそのまま足す」。これは**残差接続**といって、深く重ねても情報が消えないようにする工夫
-
-**身近な例え**: クラス会議を想像してほしい。生徒（タイル）196 人が円になって座っている。1 回の会議（1 層）で、まず全員が話す前に**声の音量を揃え**（LN）、次に**全員がお互いの顔を見渡して、関係が深そうな人の意見を多めに参考にする**（MSA）。会議が終わったら、もとの自分の意見にその参考分を上乗せして次の会議に進む（残差接続）。これを 12 回繰り返すのが ViT-Base。
-
-#### ③ Transformer の中の「自分で考え直す」層
+**この論文での役割**: この式が ViT の最小限の画像化である。CNN の畳み込み特徴ではなく raw image patches を token として扱うため、論文の「pure transformer applied directly to sequences of image patches」という主張の中心になる。
 
 $$
-\mathbf{z}_\ell = \operatorname{MLP}(\operatorname{LN}(\mathbf{z}'_\ell)) + \mathbf{z}'_\ell,\quad \ell = 1, \ldots, L
+\begin{aligned}
+\mathbf{z^\prime}_\ell &= \operatorname{MSA}(\operatorname{LN}(\mathbf{z}_{\ell-1})) + \mathbf{z}_{\ell-1}, && \ell=1\ldots L \\
+\mathbf{z}_\ell &= \operatorname{MLP}(\operatorname{LN}(\mathbf{z^\prime}_{\ell})) + \mathbf{z^\prime}_{\ell}, && \ell=1\ldots L \\
+\mathbf{y} &= \operatorname{LN}(\mathbf{z}_L^0)
+\end{aligned}
 $$
 
-**この式が言ってること**: ②でお互いを見渡したあと、今度はタイル 1 枚 1 枚が**自分の中で**情報を整理し直す。最後にやはりもとの状態を足し戻す。
+**式の意味**: `03_method.tex` の Eq. (2) から Eq. (4) で、Transformer encoder block と最終画像表現を定義する。各層は LayerNorm の後に MSA、次に LayerNorm の後に MLP を置き、それぞれ residual connection を加える。
 
-**記号の意味**:
-- $\mathbf{z}'_\ell$ … ②から出てきた途中の状態
-- $\mathbf{z}_\ell$ … この層の最終出力
-- $\operatorname{MLP}$ … Multi-Layer Perceptron（多層パーセプトロン）。「足し算とかけ算とちょっとした曲げ（GELU という非線形変換）」を 2 段重ねただけの単純な計算機。タイル 1 枚 1 枚に対して別々に同じ計算をする
-- GELU ← 入ってきた数字が大きいほど大きく通し、小さいと（特にマイナスだと）通しにくくする「ゆるい門番」関数
+**記号の定義**:
+- $\ell$ ... Transformer encoder の層番号。
+- $L$ ... encoder layer 数。Table 1 では Base 12、Large 24、Huge 32。
+- $\mathbf{z}_{\ell-1}$ ... 1 つ前の層から来る sequence representation。
+- $\mathbf{z^\prime}_{\ell}$ ... MSA block と residual connection の後の中間表現。
+- $\mathbf{z}_{\ell}$ ... MLP block と residual connection の後の層出力。
+- $\mathbf{z}_L^0$ ... 最終層の classification token の状態。
+- $\operatorname{LN}$ ... LayerNorm。各 block の前に適用される。
+- $\operatorname{MSA}$ ... multiheaded self-attention。
+- $\operatorname{MLP}$ ... 2 層の MLP block。GELU non-linearity を含む。
+- $\mathbf{y}$ ... final classification token から得る画像表現。
 
-**身近な例え**: ②でクラス全員と意見交換したあと、今度は**各自が自分の机に戻って、もらった意見を自分なりにまとめ直す**フェーズ。他人とは話さず、自分の中だけで「これとこれを組み合わせるとこうかな」と整理する。それが MLP。
-
-#### ④ 最後の判定
+**この論文での役割**: ViT が画像用に新しい encoder を作ったのではなく、standard Transformer encoder を使っていることを示す。残差接続と pre-LayerNorm を含むこの構成が、ViT-Base/Large/Huge の共通骨格になる。
 
 $$
-\mathbf{y} = \operatorname{LN}(\mathbf{z}^0_L)
+\begin{aligned}
+[\mathbf{q}, \mathbf{k}, \mathbf{v}] &= \mathbf{z}\mathbf{U}_{qkv},
+& \mathbf{U}_{qkv} &\in \mathbb{R}^{D \times 3D_h} \\
+A &= \operatorname{softmax}\left(\mathbf{q}\mathbf{k}^{\top}/\sqrt{D_h}\right),
+& A &\in \mathbb{R}^{N \times N} \\
+\operatorname{SA}(\mathbf{z}) &= A\mathbf{v}
+\end{aligned}
 $$
 
-**この式が言ってること**: $L$ 回の会議が終わったあと、先頭の「お便り係タイル」（番号 0）の最終状態を取り出して目盛り直し（LN）したものを、画像全体の表現 $\mathbf{y}$ にする。この $\mathbf{y}$ に小さな分類器（線形層）をくっつけて「犬」「猫」を当てる。
+**式の意味**: Appendix A（`sec:self_attention`）の Eq. (5) から Eq. (7) で、single-head self-attention を定義する。入力 sequence の各要素について query、key、value を作り、query-key similarity から attention weights $A$ を計算し、value の重み付き和を返す。
 
-**記号の意味**:
-- $\mathbf{z}^0_L$ … 最終層（$L$ 番目）から出た、お便り係タイル（番号 0）の状態
-- $\mathbf{y}$ … この画像を表す最終的な数字の並び
-- $\operatorname{LN}$ … 上と同じ目盛り直し処理
+**記号の定義**:
+- $\mathbf{z}\in\mathbb{R}^{N\times D}$ ... sequence 長 $N$、特徴次元 $D$ の入力。
+- $N$ ... Appendix A での一般的な sequence length。ViT の初期入力では patch 数 $N$ に classification token が加わるため、Eq. (1) の $\mathbf{E}_{pos}$ は $(N+1)\times D$ になる。
+- $\mathbf{q},\mathbf{k},\mathbf{v}$ ... query、key、value 表現。
+- $\mathbf{U}_{qkv}$ ... 入力 $\mathbf{z}$ から query、key、value を作る projection matrix。
+- $D_h$ ... 1 head あたりの次元。
+- $A$ ... attention weight matrix。
+- $A_{ij}$ ... sequence 内の $i$ 番目の要素が $j$ 番目の要素をどれだけ参照するかを表す attention weight。
+- $\operatorname{SA}$ ... self-attention。
 
-**身近な例え**: クラス会議が 12 回終わったあと、**お便り係の先生だけが教室の前に立って、まとめの一言を発表する**。その一言の内容（$\mathbf{y}$）を聞いて、外の判定員（線形層）が「この絵は犬だね」と最終判定する。
+**この論文での役割**: ViT で patch 間の関係を global に統合する部分である。CNN の local convolution と異なり、self-attention は低層から画像全体の patch 関係を扱えるため、`04_experiments.tex` の attention distance 解析にもつながる。
 
-## 何がすごいの？
+$$
+\operatorname{MSA}(\mathbf{z}) =
+[\operatorname{SA}_1(z); \operatorname{SA}_2(z); \cdots ; \operatorname{SA}_k(z)] \, \mathbf{U}_{msa},
+\qquad
+\mathbf{U}_{msa} \in \mathbb{R}^{k \cdot D_h \times D}
+$$
 
-### 主な数値（TeX より、Table 2）
+**式の意味**: Appendix A の Eq. (8) で、$k$ 個の self-attention heads を並列に走らせ、出力を concatenate してから線形射影する。
 
-**JFT-300M（3 億枚の画像）で事前学習した ViT-H/14（一番大きい型）の精度:**
-- **ImageNet 88.55%**（1,000 種類のラベルが付いた絵を当てるテスト）
-- **ImageNet-ReaL 90.72%**（ImageNet のラベルを綺麗にし直したテスト）
-- **CIFAR-10 99.50%**（10 種類の絵を当てるテスト）
-- **CIFAR-100 94.55%**（100 種類）
-- **Oxford-IIIT Pets 97.56%**（犬猫の品種）
-- **Oxford Flowers-102 99.68%**（花 102 種）
-- **VTAB（19 タスクの平均）77.63%**
+**記号の定義**:
+- $\mathbf{z}$ ... MSA に入力される sequence representation。
+- $k$ ... attention head 数。Table 1 では Base 12、Large/Huge 16。
+- $D_h$ ... 1 head あたりの次元。
+- $\operatorname{SA}_i$ ... $i$ 番目の self-attention head。
+- $\mathbf{U}_{msa}$ ... concatenated heads を $D$ 次元に戻す射影行列。
 
-### 比較対象（baseline）との差
+**この論文での役割**: MSA は ViT-Base/Large/Huge に共通する Transformer block の self-attention 部分であり、Table 1 の heads と hidden size はこの block の model shape を決める値である。Appendix の Transformer shape ablation では depth、width、patch size などを動かし、性能との関係を調べている。
 
-- **BiT-L**（巨大 ResNet152x4。当時の CNN の代表）: ImageNet 87.54%、CIFAR-100 93.51%、VTAB 76.29%
-- **Noisy Student**（EfficientNet-L2。ImageNet の当時の SOTA）: ImageNet 88.4 / 88.5%
-- ViT-H/14 はほぼ全項目でこの 2 つを上回るか同等。
-- baseline ← これは「比較相手」のこと。新しい手法がどれくらい良いかを測る基準になる既存手法。
-- SOTA ← state-of-the-art（最先端）の略。その時点での最強記録。
+### 実装 / アルゴリズム上の要点
 
-### 学習コスト（一番びっくりするポイント）
+- step1: 入力画像を $P\times P$ の fixed-size patches に分け、flatten する。
+- step2: 各 patch に trainable linear projection $\mathbf{E}$ を適用して patch embeddings にする。
+- step3: sequence の先頭に learnable classification token を prepend し、learnable 1D position embeddings を加える。
+- step4: pre-LayerNorm の Transformer encoder に通す。各層は MSA block と MLP block からなり、各 block の後に residual connection を置く。
+- step5: $\mathbf{z}_L^0$ から画像表現 $\mathbf{y}$ を得て、classification head で分類する。
+- step6: 大規模データで事前学習した後、downstream dataset ごとに head を付け替えて fine-tune する。fine-tuning で解像度を上げる場合、patch size は固定し、pre-trained position embeddings は original image 上の位置に従って 2D interpolation する。
+- step7: Hybrid architecture では raw image patch の代わりに CNN feature map から patch を作る。patch size 1x1 の場合、feature map の spatial dimensions を flatten して Transformer dimension へ射影する。
 
-- ViT-H/14（JFT 学習）: **TPUv3-core-days 2.5k**
-- ViT-L/16 (ImageNet-21k): **0.23k**
-- BiT-L: **9.9k**
-- Noisy Student: **12.3k**
-- TPUv3-core-days ← Google の AI 専用計算機 TPU の「コア×日数」。学習にどれくらいの計算資源を使ったかを表す単位。
-- **同じか上の精度を、計算コスト 1/4〜1/5 程度で達成**。これは「より少ない電気代で同じ成績」という意味で、すごく大きい。
+実験設定として、§4.1 は pre-training に Adam（$\beta_1=0.9,\beta_2=0.999$）、batch size 4096、高い weight decay を使うと説明する。Appendix Table 3（`tbl:hparams-training`）では dataset/model ごとの値が整理され、weight decay は JFT-300M で 0.1、ImageNet-21k で 0.03、ImageNet で 0.3 である。fine-tuning は SGD with momentum 0.9、batch size 512。Appendix Table 3 では training resolution 224、warmup 10k steps とされ、Appendix Table 4（`tbl:hparams-finetuning`）では特記がなければ fine-tuning resolution 384、cosine learning rate decay、no weight decay、global norm 1 の grad clipping とされる。Table 2 の ImageNet 結果では ViT-L/16 を 512、ViT-H/14 を 518 resolution で fine-tune し、Polyak averaging factor 0.9999 を使う。
 
-### データを増やすと逆転する（§4.2）
+## 実験・結果
 
-- 小さいデータ（ImageNet 1k：130 万枚）だけで学習すると、ViT-Large は ViT-Base に**負ける**。
-- 中サイズ（ImageNet-21k：1,400 万枚）でほぼ互角。
-- 大サイズ（JFT-300M：3 億枚）で大きく逆転して ViT が勝つ。
-- → 「**大規模学習は帰納バイアスに勝つ**（Large scale training trumps inductive bias）」と論文は言い切っている。これがこの論文の標語。
+- **データセット / ベンチマーク**: 事前学習には ILSVRC-2012 ImageNet（1k classes、1.3M images）、ImageNet-21k（21k classes、14M images）、JFT（18k classes、303M high-resolution images）を使う。pre-training datasets は downstream test sets に対して de-duplicate される。downstream には ImageNet validation labels、ImageNet-ReaL、CIFAR-10/100、Oxford-IIIT Pets、Oxford Flowers-102、VTAB 19-task suite を使う。VTAB は各 task 1,000 training examples で、Natural、Specialized、Structured の 3 group に分かれる。
+- **比較対象 / baseline**: Table 2 の主比較は BiT-L（ResNet152x4）と Noisy Student（EfficientNet-L2）。VTAB breakdown では BiT、VIVI、S4L と比較する。scaling study では 7 個の ResNet、6 個の ViT、5 個の hybrid を JFT-300M transfer で比較する。
+- **指標**: downstream fine-tuning accuracy が中心で、Table 2 は 3 回 fine-tuning の mean と standard deviation を報告する。高速な途中評価には frozen representation から $\{-1,1\}^K$ target vectors へ写す regularized least-squares regression による linear few-shot accuracy を使う。compute は TPUv3-core-days、Appendix Table 6 では exaFLOPs も使う。
+- **主な結果**: Table 2（`tbl:best_results`）では、JFT-300M で pre-train した ViT-H/14 が ImageNet 88.55、ImageNet-ReaL 90.72、CIFAR-10 99.50、CIFAR-100 94.55、Oxford-IIIT Pets 97.56、Oxford Flowers-102 99.68、VTAB 77.63 を出す。ViT-L/16（JFT）は Oxford Flowers-102 で 99.74 と最良で、ViT-H/14 より高い。
 
-### 著者が挙げている貢献
+| Model | ImageNet | ImageNet ReaL | CIFAR-10 | CIFAR-100 | Pets | Flowers | VTAB | TPUv3-core-days |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| ViT-H/14, JFT | 88.55 | 90.72 | 99.50 | 94.55 | 97.56 | 99.68 | 77.63 | 2.5k |
+| ViT-L/16, JFT | 87.76 | 90.54 | 99.42 | 93.90 | 97.32 | 99.74 | 76.28 | 0.68k |
+| ViT-L/16, ImageNet-21k | 85.30 | 88.62 | 99.15 | 93.25 | 94.67 | 99.61 | 72.72 | 0.23k |
+| BiT-L, ResNet152x4 | 87.54 | 90.54 | 99.37 | 93.51 | 96.62 | 99.63 | 76.29 | 9.9k |
+| Noisy Student, EfficientNet-L2 | 88.4/88.5* | 90.55 | - | - | - | - | - | 12.3k |
 
-1. **画像専用の工夫をほぼ全部捨てた、純粋な Transformer を画像に直接当てて成功させた**。
-2. **大量データで事前学習すれば、画像っぽい思い込み（帰納バイアス）は無くても CNN に勝てる**ことを実証した。
-3. **同じ計算コストで CNN より 2〜4 倍効率がいい**（§4.3）。
-4. **シンプルさ**: 「画像を切って、文章用 Transformer に渡すだけ」というレシピの単純さそのものが貢献。
+- **データ規模の結果**: §4.2 と Appendix Table 5（`tbl:imagenet_imagenet21k_jft`）では、ImageNet pre-training だけだと ViT-L/16 の ImageNet fine-tuning accuracy は 76.53 で、ViT-B/16 の 77.91 より低い。ImageNet-21k では ViT-B/16 83.97、ViT-L/16 85.15、ViT-H/14 85.13 で差が縮まり、JFT-300M では ViT-B/16 84.15、ViT-L/16 87.12、ViT-H/14 88.04 と大きいモデルが伸びる。Table 5 の ImageNet 値は 384 resolution fine-tuning で、Table 2 の Polyak averaging と 512/518 resolution を使った値とは条件が異なる。
+- **JFT subset の結果**: §4.2 では JFT の 9M、30M、90M、300M random subsets で linear few-shot を比較する。本文は、ViT-B/32 は 9M subset で ResNet50 より大きく悪いが 90M+ subsets では良くなり、ResNet152x2 と ViT-L/16 でも同じ傾向だと述べる。
+- **scaling study**: §4.3 では、ViT は ResNet より performance/compute trade-off がよく、同じ performance に約 $2-4\times$ 少ない compute で到達すると著者は述べる。hybrid は小さい compute budget では pure ViT を少し上回るが、大きい model では差が消える。Appendix Table 6 では、ViT-L/16 14 epochs が ImageNet 87.12、exaFLOPs 1567、ViT-H/14 14 epochs が ImageNet 88.08、exaFLOPs 4262、ResNet200x3 14 epochs が ImageNet 87.22、exaFLOPs 3306 と報告される。
+- **内部表現の観察**: §4.4 では、initial linear embedding の top principal components が patch 内 fine structure の basis functions のように見えること、position embeddings は近い patch ほど cosine similarity が高く row-column structure も現れること、attention distance は低層から global に見る head と local な head が共存し深層で広がることを報告する。hybrid では低層の localized attention が弱いとも述べる。
+- **self-supervision**: §4.5 と Appendix B.1.2（`sec:self_supervision`）では masked patch prediction を予備実験として行う。patch embeddings の 50% を corrupt し、その内訳は `[mask]` embedding 80%、random other patch embedding 10%、そのまま 10%。目標は corrupted patch の 3-bit mean color、つまり 512 colors。ViT-B/16 を JFT で 1M steps、約 14 epochs、batch size 4096 で pre-train すると ImageNet 79.9% になり、from scratch より 2% 高いが supervised pre-training より 4% 低い。
+- **ObjectNet**: Appendix D.9 では flagship ViT-H/14 を ObjectNet で評価し、top-5 accuracy 82.1%、top-1 accuracy 61.7% と報告する。
+- **著者が主張する貢献**: 標準 Transformer を patch sequence に直接適用する単純な構成で、大規模事前学習と組み合わせれば CNN への依存は不要であり、JFT-300M pre-training では複数の分類ベンチマークで ResNet-based baselines を上回り、より少ない事前学習 compute で済む、という主張である。
 
-## キーワード辞典
+## 妥当性と限界
 
-出てきた順に並べた、中学生向けのざっくり定義。
+- **この主張を支える根拠**: Table 2 は複数の downstream classification datasets に対する fine-tuning accuracy と TPUv3-core-days を並べる。ViT-L/16（JFT）は BiT-L に対して全 task で同等以上で、ViT-H/14（JFT）はさらに ImageNet、CIFAR-100、VTAB などで伸び、Noisy Student と比べても ImageNet と ImageNet-ReaL で同等以上である。§4.2 は ImageNet、ImageNet-21k、JFT-300M と JFT subsets でデータ規模の効果を分けて調べ、§4.3 は ResNet、ViT、hybrid を JFT-300M transfer で compute に対して比較する。Table 2 は 3 fine-tuning runs の平均と標準偏差を報告している。
+- **著者が認めている limitations / future work**: Conclusion は、detection や segmentation など他の computer vision tasks への適用、self-supervised pre-training の探索、さらに大きい ViT への scaling を今後の課題として挙げる。§4.5 では self-supervised ViT-B/16 が supervised pre-training より 4% 低いことを明記し、contrastive pre-training は future work とする。§4.2 では ViT の few-shot properties のさらなる分析も future work としている。
+- **読者として注意すべき点**: 最高性能の ViT-H/14 は in-house JFT-300M に依存する。public ImageNet-21k で pre-train した ViT-L/16 は Table 2 で ImageNet 85.30、VTAB 72.72 であり、JFT 版 ViT-H/14 の 88.55、77.63 とは差がある。ImageNet のみの pre-training では Large が Base を下回るので、「ViT は常に CNN より強い」とは読めない。
+- **読者として注意すべき点**: compute 比較は重要だが、著者自身も pre-training efficiency は architecture choice だけでなく training schedule、optimizer、weight decay などにも影響されうると述べる。そのため §4.3 の controlled study と Table 6 を合わせて読む必要がある。
+- **読者として注意すべき点**: VTAB の Specialized group では、Figure 2 の説明で top two models の performance は similar と書かれている。Natural と Structured ほど明確な優位として読まない方がよい。
+- **追加で確認したい実験 / 疑問**: JFT-300M なしの public data だけで同じ compute 条件の Pareto curve はどこまで保たれるか。masked patch prediction 以外の self-supervised objective、特に本文が future work とする contrastive pre-training では 4% gap が縮むか。classification 以外の detection、segmentation に移したとき、patch 化と global self-attention の利点は同じように残るか。
 
-- **CNN（畳み込みニューラルネット）** … 画像を虫眼鏡でスライドしながら模様を探す形式の画像 AI。長年画像認識の王者だった。
-- **Transformer** … 「文中のどの単語とどの単語が関係あるか」を全ペアで一気に見比べる仕組み。文章 AI で大成功した。
-- **NLP（自然言語処理）** … 文章や言葉を扱う AI 分野。Natural Language Processing の略。
-- **self-attention（セルフアテンション）** … 並んだ要素（単語やタイル）同士が「自分は誰と関係が深いか」をお互い見比べる処理。Transformer の心臓部。
-- **inductive bias（帰納バイアス）** … AI に最初から組み込んでおく「こういう問題はこう解け」というヒント。CNN には「画像はご近所同士が大事」が入っている。
-- **patch（パッチ、タイル）** … 画像を切った 16×16 ピクセルの小さな四角。ViT ではこれを「単語」のように扱う。
-- **embedding（埋め込み）** … 何か（タイルや単語）を「決まった長さの数字の並び」に変換すること。
-- **ベクトル** … 数字を順番に並べたもの。複数の数字で 1 つの物（タイルや単語）を表す道具。
-- **行列** … 数字を縦横に並べた表。かけ算で別の数字の並びに変換するのに使う。
-- **[class] token（クラストークン）** … 先頭にくっつける「お便り係」の特別タイル。最後にここから答えが出る。
-- **position embedding（位置埋め込み）** … 「お前は左上から何番目のタイル」を表す数字。ないと AI は上下左右がわからない。
-- **MSA（マルチヘッド・セルフアテンション）** … self-attention を複数の見方（ヘッド）で同時に行う処理。
-- **MLP（多層パーセプトロン）** … 足し算かけ算と曲げ（非線形変換）を 2 段重ねた単純な計算機。タイル 1 枚ずつ別々に処理。
-- **LayerNorm（LN）** … 数字のばらつきを揃える「目盛り直し」。
-- **GELU** … 大きい数字はよく通し、小さい数字（特にマイナス）は通しにくくする門番関数。
-- **residual connection（残差接続）** … 処理した結果に「もとの状態」をそのまま足し戻すこと。深く重ねても情報が消えないようにする工夫。
-- **pre-training（事前学習）** … 本番の前に、大量の問題で AI に基礎体力をつけさせる練習。
-- **fine-tuning（微調整）** … 事前学習済みの AI を、本番の問題に少しだけ慣らす追加学習。
-- **ViT（Vision Transformer）** … この論文の主役モデル。画像版 Transformer。
-- **ViT-Base / Large / Huge** … モデルの大きさ。Base が一番小さく、Huge が一番大きい（パラメータ数 86M / 307M / 632M）。
-- **ViT-L/16** … ViT-Large で、画像を 16×16 のタイルに切る型、という意味の表記。
-- **パラメータ（params）** … AI が学習で調整する「ツマミ」の数。多いほど表現力が増えるが、学習にデータと計算が要る。M は百万。
-- **ImageNet** … 1,000 種類のラベル付き画像が 130 万枚あるベンチマーク。画像 AI の代表的テスト。
-- **ImageNet-21k** … 1,400 万枚、21,000 種類のラベル。ImageNet の大きい版。
-- **JFT-300M** … Google 社内の 3 億枚の画像データセット（非公開）。
-- **CIFAR-10/100** … 32×32 ピクセルの小さい画像 10 / 100 種類を当てるテスト。
-- **VTAB** … 19 個の違うタスクで AI を試すベンチマーク。
-- **baseline（ベースライン）** … 比較相手の既存手法。
-- **SOTA（state-of-the-art）** … 「現時点最強記録」のこと。
-- **BiT-L** … 巨大 ResNet152x4 を使った CNN の代表的強モデル（Big Transfer）。
-- **Noisy Student** … EfficientNet-L2 で半教師学習した CNN。当時の ImageNet 王者。
-- **ResNet** … 残差接続を使った代表的な CNN。
-- **TPUv3** … Google の AI 専用計算チップ。
-- **TPUv3-core-days** … 「TPU コア数 × 日数」で表した計算コスト。
-- **BERT** … 文章用 Transformer の代表モデル。ViT は BERT のレシピを画像に流用している。
-- **hybrid（ハイブリッド）** … タイルを生画像からではなく「CNN を 1 回通したあとの中間結果」から切り出して ViT に入れる方式。
+## 用語メモ
 
-## ちょっと深掘り（中学生は飛ばして OK）
+一般的な辞書的定義ではなく、この論文での使われ方を中心に書く。
 
-- **なぜ「データが多いと帰納バイアスが要らない」のか**: CNN の「ご近所が大事」というヒントは、データが少ないときには学習の近道になる。でもデータが膨大にあれば、AI は自力で「画像のどこが大事か」を学び切れる。むしろヒントがないぶん、CNN が見落とすような長距離の関係（例：左上の耳と右下のしっぽの関係）まで自由に学べる、というのが論文の主張。
-- **位置情報の与え方は本質ではない（Table 8, Appx D.4）**: 「位置情報なし」だと精度が大きく落ちる（0.61382）が、1D / 2D / 相対位置のどれを使っても精度はほぼ同じ（0.64001〜0.64206）。タイル単位の解像度（14×14 程度）なら、どう符号化しても AI が学んでくれる。
-- **ハイブリッド版**: 小さいモデルでは純 ViT より少し良いが、大きくすると差が消える。CNN の前置きは「学習の初動を助けるが、最終的な天井は上げない」と読める（§4.3）。
-- **自己教師あり学習の予備実験（§4.5）**: BERT 流に「タイルの 50% を隠して中身を当てさせる」（masked patch prediction）で事前学習すると、ViT-B/16 で ImageNet 79.9%。スクラッチから学習するより +2% 良いが、ラベル付き事前学習より -4% 低い。ここは未解決と著者も書いている。
-- **attention distance（§4.4）**: 浅い層では「広く見るヘッド」と「狭く見るヘッド」が共存し、深い層では全ヘッドが広く見るようになる。つまり ViT は浅層で部分的に「CNN っぽい」局所処理も自然に学んでいる。
-- **未解決事項（結論より）**: (a) 検出・セグメンテーションへの応用、(b) 自己教師あり学習との 4% ギャップ、(c) さらなる大規模化。
+- **Vision Transformer（ViT）**: 画像を patch sequence として標準 Transformer encoder に入れるモデル。画像固有の inductive bias を少なくした設計が論文の焦点である。
+- **patch**: 入力画像から切り出した $P\times P$ の領域を flatten したもの。ViT では NLP の token に対応する単位として扱う。
+- **patch embedding**: flattened patch に線形射影 $\mathbf{E}$ をかけて $D$ 次元にした表現。
+- **classification token**: BERT の `[class]` token と同様に sequence 先頭へ追加する学習可能 embedding。最終状態 $\mathbf{z}_L^0$ が画像表現になる。
+- **position embedding**: patch の位置情報を保持するために patch embeddings へ加える学習可能 embedding。本文の標準設定は 1D position embeddings。Appendix D.4 の Table 8 では、No Pos. Emb. 0.61382、1-D 0.64206、2-D 0.64001、Rel. 0.64032 とされ、位置情報の有無は効くが種類の差は小さい。
+- **inductive bias**: モデル構造にあらかじめ入っている仮定。CNN では locality、two-dimensional neighborhood structure、translation equivariance が各層に組み込まれる。ViT では patch extraction と fine-tuning 時の 2D interpolation 以外では 2D 構造を強く仮定しない。
+- **MSA / SA**: self-attention は sequence 内の各要素が他の要素を重み付きで参照する操作。MSA は複数 head の SA を並列に行い、concat 後に射影する。
+- **Hybrid architecture**: raw image patches の代わりに CNN feature map から sequence を作り、ViT に入れる構成。scaling study では小さい compute budget で pure ViT より少し良いが、大きいモデルでは差が消える。
+- **BiT-L**: Big Transfer の large ResNet baseline。Table 2 では ResNet152x4 として ViT の主要比較対象になる。
+- **Noisy Student**: EfficientNet-L2 を使う semi-supervised baseline。Table 2 では ImageNet と ImageNet-ReaL の SOTA 比較に出る。
+- **VTAB**: 19 tasks の low-data transfer benchmark。各 task 1,000 training examples を使い、Natural、Specialized、Structured に分かれる。
+- **TPUv3-core-days**: pre-training compute の単位。TPU v3 cores の数に training days を掛けたもの。Table 2 の compute 比較で使われる。
+- **exaFLOPs**: Appendix Table 6 で使われる pre-training compute 指標。scaling study の詳細値を読むときに出る。
+- **masked patch prediction**: BERT の masked language modeling をまねた予備的 self-supervised task。corrupted patch の 3-bit mean color を予測する。
+
+## 読む順番の提案
+
+- まず `main.tex` の abstract と `01_introduction.tex` を読み、"pure transformer applied directly to sequences of image patches" と "large scale training trumps inductive bias" という主張を押さえる。正規ノートでは `Summary（著者の主張）` の問題設定と結果の箇条書きにつながる。
+- 次に `03_method.tex` の Figure 1 と Eq. (1) から Eq. (4) を読む。patch embedding、classification token、position embedding、Transformer encoder の流れが分かる。正規ノートでは「手法」の長い bullet と `Notes / Quotes` の Eq.1 に対応する。
+- その後 `04_experiments.tex` の §4.1 と Table 1、Table 2 を読む。モデルサイズ、pre-training datasets、baseline、main results、TPUv3-core-days を確認する。正規ノートの `Summary（著者の主張）` の Table 2 数値と照合しやすい。
+- 次に §4.2、Figure 3、Figure 4、Appendix Table 5 を読む。ImageNet だけでは ViT-Large が弱く、ImageNet-21k と JFT-300M で大きいモデルが効いてくる、という論文の条件付き主張を確認する。正規ノートでは `Takeaway` の「データ規模を見ずに一般化してはダメ」という点につながる。
+- §4.3、Figure 5、Appendix Table 6 で compute と性能の trade-off を読む。正規ノートの「同精度を 2〜4× 少ない compute」に対応する。
+- §4.4、Appendix D.4、Appendix D.7 で position embedding と attention distance の分析を読む。正規ノートの内部可視化、position embedding ablation の項目に対応する。
+- 最後に §4.5、Appendix B.1.2、`05_conclusion.tex` を読む。self-supervision の 79.9%、+2%、-4% と、detection/segmentation、self-supervised pre-training、further scaling という future work を確認する。正規ノートでは `Critical Thoughts（評価・疑問）` と `Notes / Quotes` の self-supervision 項目に対応する。
 
 ## もとの論文・正規ノート
 

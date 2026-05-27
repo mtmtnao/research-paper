@@ -1,4 +1,4 @@
-# Language Models are Super Mario: 仲間の能力を「タダで」吸収する言語モデル（日本語パラフレーズ）
+# Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch（SFT delta parameter の冗長性と model merging）
 
 - arXiv: https://arxiv.org/abs/2311.03099
 - 一次ソース: ../papers/arXiv-2311.03099v3/
@@ -8,164 +8,194 @@
 
 ## 一言で言うと
 
-学習済みの言語モデル（文章を作る AI）の「ちょっと変えた差分」のうち 90〜99%を捨てても性能が落ちないし、捨ててから複数モデルを足し合わせると 1 つのモデルが複数の特技を同時に持てる、という発見の話。
+同じ pre-trained backbone から作られた SFT language model では、fine-tuned parameter と pre-trained parameter の差である **delta parameters** が非常に冗長で、DARE により 90% から 99% を落としても性能を大きく損なわない場合がある、という論文である。著者はさらに、DARE で各 SFT model の delta を疎にしてから既存の model merging 手法に渡すと、parameter interference が軽減され、複数タスクの能力を 1 つの LM に統合しやすくなると主張している。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- **現実の困りごと**: 「数学が得意な AI」「コードが書ける AI」「指示に従うのが上手な AI」と、得意分野ごとに別々の AI が世の中にいる。これを 1 体にまとめたいけど、普通にやると AI を作り直すのに巨大な GPU（画像処理が得意な計算チップ。AI の学習には何百台も必要で電気代もすごい）と何ヶ月もかかる。
-  - 例え話: ポケモンの 3 匹（炎・水・草）を 1 匹にしたい。でも普通は「もう一回タマゴから育て直す」しか方法がなくて大変。
-- **これまでのやり方の何が足りなかったか**:
-  - 既存の「モデル合体（model merging）」は、複数モデルの数字をそのまま足したり平均したりするだけ。
-  - すると数字どうしが**ぶつかって干渉し合い**、合体後はどの能力も中途半端になってしまう。
-  - 例え話: 3 種類の絵の具をぜんぶ混ぜると茶色っぽくなって元の色が分からなくなるのと同じ。
+- **問題設定**: SFT により task-specific ability を得た複数の LM を、追加データ・再学習・GPU なしで 1 つに統合したい。しかし、単純な parameter fusion では異なる task delta が干渉し、merged model の性能が落ちることがある。
+- **対象範囲 / 仮定**: 中心仮定は「merge する SFT models が同じ pre-trained backbone から fine-tuned されている」こと（`section-3-methodology.tex`, "same pre-trained backbone"）。DARE の対象は fine-tuned parameter 全体ではなく、$\bm{\delta}^t=\bm{\theta}_{\text{SFT}}^t-\bm{\theta}_{\text{PRE}}$ で定義される delta parameters である。
+- **既存研究との差分**: 論文は「多くの pruning methods は fine-tuned parameters を対象にする」と述べ、さらに pruning methods では retraining や extra data が必要になることが多い、と整理している。DARE は delta parameters だけを対象にし、random drop と rescale のみで retraining なしに使う。model merging については Average Merging, Task Arithmetic, Fisher Merging, RegMean, TIES-Merging などを置き換えるのではなく、それらの前段の plug-in として delta を疎にする。
+- **この論文で答えたい問い**: SFT delta parameters はどの程度冗長か。random drop と $1/(1-p)$ rescale で元の embedding を近似できるか。DARE は model merging の parameter interference を減らすか。どのような delta の大きさ・backbone 条件で DARE は失敗するか。
 
-## どうやって解いたの？
+## 背景と前提
+
+- **SFT と delta parameters**: SFT は pre-trained LM を task-specific data で最適化し、特定タスク能力を引き出す手法として扱われている。論文は、SFT の効果を「SFT 前後の parameter の差」すなわち delta parameters に反映されるものとして分析する（`section-2-related-work.tex`, `section-3-methodology.tex`）。
+- **homologous models**: 論文中では、同じ pre-trained backbone から fine-tuned された複数モデルを merge 対象にする。例えば Table 1 の WizardLM-13B, WizardMath-13B, llama-2-13b-code-alpaca はいずれも Llama-2-13b を backbone とするため、decoder-based merging の主実験に使われる。
+- **model merging baseline**: Average Merging は parameters の平均、Task Arithmetic は delta に scaling term を掛けて足す、Fisher Merging は Fisher information による重み付き融合、RegMean は linear regression の closed-form solution、TIES-Merging は low-magnitude parameter の trim、sign disagreement の解消、consistent sign parameter の merge を行う（`section-2-related-work.tex`, `Appendix.tex`）。
+- **pruning との違い**: Magnitude-based Pruning (MP) は absolute parameter values に基づいて除去対象を選ぶ。DARE は magnitude ではなく random drop を使い、delta parameter を落とした後に残りを $1/(1-p)$ で rescale する。
+- **Dropout との違い**: DARE と Dropout は random dropping と rescaling を含む点は似ているが、DARE は delta parameters を推論用に恒久的に削る。一方 Dropout は training 中に model outputs を一時的に消す正則化として説明されている（`section-3-methodology.tex`）。
+
+## 提案手法
 
 ### コアアイデア
 
-著者たちはまず、「fine-tuning（ファインチューニング = 大きな AI を特定の仕事用に追加学習で少し調整すること）で AI の中身がどれだけ変わったか」を計算しました。これを **delta（デルタ。差分のこと）** と呼びます。
+DARE は **Drop And REscale** の略であり、SFT delta parameters のうち drop rate $p$ の割合をランダムに 0 にし、残った delta を $1/(1-p)$ 倍する。目的は、SFT によって得た task-specific ability を保ちながら delta の冗長部分を消し、複数モデルを merge するときの parameter interference を減らすことである。
 
-そして驚くべきことに気付きます。**この差分のうち 90〜99% を消しゴムで消しても、AI の賢さはほとんど変わらない**のです。例えるなら、学校のノートをファインチューニングで書き換えたつもりが、実は書き換えたページの 99% は無駄書きで、本当に大事な書き込みは 1% だけだった、という話。
+著者の理論説明は linear transformation に限定される。FFN や self-attention の query/key/value/output projection のように、LM の多くの parameter が線形変換に関与するため、この設定で DARE 後の embedding expectation が元の embedding expectation と一致することを示す。著者自身はこれを "rough proof" と呼び、$p$ の上限を LM capacity から推定することは future direction として残している。
 
-そこで提案されたのが **DARE（ダーレ = Drop And REscale。ドロップしてリスケール）**: ランダムに差分の大部分を 0 にして消し、残った差分を少し大きくする、たったそれだけのシンプル手法。これだけで、合体させたとき互いの邪魔が減り、1 体に複数の特技を持たせられます。
+### 重要な定義・数式
 
-### 仕組み
+$$
+\bm{\delta}^t=\bm{\theta}_{\text{SFT}}^t - \bm{\theta}_{\text{PRE}} \in \mathbb{R}^d
+$$
 
-- **step1: 差分を取り出す**。元の学習済み AI の数字（pre-trained parameters）と、ファインチューニング後の AI の数字（SFT parameters）の引き算をする。これが delta = 差分。
-  - SFT は Supervised Fine-Tuning（教師ありファインチューニング）の略。「お手本付きで AI を追加学習させる」こと。
-- **step2: ランダムに大部分を消す**。差分のそれぞれの数字について、サイコロを振って「確率 p で 0 にする」。たとえば p=0.9 なら 90% の差分が消える。
-- **step3: 残ったものを大きくする**。生き残った差分を $1/(1-p)$ 倍する。p=0.9 なら 10 倍。これは「消した分の埋め合わせ」のため。
-- **step4: 元の AI に足し戻す**。pre-trained に「スカスカになった差分」を足して、推論（AI に質問して答えを出させること）用のモデルを作る。
-- **step5: 合体させたいときは、各モデルでこの step1〜4 をやってから、足し算で 1 体にまとめる**。たとえば数学モデルとコードモデルそれぞれ DARE を通してから加算 → 1 つのモデルで数学もコードもできる。
+**式の意味**: task $t$ の SFT model が pre-trained model からどれだけ変化したかを delta parameters として定義する式である。`section-3-methodology.tex` の "SFT Delta Parameters" にある基本定義。
 
-### 主要な数式
+**記号の定義**:
+- $\bm{\theta}_{\text{PRE}} \in \mathbb{R}^d$ は pre-trained LM の parameters
+- $\bm{\theta}_{\text{SFT}}^t \in \mathbb{R}^d$ は task $t$ 用に SFT された LM の parameters
+- $\bm{\delta}^t$ は SFT 前後の差分、すなわち task $t$ の delta parameters
+- $d$ は parameter dimension
 
-#### 数式 1: 差分の定義
+**この論文での役割**: DARE は fine-tuned parameter 全体ではなく、この $\bm{\delta}^t$ だけを落とす。後の失敗例でも、fine-tuned parameter 全体を落とすと性能が壊れることが強調される。
 
-$$\bm{\delta}^t = \bm{\theta}_{\text{SFT}}^t - \bm{\theta}_{\text{PRE}}$$
+$$
+\begin{gathered}
+\bm{m}^t \sim \text{Bernoulli}(p), \\
+\bm{\widetilde{\delta}}^t = \left(\bm{1} - \bm{m}^t\right) \odot \bm{\delta}^t, \\
+\bm{\hat{\delta}}^t = \bm{\widetilde{\delta}}^t / (1 - p)
+\end{gathered}
+$$
 
-**この式が言ってること**: 「タスク $t$ 用にファインチューニング済みの AI の数字」から「もとの学習済み AI の数字」を引いて、追加学習で変化した分（差分）を取り出しているよ。
+**式の意味**: DARE の drop と rescale を表す式である。mask $\bm{m}^t$ により delta parameter の一部を 0 にし、残った delta を $1/(1-p)$ 倍する（`section-3-methodology.tex`, `equ:drop_rescale`）。
 
-**記号の意味**:
-- $\bm{\delta}^t$ … タスク $t$ 用の「差分」。AI の追加学習で変わった量。$\bm{\delta}$ は「デルタ」というギリシャ文字で、数学では「ちょっとした変化」によく使う。太字 $\bm{}$ になっているのは「ベクトル（数を順番に並べたもの。住所の数字みたいに、たくさんの数で 1 つの物を表す道具）」だから。AI の場合、何十億個もの数が並んでいる。
-- $\bm{\theta}_{\text{SFT}}^t$ … タスク $t$ 用にファインチューニングした後の AI の中身の数字（全部）。$\theta$ は「シータ」。AI の世界で「パラメータ（AI の中身の数値のかたまり）」を表す慣習文字。
-- $\bm{\theta}_{\text{PRE}}$ … 追加学習前の、もとの AI の数字（全部）。
+**記号の定義**:
+- $\bm{m}^t$ は task $t$ の delta parameter に対する random mask
+- $\text{Bernoulli}(p)$ は確率 $p$ で 1 を取る Bernoulli 分布
+- $p$ は drop rate
+- $\bm{1}$ は全成分が 1 の vector
+- $\odot$ は element-wise product
+- $\bm{\delta}^t$ は drop 対象の SFT delta parameters
+- $\bm{\widetilde{\delta}}^t$ は drop 後、rescale 前の delta
+- $\bm{\hat{\delta}}^t$ は DARE 後の rescaled delta
 
-**身近な例え**: 引っ越し前と引っ越し後の家具の位置を比較する話に似ている。$\bm{\theta}_{\text{SFT}}$ が「引っ越し後の家具の位置」、$\bm{\theta}_{\text{PRE}}$ が「引っ越し前の位置」、引き算した $\bm{\delta}$ が「何 cm 動かしたか」のメモ。
+**この論文での役割**: 手法の中心そのものである。DARE model は最終的に $\bm{\theta}_{\text{DARE}}^t = \bm{\hat{\delta}}^t + \bm{\theta}_{\text{PRE}}$ として推論に使われる。
 
-#### 数式 2: DARE 本体（ドロップしてリスケール）
+$$
+\mathbb{E} [h_i]
+= \sum_{j=1}^n w_{ij}x_j + b_i + \sum_{j=1}^n \Delta w_{ij}x_j + \Delta b_i
+= h_i^{\text{PRE}} + \Delta h_i
+$$
 
-$$\bm{m}^t \sim \text{Bernoulli}(p)$$
-$$\bm{\widetilde{\delta}}^t = (\bm{1} - \bm{m}^t) \odot \bm{\delta}^t$$
-$$\bm{\hat{\delta}}^t = \bm{\widetilde{\delta}}^t / (1 - p)$$
+**式の意味**: pre-trained parameter と delta parameter の両方を含む元の SFT model について、線形変換後の embedding の $i$ 番目の成分の期待値を分解している。
 
-**この式が言ってること**: サイコロで「ここは消す/消さない」のメモ表を作って、消す場所の差分を 0 にして、残った差分を $1/(1-p)$ 倍する、という 3 段階。
+**記号の定義**:
+- $\bm{W}, \bm{b}$ は pre-trained parameter の weight matrix と bias
+- $\Delta \bm{W}, \Delta \bm{b}$ は delta parameter の weight matrix と bias
+- $w_{ij}, \Delta w_{ij}$ はそれぞれ $\bm{W}, \Delta \bm{W}$ の $i$ 行 $j$ 列の成分
+- $b_i, \Delta b_i$ はそれぞれ $\bm{b}, \Delta \bm{b}$ の $i$ 番目の成分
+- $\bm{x} \in \mathbb{R}^n$ は入力 vector
+- $j=1,\ldots,n$ は入力 dimension に沿った添字
+- $h_i^{\text{PRE}}$ は pre-trained 部分だけが作る $i$ 番目の embedding 成分
+- $\Delta h_i$ は delta parameter が embedding に加える成分
 
-**記号の意味**:
-- $\bm{m}^t$ … 「消すか残すか」をランダムに決めたメモ表（0 か 1 がたくさん並んだもの）。
-- $\text{Bernoulli}(p)$ … 「ベルヌーイ分布」。コイン投げみたいに「確率 $p$ で 1（消す）、確率 $1-p$ で 0（残す）」と決めるルール。確率を知らない人は「サイコロで $p$ の確率で当たり」と思って OK。
-- $p$ … 消す割合（ドロップ率）。0.9 なら 90% 消す。
-- $\bm{1}$ … 全部 1 が並んだリスト。
-- $\odot$ … 「同じ位置どうしを掛け算」する記号。リストどうしを位置で揃えて 1 個ずつ掛ける。
-- $\bm{\widetilde{\delta}}^t$ … 「消した後」の差分（一部が 0 になっている）。
-- $\bm{\hat{\delta}}^t$ … 最終的な差分。残ったものを $1/(1-p)$ 倍して大きくした版。
+**この論文での役割**: DARE 後の embedding expectation と比較する基準である。論文は「DARE が元の embeddings を近似する」ことを、この式と次の式の一致で説明する。
 
-**身近な例え**: 100 人いる合唱団のうち、サイコロで 90 人にお休みしてもらって、残った 10 人にマイクで 10 倍の音量を出してもらう感じ。全体の合計音量は前と同じになるけど、声を出している人はずっと少ない。
+$$
+\mathbb{E} [\hat{h}_i]
+= h_i^{\text{PRE}} + (1 - p)\cdot \gamma \cdot \Delta h_i
+$$
 
-#### 数式 3: なぜリスケールが必要か（期待値の保存）
+**式の意味**: DARE により delta を drop rate $p$ で落とし、残りを rescale factor $\gamma$ で増幅した場合の embedding expectation である。$\gamma = 1/(1-p)$ と置くと、$\mathbb{E}[h_i]=\mathbb{E}[\hat{h}_i]$ になる。
 
-$$\mathbb{E}[\hat{h}_i] = h_i^{\text{PRE}} + (1-p) \cdot \gamma \cdot \Delta h_i$$
+**記号の定義**:
+- $\hat{h}_i$ は DARE 後の model が作る $i$ 番目の embedding 成分
+- $h_i^{\text{PRE}}$ は pre-trained 部分だけが作る $i$ 番目の embedding 成分
+- $p$ は delta parameter を落とす割合
+- $\gamma$ は残った delta parameter の rescale factor
+- $\Delta h_i$ は元の delta parameter が embedding に寄与する量
 
-$\gamma = 1/(1-p)$ とすると $(1-p) \cdot \gamma = 1$ となり、$\mathbb{E}[\hat{h}_i] = \mathbb{E}[h_i]$（DARE 後と元の AI の出力が「平均的に」一致する）。
+**この論文での役割**: rescale operation の理論的根拠である。実験節では DropOnly（rescale なし）と比較し、rescale が embedding cosine similarity と性能維持に必要であることを示す。
 
-**この式が言ってること**: 差分の 90% を消したままだと AI の出力が小さくなりすぎるけど、残った 10% を 10 倍に大きくしておけば、「平均すると元と同じ」になるよ。
+$$
+\begin{split}
+& \bm{\theta}_{\text{DARE}}^{t_k} =
+\text{DARE}\left(\bm{\theta}_{\text{SFT}}^{t_k}, \bm{\theta}_{\text{PRE}}, p\right), \quad 1 \leq k \leq K, \\
+\bm{\theta}_{\text{M}} =\ &
+\bm{\theta}_{\text{PRE}} + \lambda \cdot \sum_{k=1}^K \bm{\hat{\delta}}^{t_k}
+= \bm{\theta}_{\text{PRE}} + \lambda \cdot \sum_{k=1}^K
+(\bm{\theta}_{\text{DARE}}^{t_k} - \bm{\theta}_{\text{PRE}})
+\end{split}
+$$
 
-**記号の意味**:
-- $\mathbb{E}[\cdot]$ … 「期待値」。サイコロを 100 回振った平均みたいなもの。ランダムな結果の「ならしてみた平均的な値」のこと。今回はサイコロで誰を消すかが毎回違うので、その平均を取る。
-- $\hat{h}_i$ … DARE 後の AI が出した $i$ 番目の出力。
-- $h_i^{\text{PRE}}$ … もとの学習済み AI が出した $i$ 番目の出力。
-- $\Delta h_i$ … 「差分が出力に与える影響」。ファインチューニングで変わった分の出力。
-- $p$ … 消した割合。
-- $\gamma$ … 残ったものを何倍にするかの倍率（リスケール係数）。
-- $(1-p) \cdot \gamma$ … 「残った割合 × 何倍にしたか」。これが 1 になるように調整したい。
+**式の意味**: Task Arithmetic に DARE を組み込むときの merged model parameter の計算である。各 SFT model に DARE を適用してから、その rescaled delta を足し合わせる。
 
-**身近な例え**: クッキー 10 枚を箱に入れたいけど、運ぶ途中で 9 枚はワープで消える設定。最初から 100 枚入れておけば、9 割消えても 10 枚届く。$1/(1-p)$ 倍は「途中で消える分を見越して最初から多めに作る」のと同じ理屈。
+**記号の定義**:
+- $K$ は merge する task/model の数
+- $t_k$ は $k$ 番目の task
+- $\bm{\theta}_{\text{SFT}}^{t_k}$ は task $t_k$ 用に fine-tuned された source model の parameters
+- $\bm{\theta}_{\text{PRE}}$ は共通の pre-trained backbone の parameters
+- $\bm{\theta}_{\text{DARE}}^{t_k}$ は DARE 後に $\bm{\theta}_{\text{PRE}}$ と rescaled delta を足して得る parameters
+- $\bm{\theta}_{\text{M}}$ は merged single model の parameters
+- $\text{DARE}(\cdot)$ は `equ:drop_rescale` に従って delta を drop/rescale し、pre-trained parameters に足し戻す処理
+- $p$ は DARE の drop rate
+- $\lambda$ は merge 時の scaling term
+- $\bm{\hat{\delta}}^{t_k}$ は task $t_k$ の DARE 後 delta
 
-#### 数式 4: DARE を使った合体（Task Arithmetic との組み合わせ）
+**この論文での役割**: DARE が standalone pruning 手法ではなく、Task Arithmetic など既存 merging 手法の前段 plug-in として使われることを示す。論文は同じ考え方を Average Merging, Fisher Merging, RegMean, TIES-Merging にも適用できると述べる。
 
-$$\bm{\theta}_{\text{M}} = \bm{\theta}_{\text{PRE}} + \lambda \cdot \sum_{k=1}^{K} \bm{\hat{\delta}}^{t_k}$$
+### 実装 / アルゴリズム上の要点
 
-**この式が言ってること**: もとの AI に、DARE でスカスカにした「各タスクの差分」を全部足し合わせて、合体モデルを作るよ。$\lambda$ は「足す強さ」のつまみ。
+- step1: 同じ pre-trained backbone を持つ SFT model を用意し、各 task $t_k$ について $\bm{\delta}^{t_k}$ を計算する。
+- step2: 各 $\bm{\delta}^{t_k}$ に対して Bernoulli mask を作り、drop rate $p$ の割合で delta parameter を 0 にする。
+- step3: 残った delta parameter を $1/(1-p)$ で rescale し、$\bm{\theta}_{\text{PRE}}$ に足して $\bm{\theta}_{\text{DARE}}^{t_k}$ を得る。
+- step4: DARE 後の parameters または delta を、Task Arithmetic / TIES-Merging / Average Merging / Fisher Merging / RegMean に渡して merge する。
+- step5: decoder-based LMs の主実験では、計算可能性のため Task Arithmetic と TIES-Merging を使う。scaling term は $[0.5, 1.0]$ から選び、TIES-Merging の retain ratio は $[0.5, 0.7, 0.9]$ から選ぶ（`section-4-experiments.tex`）。
+- step6: encoder-based LMs では 5 種類の merging method すべてを使い、DARE の $p$ は $[0.1, 0.2, \cdots, 0.9]$ から選ぶ（`Appendix.tex`, `tab:plms_hyperparameter_searched_ranges_merging_methods`）。
 
-**記号の意味**:
-- $\bm{\theta}_{\text{M}}$ … 合体後（Merged）の AI の数字。
-- $\bm{\theta}_{\text{PRE}}$ … 元の学習済み AI の数字。
-- $\lambda$ … 「ラムダ」。差分をどれくらいの強さで足すかのつまみ（普通 0.5〜1.0 の間）。
-- $\sum_{k=1}^{K}$ … 「$k$ を 1 から $K$ まで動かしてぜんぶ足す」の記号（シグマ。合計の意味）。
-- $K$ … 合体させるモデルの個数（例: 数学・コード・指示従いの 3 つなら $K=3$）。
-- $\bm{\hat{\delta}}^{t_k}$ … $k$ 番目のタスクの「DARE 後の差分」。
-- $t_k$ … $k$ 番目のタスク。
+## 実験・結果
 
-**身近な例え**: カレーの基本ルー（pre-trained）に、「辛さスパイス（数学差分）」「香りスパイス（コード差分）」「コクスパイス（指示差分）」を全部スプーン $\lambda$ 杯ずつ混ぜる、という料理レシピ。DARE はスパイスを「実は 9 割の粉は要らないからふるい落として、残った 1 割を濃縮したもの」にすること。
+- **データセット / ベンチマーク**: decoder-based LMs では AlpacaEval（instruction-following）、GSM8K と MATH（mathematical reasoning）、HumanEval と MBPP（code-generating）を使う。encoder-based LMs では GLUE の CoLA, SST-2, MRPC, QQP, STS-B, MNLI, QNLI, RTE を使う。Open LLM Leaderboard では ARC, HellaSwag, MMLU, TruthfulQA, Winogrande, GSM8K の 6 benchmark 平均を使う。
+- **比較対象 / baseline**: SFT source models、DARE なしの merging、DropOnly、Magnitude-based Pruning (MP)、Average Merging、Task Arithmetic、Fisher Merging、RegMean、TIES-Merging、encoder-based の multi-task learning oracle。
+- **指標**: AlpacaEval は win rate、GSM8K と MATH は zero-shot accuracy、HumanEval と MBPP は pass@1、CoLA は Matthews correlation coefficient、SST-2/QNLI/RTE は accuracy、MNLI は matched accuracy、MRPC/QQP は accuracy と F1、STS-B は Pearson と Spearman correlation。
+- **評価設計の細部**: GLUE は test labels が公開されていないため、original training data を 90% / 10% に分け、original validation data を test set として使う。decoder-based LMs の inference は vLLM、temperature 0.0、max generated tokens は GSM8K で 1,024、他の 4 datasets で 2,048。実験は NVIDIA Tesla V100 と A100 GPUs で行われるが、著者は DARE / merging 自体の利点を CPU のみ・再学習なしで得られると述べる。
+- **主な結果**: SFT delta redundancy の実験では、$p \in [0.0, 0.1, 0.2, \cdots, 0.9, 0.99]$ を試す。著者は「DARE can effectively remove 90% delta parameters」と結論し、場合によって $p=0.99$ まで到達すると述べる。例として WizardMath-70B は $p=0.99$ でもよく動く一方、WizardMath-7B と WizardMath-13B は失敗すると書かれている（`section-4-experiments.tex`）。
+- **主な結果**: Table 1 (`tab:llms_merging_all_results`) では、source models として WizardLM-13B が AlpacaEval 67.20、WizardMath-13B が GSM8K 64.22 / MATH 14.02、llama-2-13b-code-alpaca が HumanEval 23.78 / MBPP 27.60 を示す。Task Arithmetic + DARE の LM & Math & Code は AlpacaEval 69.28、GSM8K 56.48、MATH 10.16、HumanEval 23.17、MBPP 31.60。著者は相対改善として、LM & Math & Code vs. LM on AlpacaEval が 3.10%、LM & Math vs. Math on GSM8K が 3.18%、LM & Code vs. Code on MBPP が 19.57% と述べる。
+- **主な結果**: TIES-Merging + DARE の LM & Math & Code は AlpacaEval 72.50、GSM8K 58.00、MATH 9.20、HumanEval 29.27、MBPP 31.40。著者は、TIES-Merging は first step で low-magnitude delta を落とすため性能を下げる可能性があるが、DARE 後は 0 が smallest magnitude になるのでその損失を避けやすい、と説明する。
+- **主な結果**: encoder-based GLUE merging では、DARE による平均改善は Average Merging 0.58%、Task Arithmetic 0.36%、Fisher Merging 0.37%、RegMean -0.03%、TIES-Merging 0.84%。ただし merged model が single model を超えられない場合も残る。
+- **主な結果**: 7B merged LMs では、Table 2 (`tab:llms_merging_open_llm_leaderboard_results`) で supermario_v1 が Average 74.85、supermario_v2 が Average 75.49 を記録する。同じ表では NeuralBeagle14-7B が 74.74、Beagle14-7B が 74.76、WildMarcoroni-7B が 75.29、WestSeverus-7B が 75.29 と報告される。ただし Appendix は、supermario_v1 の source は NeuralBeagle14-7B + Turdus であり、Turdus の Open LLM Leaderboard 結果がないため Beagle14-7B を代わりに表へ載せた、と説明している。著者は 2024-01-28 時点で supermario_v2 が Open LLM Leaderboard の 1 位だと述べる。Appendix では supermario_v1 が DARE $p=0.3$、Task Arithmetic scaling 0.8、supermario_v2 が WildMarcoroni-Variant1-7B + WestSeverus-7B-DPO-v2、DARE $p=0.5$、scaling 0.5 と説明される。
+- **主な結果**: rescale operation の検証では、DARE は 90% delta を落としても各層 embedding の cosine similarity を 0.95 超に保つ。一方 DropOnly は $p=0.5/0.9$ の WizardMath-7B で similarity が約 0.85/0.68 まで下がる（`section-4-rescale-operation`）。
+- **主な結果**: MP との比較では、DARE は多くの場合 MP を上回り、drop rate が大きいほど差が目立つとされる。MP に rescale を加えると、$p=0.7$ の 7B LMs で AlpacaEval 43.85 から 10.61、GSM8K 46.70 から 0.37、HumanEval 21.34 から 3.05 に悪化した。
+- **主な結果**: DARE の使用条件として、WizardCoder-Python-13B を本来の CodeLlama-13b-Python ではなく Llama-2-13b に対する delta と見なすと、HumanEval/MBPP の pass@1 が 63.41/55.4 から 0.0/0.0 に落ちる。著者は Code Llama が code-related data 500B tokens で追加学習されているため、Llama 2 との差分が大きくなると説明する。
+- **主な結果**: fine-tuned parameter 全体を drop すると、$p=0.1$ でも decoder-based LMs は大きく壊れる。WizardLM-13B は AlpacaEval 67.20 から 8.56、WizardMath-13B は GSM8K/MATH 64.22/14.02 から 0.38/0.16、WizardCoder-Python-13B は HumanEval/MBPP 63.41/55.40 から 0.0/0.20 へ落ちる。
+- **著者が主張する貢献**: SFT delta parameters の極端な冗長性を encoder / decoder の両方で示したこと、DARE という data-free / retraining-free / GPU-free な delta sparsification を提案したこと、既存 model merging 手法の plug-in として有効性を示したこと、SFT は能力を新規導入するより pre-trained LM の能力を unlock するという見方を支持する実験を示したこと。
 
-## 何がすごいの？
+## 妥当性と限界
 
-- **差分のほとんどはゴミだった**: WizardMath-70B（数学が得意な 700 億パラメータの AI）では p=0.99 まで上げても性能を保てた。つまり差分の **99% が消しても OK**。
-- **モデルが大きいほど高い p に耐える**: 7B/13B モデルは途中で壊れるが、70B は p=0.99 で平気。これは scaling laws（モデルサイズと性能の規則性）と似た傾向。
-- **合体で元のモデルを超える例**: WizardLM-13B（指示従い）+ WizardMath-13B（数学）+ llama-2-13b-code-alpaca（コード）を **TIES-Merging + DARE** で合体すると、AlpacaEval（指示従いの試験）で **72.50** を達成。元の WizardLM-13B 単体（67.20）より上。
-- **Task Arithmetic + DARE の改善幅**:
-  - LM & Math & Code 合体 vs LM 単体: AlpacaEval で **+3.10%**
-  - LM & Math 合体 vs Math 単体: GSM8K（小学校〜中学校レベルの算数文章題）で **+3.18%**
-  - LM & Code 合体 vs Code 単体: MBPP（プログラミング問題）で **+19.57%**
-- **エンコーダ（BERT/RoBERTa）の GLUE では改善幅控えめ**: Average/Task Arithmetic/Fisher/RegMean/TIES でそれぞれ +0.58%/+0.36%/+0.37%/-0.03%/+0.84%。デコーダ側ほど劇的ではない。
-- **DARE は MP（Magnitude-based Pruning。値の小さい順に消す方法）より強い**: 高い p のとき特に差が広がる。MP に rescale を足すと逆に悪化（p=0.7 で AlpacaEval 43.85→10.61、GSM8K 46.70→0.37）。
-- **リスケールが必須**: リスケール無し（DropOnly）だと、WizardMath-7B で p=0.5/0.9 のとき層ごとの出力類似度が 0.85/0.68 まで落ちる。DARE は >0.95 を保つ。
-- **実用品も作った**: **supermario_v2** が 2024-01-28 時点で **Open LLM Leaderboard（誰でも 7B モデルを競わせる公開ランキング）の 7B 部門 1 位**（Average 75.49）。GPU なしの CPU だけで作れた。
-- **限界条件もちゃんと示している**: WizardCoder-Python-13B を本来の CodeLlama ではなく Llama-2 を pre-train として DARE すると、p=0.1 でも HumanEval/MBPP が 63.41/55.4 → **0.0/0.0** に崩壊。差分の絶対値が 0.01 を超える「継続事前学習」系では DARE は通用しない。
-- **差分ではなく fine-tuned 全体を消すと崩壊**: p=0.1 で WizardLM-13B AlpacaEval 67.20 → 8.56、WizardMath-13B GSM8K 64.22 → 0.38。これは「SFT は新しい能力を入れているのではなく、もとの AI に眠っていた能力を解放しているだけ」という強い証拠。
-- **著者が論文中で挙げている貢献**: (1) SFT 差分の極端な冗長性を実験・理論で示した、(2) 学習・GPU 不要の超単純な疎化手法 DARE を提案、(3) 既存マージ手法の汎用プラグインとして有効、(4) Hugging Face/peft/mergekit に採用され、Open LLM Leaderboard 1 位モデルを公開。
+- **この主張を支える根拠**: 理論面では、linear transformation において $\gamma=1/(1-p)$ とすれば DARE 後の embedding expectation が元の embedding expectation と一致することを示す。実験面では、DropOnly との embedding cosine similarity 比較、MP との比較、fine-tuned parameter 全体を落とす失敗例、wrong backbone を使う失敗例、Table 1 (`tab:llms_merging_all_results`) / Table 2 (`tab:llms_merging_open_llm_leaderboard_results`) の merging 結果が主な根拠になる。
+- **著者が認めている limitations / future work**: 著者は理論を "rough proof" とし、LM capacity に対する $p$ の upper bound 推定や、fine-tuned parameters と delta parameters の本質的差異の解明を future direction とする。encoder-based LMs では改善が小さく、merged model が single model を超えられない場合がある。また、source model が十分に fine-tuned されていることが effective model merging の prerequisite だと述べる。
+- **読者として注意すべき点**: DARE は同じ backbone からの SFT delta が比較的小さい場合に成立する手法である。論文は、他の 13B decoder-based LMs では多くの absolute delta が 0.002 未満で DARE に適すると述べる一方、WizardCoder-Python-13B vs. Llama-2-13b では absolute delta が 0.01 を超えることが多く、DARE が失敗すると示す。Appendix の decile table でも、WizardCoder-Python-13B vs. Llama-2-13b は min/max が -2.40 / 2.40 と非常に大きい。
+- **読者として注意すべき点**: Table 1 は「全タスクで常に best source を超える」ことを示す表ではない。例えば TIES-Merging + DARE の LM & Math & Code は AlpacaEval 72.50 で LM source 67.20 を超えるが、GSM8K 58.00 は Math source 64.22 より低い。著者の主張は、DARE が多くの場合 merging を助け、merged LM が source LM を超える可能性を示す、という範囲で読むべきである。
+- **追加で確認したい実験 / 疑問**: DARE は random drop を含むが、TeX 中には主要 Table 1 / Table 2 に対する乱数 seed ごとの分散や信頼区間は明示されていない。drop rate $p$、Task Arithmetic の $\lambda$、TIES-Merging の retain ratio の grid search が各結果にどれだけ寄与したかも、TeX 中では分解されていない。
+- **追加で確認したい実験 / 疑問**: Impact Statement では、merged LLM でも gender bias や racial discrimination のような harmful information が残り得るため regulation が必要だと述べられている。DARE による safety / alignment 能力の変化は、TeX 中の主要評価には含まれていない。
 
-## キーワード辞典
+## 用語メモ
 
-- **AI / 言語モデル（LM = Language Model）** … 文章を読んで意味を理解したり、続きの文章を作ったりするコンピュータプログラム。例: ChatGPT。
-- **パラメータ（parameter）** … AI の中身の数字。何十億個もある。AI の「賢さ」はこの数字の組み合わせで決まる。
-- **pre-trained（プリトレーンド）** … 「事前学習済み」。大量の本やネット文章で先に勉強させた状態の AI。
-- **SFT（Supervised Fine-Tuning。教師ありファインチューニング）** … 大きな AI を、特定の仕事用にお手本付きで追加学習させること。
-- **delta（デルタ）= 差分パラメータ** … ファインチューニング前後の AI の数字の引き算。「追加学習でどれだけ変わったか」のメモ。
-- **DARE（ダーレ）** … 著者の提案手法。差分のほとんどをランダムに 0 にして、残りを大きくするだけ。
-- **drop rate $p$** … 何割の差分を 0 にするかの数字（0.9 なら 90%）。
-- **rescale（リスケール）** … 大きさを揃え直すこと。残ったものを $1/(1-p)$ 倍する操作。
-- **model merging（モデル合体）** … 複数の AI の数字を 1 体にまとめる技術。
-- **Task Arithmetic** … モデル合体の手法の 1 つ。差分を $\lambda$ 倍して足し合わせる。
-- **TIES-Merging** … モデル合体の手法の 1 つ。値の小さい差分を切る → 符号を多数決 → 残りを平均、の 3 段階。
-- **Average Merging / Fisher Merging / RegMean** … その他のモデル合体手法。
-- **Magnitude-based Pruning（MP。マグニチュード・プルーニング）** … 値の小さい差分から順に消していく刈り込み手法。DARE のライバル。
-- **Dropout（ドロップアウト）** … AI の学習中に途中の出力をランダムに 0 にして「丸暗記」を防ぐ古典手法。DARE と似ているが、Dropout は学習中だけ・出力に対して行うのに対し、DARE は推論時に永久・差分に対して行う点が違う。
-- **embedding（エンベディング）** … AI が文章を理解するとき内部で作る「数字の並びによる意味表現」。AI の中での「脳内イメージ」みたいなもの。
-- **cosine similarity（コサイン類似度）** … 2 つの数字の並びがどれだけ「同じ向きを向いているか」を 0〜1 で測る指標。1 に近いほどそっくり。
-- **GPU** … 画像処理が得意な計算チップ。AI の学習にはこれが何百台も必要で電気代もすごい。「GPU なし」は「CPU = 普通のパソコンの頭脳だけ」で済むという意味。
-- **GLUE（グルー）** … 英語の文章理解能力を測るテストセット。CoLA・SST-2・MRPC など 8 種類の小テストの集合。
-- **AlpacaEval** … AI がどれくらい指示に従えるかを「他の AI に審査させる」評価。win rate（勝率）で測る。
-- **GSM8K** … 小学校〜中学校レベルの算数文章題のテスト。
-- **MATH** … もっと難しい数学コンテスト級の問題。
-- **HumanEval / MBPP** … プログラムを書かせて動くかどうかでスコアをつけるテスト。pass@1 は「1 回で正解できた割合」。
-- **WizardLM / WizardMath / WizardCoder** … それぞれ指示従い・数学・コードに特化してファインチューニングされた AI。
-- **Llama 2 / Code Llama / Mistral-7B** … 元になる「pre-trained」AI の名前。
-- **Open LLM Leaderboard** … Hugging Face という AI 共有サイトが運営する、誰でも自分の AI のスコアを載せて競える公開ランキング。
-- **scaling laws（スケーリング則）** … 「AI を大きくするほど性能が予測可能に良くなる」という経験則。
-- **Bernoulli 分布** … コイン投げみたいに「確率 $p$ で 1、確率 $1-p$ で 0」になるルール。
-- **期待値 $\mathbb{E}$** … サイコロを何度も振って平均を取った値。
+一般的な辞書的定義ではなく、この論文での使われ方を中心に書く。
 
-## ちょっと深掘り（中学生は飛ばして OK）
+- **SFT (Supervised Fine-Tuning)**: pre-trained LM を task-specific data で最適化し、instruction-following / mathematical reasoning / code-generating などの能力を引き出す操作。
+- **delta parameters**: $\bm{\theta}_{\text{SFT}}^t-\bm{\theta}_{\text{PRE}}$。この論文で DARE が drop する対象であり、SFT の効果を parameter 空間で見るための中心概念。
+- **DARE**: Drop And REscale。delta parameters を random drop し、残りを $1/(1-p)$ で rescale する手法。
+- **drop rate $p$**: delta parameters を 0 にする割合。実験では $[0.0, 0.1, \cdots, 0.9, 0.99]$ などが使われる。
+- **rescale operation**: DARE で残った delta を $1/(1-p)$ 倍する操作。linear transformation の期待値保存と DropOnly 比較の両方で重要になる。
+- **DropOnly**: DARE から rescale を除いた ablation。embedding cosine similarity と性能が高い $p$ で大きく落ちる比較対象。
+- **homologous models**: 同じ pre-trained backbone から fine-tuned された SFT models。model merging の中心仮定。
+- **parameter interference**: 複数 SFT model の parameters / deltas を merge するとき、互いの task-specific な変化が衝突して性能を下げる問題。
+- **Task Arithmetic**: pre-trained parameter に task delta の和を $\lambda$ 倍して足す merging method。DARE の plug-in 例として数式化される。
+- **TIES-Merging**: low-magnitude parameter の trimming、sign disagreement の解消、consistent sign parameter の disjoint merge により task conflicts を扱う merging method。
+- **Magnitude-based Pruning (MP)**: magnitude が小さい parameter を落とす pruning baseline。この論文では delta parameter に適用し、retraining process は捨てて比較する。
+- **embedding cosine similarity**: DARE / DropOnly 後の LM と元の LM の各層 embedding がどれだけ近いかを測る指標。DARE が元の embeddings を近似する根拠として使われる。
+- **Open LLM Leaderboard**: Eleuther AI Language Model Evaluation Harness に基づき、ARC, HellaSwag, MMLU, TruthfulQA, Winogrande, GSM8K の平均で open-sourced LLM を評価する leaderboard。
+- **continuous pre-training**: Code Llama が 500B tokens の code-related data で追加学習された例として出る。SFT 以上に parameter 差分が大きくなり、DARE 失敗の背景として説明される。
 
-- **理論は期待値（1 次モーメント）の保存しか言っていない**: $\mathbb{E}[\hat{h}] = \mathbb{E}[h]$ は「平均すれば同じ」。でも、ランダムに消したぶん値のばらつき（分散）は実は $1/(1-p)$ 倍に大きくなる（p=0.99 なら 100 倍）。著者自身も「rough proof（おおざっぱな証明）」と書いていて、上限の理論的特定は将来課題。それでも実際に層を重ねた AI が壊れない理由は実験的な結果から推測するしかない。
-- **TIES-Merging が DARE で特に伸びる理由**: TIES は「値の小さい差分を切る」ステップを内部に持っていて、そこで本来の性能をちょっと削っていた。DARE で先にゼロ詰めしておくと、TIES がさらに切るものがなくなり、ロスが消える。役割が補完的。
-- **使える条件**: 差分の絶対値が 0.002 以内なら DARE OK、0.01 を超えると危ない。これは経験則であり、自分のモデルに DARE を試す前に差分のヒストグラム（数値の散らばり具合のグラフ）を見るだけで予測できる。
-- **「fine-tuned 全体を消す vs 差分だけ消す」の対比が重要**: 全体を消すと p=0.1 で性能ゼロ、差分だけなら p=0.99 でも無傷。これが「SFT は能力を入れているのではなく解放しているだけ」という主張の最も強い証拠。
-- **モデルサイズと許容ドロップ率の関係**: 7B/13B は手前で折れ、70B は p=0.99 まで耐える。「大きい AI ほど中身に余白（冗長性）が多い」という解釈で、合体させたい場合は大きいモデルほど「タダ飯（free lunch）」を得やすい。
-- **エンコーダ系（BERT/RoBERTa）で効きが弱い**: 著者は「デコーダ系の方が能力収容力が大きいから」と説明しているが、これは事後的な後付けにも見える。
-- **シード（乱数の初期値）依存**: DARE はランダムドロップなので、毎回違うサイコロを振る。論文ではシードによる結果のばらつき（信頼区間）はあまり報告されておらず、「1 位」のマージン（差の余裕）が分からないという弱点がある。
-- **倫理面（Impact Statement）**: DARE で作った合体モデルでも、偏見や差別的な発言などの危険な出力は残り得る。著者も「コミュニティと当局の慎重な規制が必要」と書いている。
+## 読む順番の提案
+
+- まず `main.tex` の abstract を読み、DARE が「delta parameter を drop + rescale する」「homologous SFT models の merging に使う」という全体像を掴む。
+- 次に `section-3-methodology.tex` の "SFT Delta Parameters"、`equ:drop_rescale`、linear transformation の期待値計算、Task Arithmetic with DARE の式を読む。正規ノートの `Summary` と `Notes / Quotes` の中心式に対応する。
+- その後、`section-4-experiments.tex` の Experimental Setup と Table 1 を読む。どの dataset / metric / source model / merging method の結果かを確認してから、正規ノートの `Summary` の decoder merging の箇条書きに戻ると数値が追いやすい。
+- 続いて `section-4-rescale-operation`、`Comparison with Magnitude-based Pruning`、`When Can DARE Be Used?`、`Can DARE Drop Fine-tuned Parameters?` を読む。正規ノートの `Takeaway` と `Critical Thoughts` の「効く条件・効かない条件」に対応する。
+- Appendix では `tab:llms_SFT_backbone_correspondences`、`tab:plms_hyperparameter_searched_ranges_merging_methods`、`section-appendix-details_7b_merged_model_leaderboard`、`tab:statistics_parameters_changed_ranges` を見る。source model と backbone の対応、grid search 範囲、supermario_v1/v2 の構成、delta range の根拠がここにある。
+- 最後に `section-5-conclusion.tex` の Conclusion と Impact Statement を読み、著者がどこまでを contribution とし、どこに社会的リスクを認めているかを確認する。
 
 ## もとの論文・正規ノート
 

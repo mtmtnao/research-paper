@@ -1,4 +1,4 @@
-# Aligning Large Language Models with Representation Editing: A Control Perspective（表現の書き換えで AI チャットボットを「やさしく・正直に」する方法 — 制御工学の視点から）
+# Aligning Large Language Models with Representation Editing: A Control Perspective（test-time alignment と representation editing を最適制御として定式化する論文）
 
 - arXiv: https://arxiv.org/abs/2406.05954
 - 一次ソース: ../papers/arXiv-2406.05954v3/
@@ -8,171 +8,177 @@
 
 ## 一言で言うと
 
-AI（大規模言語モデル ＝ ChatGPT のようなもの）の頭の中を、しゃべりながら**少しずつ押して**「やさしい・無害な答え」へ誘導する仕組みを作ったよ、というお話。
+LLM alignment を、重みの fine-tuning ではなく、生成中の hidden state に小さな制御信号を入れる **dynamic representation editing** として扱う論文である。提案手法 **Re-Control** は、autoregressive LLM を discrete-time stochastic dynamical system と見なし、Bellman 方程式で hidden state 上の value function を学習し、test time に勾配上昇で制御信号を求める。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- AI チャットボット（ChatGPT みたいな、文字を打つと返事してくれるソフト）は、大量の文章を読んで作られているけど、その中には嘘や悪い情報も混じっている。だからそのまま使うと、たまに人を傷つけたり、デマを答えたりしてしまう。
-- これを直す方法は、これまで大きく 2 つあった。けれどどちらも欠点がある:
-  - **方法 1: AI を「再教育」する（fine-tuning ＝ 部分的に作り直す）**。たとえば RLHF（人間の好みを使って強化学習で AI を直す方法。RL は Reinforcement Learning ＝「ごほうびがもらえる行動を覚える学習」、HF は Human Feedback ＝「人間の好み」のこと）や DPO（人間の好みデータから直接学習する方法）など。
-    → でも、これは **超大量の計算が必要** で、しかも訓練が不安定。何かを直したくなる度に作り直しになって大変。
-  - **方法 2: AI 本体はそのまま、聞き方や出し方だけ工夫する**（プロンプトを丁寧に書く、出力時に「いい単語」を選ばせるなど）。
-    → こちらは軽いけど、**AI 本体の能力を超えられない**。元のモデルがダメだとダメなまま。
-- もう 1 つ最近出てきた「**表現の書き換え（representation editing）**」という方法もある。これは、AI の頭の中の「考えを表す数値の塊（＝ 隠れ状態、hidden state）」に、固定の数字を足してこっそり方向を変えるやり方。けれど **常に同じ数字** を足すだけなので、しゃべる単語ごとに変わる状況に対応できていない。
+- **問題設定**: LLM を helpful / harmless な応答へ揃える alignment を、モデル重みを更新せずに test time で行う。TeX の abstract は、fine-tuning は不安定で計算資源を要し、prompting や guided decoding は underlying model を変えないため性能が元モデルに依存すると述べる。
+- **対象範囲 / 仮定**: 対象は transformer-based autoregressive LLM の逐次生成である。状態は \(s_t=\{h_t,o_t\}\) とされ、\(h_t\) は過去ステップの key-value pairs、\(o_t\) は出力側の hidden state / logits として使われる。実験では value network を last layer の hidden states \(o_t\) 上に学習し、test time でもこの層だけに control signal を足す。
+- **既存研究との差分**: RLHF / DPO / PPO などの fine-tuning ではなく、test-time に representation space を摂動する。prompt engineering は入力 prompt を変え、controlled decoding は token probabilities と reward scores を組み合わせるが、Re-Control は activation / hidden representation を動的に動かす。Static Representation Editing は固定ベクトルを生成中ずっと足すが、Re-Control は autoregressive generation の各時刻で state-dependent な制御信号を求める。
+- **この論文で答えたい問い**: 「representation editing を最適制御問題として定式化し、Bellman value function と test-time gradient optimization によって、既存の test-time alignment より良い alignment と実用的な推論時間を両立できるか」を検証する。
 
-この論文は、3 つめの「表現の書き換え」を、もっと**しゃべりながら毎ステップ動く**ように進化させたい、という話。
+## 背景と前提
 
-## どうやって解いたの？
+- **LLM alignment**: TeX の introduction では、LLM は多様なデータで訓練されるため misinformation や harmful content を生成し得るとし、human objectives / safety considerations に合わせる問題として alignment を置く。
+- **Fine-tuning 系**: RLHF は human preference で Reward Model を訓練し、PPO などの reinforcement learning で LLM を fine-tune する。DPO などは RLHF を簡略化するが、TeX は依然として substantial computational resources が必要だと位置づける。
+- **Test-time alignment 系**: Prompt engineering と guided / controlled decoding は重みを変えない。Controlled Decoding (CD) は token probabilities と reward scores を組み合わせ、CD prefix は partially generated responses から expected reward を予測する prefix scorer を学習する。
+- **Representation engineering / editing**: LLM の representation space に steering vector や perturbation を加えて生成を制御する系統である。既存の Static RE は固定方向を足すため、生成過程の逐次的な state 変化を使い切れていない、というのが本論文の出発点である。
+- **最適制御との対応**: background.tex では stochastic dynamical system を \(s_{t+1}=f(s_t,u_t,\omega_t)\) と書き、制御 \(u_t\) によって累積報酬を最大化する policy \(\pi:\mathcal{S}\to\mathcal{U}\) を求める問題として説明している。Re-Control はここでの state を LLM の \(h_t,o_t\)、control を hidden-state perturbation、stochasticity を sampled token \(y_t\) に対応させる。
+
+## 提案手法
 
 ### コアアイデア
 
-AI が文章を作るときの様子を、**「ボールが地形の上を転がる物理現象」** だと考えるよ。
+Re-Control は、pre-trained autoregressive LLM を **language dynamical system** として見る。この定義の LLM は直接の control signal を持たない uncontrolled system なので、各生成ステップで状態 \(s_t=\{h_t,o_t\}\) に \(u_t=\{u_t^h,u_t^o\}\) を加える。報酬は途中では与えず、EOS に到達した最終応答 \([\mathbf{x},\mathbf{y}_t]\) に対して reward model \(r\) が返す値を使う。
 
-- AI は単語を 1 個ずつ順番に作るとき、内部に「いまの考えを表す数値の塊」を持っている。これを「状態」と呼ぶ（地図上のボールの位置みたいなもの）。
-- 何もしないと、AI はそのまま転がって、ときどき変な方向（嘘・有害）へ落ちる。
-- だから著者は、毎ステップ、ボールを **「いい方角（やさしい・正直)」へほんの少し押す力（＝ 制御信号、control signal）** を加える。
-- ただし強く押しすぎると、AI が壊れて意味不明な文章になる。だから「ほんのちょっとだけ押す」のがコツ。
+学習時には、初期 policy を「何もしない」\(u_t=0\) とし、その zero policy の value function を hidden state 上で学習する。test time では、学習済み \(V_\phi\) が大きくなる方向へ \(u_t\) を勾配上昇で更新し、その制御信号を加えたあと LLM の forward pass で次 token を生成する。著者は、global optimum を探すのではなく、original state から大きく離れず value score を改善することが目的だと、`method.tex` の `hidden.pdf` を用いた図キャプションで説明している。
 
-これを制御工学（クルマやロボットを思った通りに動かす数学）の言葉で書き直したのがこの論文。
+### 重要な定義・数式
 
-### 仕組み
+$$
+y_{t} \sim \text{Softmax}(W o_{t}), \quad h_{t+1}, o_{t+1} = f_{\rm LM}(h_t, y_t).
+$$
 
-- **step1**: AI（ここでは Vicuna-7B / Falcon-7B-Instruct / Llama3-8B-Instruct という公開モデルを使用）を「時間とともに変化するシステム」だと見なす。
-  - LLM（Large Language Model ＝ 大規模言語モデル ＝ 大きな AI チャットボット）が単語をひとつ作るたびに、内部の状態が更新される。
-- **step2**: 「価値関数（value function）」というスコア表を別に用意する。これは「いまの AI の頭の中の状態だと、最終的にどのくらい良い文章になりそうか？」を予測する小さな関数（中身は 2〜3 層のニューラルネットワーク ＝ 数字を入れると数字が出てくる小さな計算機）。
-  - 報酬（reward ＝ ごほうび点）は、出来上がった文の良さを別の「報酬モデル（reward model）」が採点する（人間の好みデータで前もって作られたもの）。文の途中では点はもらえず、文の最後（EOS ＝ End-Of-Sentence ＝ 文の終わりを表す合図）で初めて点がつく。
-- **step3**: AI に文章を作らせて、毎ステップの状態と最終の点を集める。それを使って「価値関数」を訓練する（Bellman 方程式 ＝ 「いまの価値 ＝ 次の瞬間の価値の予想」という形でつないでいく方程式）。
-- **step4**: 実際にしゃべらせるとき、AI の頭の中の状態を、価値関数が高くなる方向にちょっとだけずらす（**勾配上昇 ＝ スコアが上がる坂を少しだけ登る**）。何回くらいずらすか（$n$ 回）と、1 回でどのくらいの強さでずらすか（$\alpha$）を、文の質と点のバランスを見ながら決める。
-- **step5**: 状態をずらしたあと、AI に次の単語を出させる。これを文末まで繰り返す。
+**式の意味**: TeX の Definition "Language dynamical system" にある、autoregressive LLM の逐次生成を dynamical system として書いた式である。各時刻で token \(y_t\) をサンプルし、その token を使って次の hidden state と出力側状態へ遷移する。
 
-ここで重要なのは、AI 本体（Vicuna-7B などの数十億個の数字の塊）は**いっさい書き換えない**こと。あくまで一時的に頭の中の数字をちょっと押すだけ。だから AI を作り直す方法（RLHF とか）に比べて、ものすごく軽い。
+**記号の定義**:
+- \(y_t\) ... 時刻 \(t\) に新しく生成される token
+- \(h_t\) ... 過去時刻の key-value pairs を含む hidden state
+- \(o_t\) ... token 分布を作る出力側の状態。TeX では last layer の hidden states / logits として扱われる
+- \(W\) ... \(o_t\) を vocabulary space \(\mathcal{V}\) 上の確率分布へ写す linear transformation
+- \(f_{\rm LM}\) ... LLM の state transition function
 
-### 主要な数式
+**この論文での役割**: LLM を制御対象として扱うための基礎定義である。この対応により、生成中の state に control signal を入れることが representation editing と optimal control の接点になる。
 
-#### 式 1: AI が文章を作る仕組み（言語の動力学系）
+$$
+y_{t} \sim \text{Softmax}\left(W (o_{t} + u^o_t)\right), \quad
+h_{t+1}, o_{t+1} = f_{\rm LM}(h_t + u^h_t, y_t).
+$$
 
-$$ y_t \sim \text{Softmax}(W o_t), \quad h_{t+1}, o_{t+1} = f_{\text{LM}}(h_t, y_t) $$
+**式の意味**: 上の language dynamical system に control signals \(u_t=\{u_t^h,u_t^o\}\) を加えた controlled language dynamical system である。出力側状態 \(o_t\) と hidden state \(h_t\) の両方に外部から摂動を入れられる形になっている。
 
-**この式が言ってること**: AI は毎ステップ、内部の数字 $o_t$ から「次にどの単語を出すか」をくじびきで決めて、それから内部の状態を 1 ステップ進めている、という流れを書いている。Softmax は「いくつかの数のうち、大きいものを選ばれやすくする変換」のことで、たくさんの単語候補から 1 つを選ぶ「重み付きくじびき」だと思えば OK。
+**記号の定義**:
+- \(u_t^o\) ... \(o_t\) に加える control signal
+- \(u_t^h\) ... \(h_t\) に加える control signal
+- \(u_t=\{u_t^h,u_t^o\}\) ... 時刻 \(t\) の制御入力
+- その他の記号 ... 直前の language dynamical system の式と同じ
 
-**記号の意味**:
-- $t$ … 何ステップ目か（1 単語目、2 単語目、… の番号）
-- $y_t$ … $t$ 番目に出す単語
-- $o_t$ … 「次の単語の出やすさ」を決める内部の数字の塊（ロジット）
-- $W$ … $o_t$ を単語ごとの確率に変える掛け算用の表
-- $h_t$ … いままで作った単語の記憶（隠れ状態）
-- $f_{\text{LM}}$ … 「いまの記憶＋出た単語 → 次の記憶」を計算する大きな関数（これが AI 本体）
+**この論文での役割**: Re-Control が「固定ベクトルを足す Static RE」ではなく、生成ステップごとに representation space を動的に perturb する手法であることを表す中心式である。ただし実装では全 state ではなく last layer の \(o_t\) だけに制御を加える。
 
-**身近な例え**: しりとりに似ているよ。「いま手元にある記憶（$h_t$）＋ いま言った単語（$y_t$）」 → 「次の手元の記憶」へ進む。次の単語は手元の記憶から「出やすい単語くじ」をひいて決める。AI はこの「くじびきしりとり」を文末まで続けている。
+$$
+R\left([\mathbf{x}, \mathbf{y}_t]\right) := \begin{cases}
+0 & \text{if } y_{t} \neq \operatorname{EOS} \\
+r\left(\left[\mathbf{x}, \mathbf{y}_t\right]\right) & \text{if } y_{t} = \operatorname{EOS},
+\end{cases}
+\qquad
+\argmax_{\{u_t\}_{t=1}^T} \mathbb{E} [R] - \lambda \sum_{t=1}^T ||u_t||_2^2.
+$$
 
----
+**式の意味**: 報酬は生成途中には与えず、EOS に到達した最終応答にだけ reward \(r\) を与える。そのうえで、期待報酬を上げつつ、制御信号の二乗ノルムを小さく保つ制御列 \(\{u_t\}\) を求める。
 
-#### 式 2: 制御信号を入れて押す（やさしい方向へ）
+**記号の定義**:
+- \(\mathbf{x}\) ... prompt
+- \(\mathbf{y}_t\) ... 時刻 \(t\) までに生成された response
+- \([\mathbf{x},\mathbf{y}_t]\) ... prompt と response の連結
+- \(R\) ... alignment task の報酬関数
+- \(r\) ... final response に対する reward。実験では公開 reward model を使う
+- \(\lambda\) ... regularization の hyper-parameter
 
-$$ y_t \sim \text{Softmax}\bigl(W(o_t + u^o_t)\bigr), \quad h_{t+1}, o_{t+1} = f_{\text{LM}}(h_t + u^h_t, y_t) $$
+**この論文での役割**: alignment を「expected reward を最大化する制御問題」として明示する式である。正則化項は reward overoptimization を防ぎ、perturbed LLM の generation quality を保つために導入される。
 
-**この式が言ってること**: 元の数字 $o_t$ や $h_t$ に、ちょっとした「押す力」$u_t$ を毎ステップ足してから、単語を選んだり次のステップに進んだりするよ、という意味。これだけで AI のしゃべる内容を「やさしく・正直」な方向へ寄せられる。
+$$
+V(s_t) = \begin{cases}
+\mathbb{E}_{s_{t+1}}\left[V(s_{t+1})\right], & \text{if } y_t \neq \operatorname{EOS} \\
+r\left(\left[\mathbf{x}, \mathbf{y}_t\right]\right), & \text{if } y_t = \operatorname{EOS}.
+\end{cases}
+\qquad
+\mathcal{L} = \sum_{i} \sum_{m} \sum_{t} \left(V_{\phi}(s^{i,m}_t) - \operatorname{stop-grad}(v^{i,m}_t)\right)^2.
+\qquad
+v^{i,m}_t =
+\begin{cases}
+V_{\phi}(s^{i,m}_{t+1}) & \text{if } y^{i,m}_t \neq \operatorname{EOS} \\
+r^{i,m},  & \text{if } y^{i,m}_t = \operatorname{EOS}.
+\end{cases}
+$$
 
-**記号の意味**:
-- $u^o_t$ … ロジット $o_t$ を押す力（外から加える追加の数字）
-- $u^h_t$ … 隠れ状態 $h_t$ を押す力
-- ほかは式 1 と同じ
+**式の意味**: zero policy \(u_t=0\) の value function を Bellman equation で定義し、その近似 \(V_\phi\) を MSE loss で学習する。途中状態の価値は次状態の価値の期待値、EOS 状態の価値は最終 reward である。
 
-**身近な例え**: ボウリングで、ボールが少しガターに寄りそうなとき、軽くレーンの傾きを変えてピン側に戻す、みたいな感じ。ボウリングのボール（AI の状態）はそのまま転がるけど、レーンに小さな傾き（$u_t$）を足すことで、ピンに当たりやすい方向へ自然に進む。
+**記号の定義**:
+- \(V(s_t)\) ... state \(s_t\) から最終的に得られる reward の期待値
+- \(V_\phi\) ... neural network で parameterize された value function
+- \(s_t^{i,m}\) ... prompt \(i\)、sample \(m\)、時刻 \(t\) の LLM state
+- \(v_t^{i,m}\) ... Bellman target。TeX では \(y_t^{i,m}\neq\operatorname{EOS}\) なら \(V_\phi(s_{t+1}^{i,m})\)、EOS なら \(r^{i,m}\)
+- \(\operatorname{stop-grad}(\cdot)\) ... target 側に gradient を流さない操作
 
----
+**この論文での役割**: Re-Control の学習部分である。full RL を回すのではなく、pre-trained LLM の roll-out から hidden state trajectory と最終 reward を集め、value network だけを学習する設計を支えている。
 
-#### 式 3: 「いまの状態の良さ」を表す価値関数（Bellman 方程式）
+$$
+u_t = u_t + \alpha \nabla_{s_t} V_{\phi}(s_t + u_t).
+$$
 
-$$ V(s_t) = \begin{cases} \mathbb{E}_{s_{t+1}}[V(s_{t+1})], & y_t \neq \text{EOS} \\ r([\mathbf{x}, \mathbf{y}_t]), & y_t = \text{EOS} \end{cases} $$
+**式の意味**: test time に、現在の state へ加える control signal \(u_t\) を value function が増える方向に更新する。初期値は \(u_t=0\) で、この更新を \(n\) 回繰り返す。
 
-**この式が言ってること**: 「いま自分がいる状態の良さ $V(s_t)$」は、文の途中なら「次の瞬間の状態の良さの平均」と等しい、と決める。そして文末まで来たら、出来上がった文の点 $r$ がそのまま「良さ」になる。要するに「最終的にもらえる点の見込み」をずっと前から予想しておく仕組みだよ。
+**記号の定義**:
+- \(u_t\) ... 時刻 \(t\) の control signal
+- \(\alpha\) ... gradient ascent の step size
+- \(n\) ... test-time intervention の更新回数
+- \(\nabla_{s_t}V_\phi(s_t+u_t)\) ... state に関する value function の勾配
 
-**記号の意味**:
-- $V(s_t)$ … 「いまの状態 $s_t$ から最後までしゃべったら、平均で何点もらえそうか」を予測する関数（価値関数）
-- $s_t$ … いまの AI の頭の中の状態（$h_t$ と $o_t$ の組）
-- $\mathbb{E}_{s_{t+1}}[\cdot]$ … 「次の瞬間の状態」がいろいろあり得るので、その平均をとる、という意味（期待値 ＝ サイコロをたくさん振った平均みたいなもの）
-- $y_t$ … $t$ 番目の単語
-- EOS … 文の終わりの合図
-- $r([\mathbf{x},\mathbf{y}_t])$ … 出来上がった文 $\mathbf{x}$（質問）＋ $\mathbf{y}_t$（答え）への採点
+**この論文での役割**: 学習済み value function を使って、生成時に動的な制御信号を得る手順である。TeX は "Implicit Regularization" として、小さな \(\alpha\) と限られた \(n\) により control signal を小さく保つと説明する。
 
-**身近な例え**: 双六（すごろく）のマスごとに「ゴールまで行ったら平均で何点もらえそう？」と予想を書き込むのに似ている。途中マスの予想は「次のマスの予想の平均」と等しい、というルール。ゴールマスにだけ本当の点数が書いてある。
+### 実装 / アルゴリズム上の要点
 
----
+- **value function の入力**: 実験では last layer の hidden states \(o_t\) に value network を学習し、test time でもこの層だけに control signal を加える。TeX は attention key-value pairs \(h_t\) への拡張を future studies として述べる。
+- **value network**: HH-RLHF では Vicuna-7B 用が 3 層、Falcon-7B 用が 2 層で、hidden dimension はどちらも 4096。SHP では Vicuna-7B / Llama3-8B とも 2 層、hidden dimension 4096。
+- **学習データ作成**: prompt ごとに \(M\) responses を sample する一般式を出すが、appendix の実験設定では HH-RLHF と SHP とも \(M=1\) と明記されている。
+- **学習設定**: Adam、learning rate \(1*10^{-4}\)、batch size 512、fp16、100 epochs。計算環境は NVIDIA A100 80GB、CUDA 12.4、Python 3.12.2、PyTorch 2.2.2。
+- **test-time hyperparameters**: validation set 上で coherence + diversity + average reward の和を最大化するように \(\alpha,n\) を選ぶ。HH-RLHF では Vicuna-7B が \(\alpha=0.5,n=30\)、Falcon-7B が \(\alpha=0.2,n=200\)。SHP では Vicuna-7B が \(\alpha=1.0,n=50\)、Llama3-8B が \(\alpha=1.0,n=30\)。
 
-#### 式 4: テスト時に状態をちょっとだけ押す（勾配上昇）
+## 実験・結果
 
-$$ u_t \leftarrow u_t + \alpha \nabla_{s_t} V_\phi(s_t + u_t) $$
+- **データセット / ベンチマーク**: 主実験は \(\texttt{HH-RLHF}\) と \(\texttt{Stanford SHP}\)。HH-RLHF は appendix で 161,000 training samples と 8,550 test samples とされ、helpfulness / harmlessness 改善に使われる。SHP は 385,000 collective human preferences、349,000 training、18,400 validation、18,400 test samples とされ、Reddit post と top-level comments の preference から成る。OOD 解析では \(\texttt{HarmfulQA}\) を使い、1,960 harmful questions、9,536 harmless conversations、7,356 harmful conversations と説明される。
+- **比較対象 / baseline**: Base、Prompt Engineering、Static RE、Controlled Decoding (CD)、CD prefix、CD prefix + Prompting、Ours、Ours + Prompting。Further Analysis では LoRA-based PPO / DPO とも比較する。CD は reward model と base model の tokenization strategy が同じである必要があり、表では Falcon-7B や Llama3-8B の一部が N/A になっている。
+- **指標**: Diversity、Coherence、Average Reward、Win Rate、Inference Time。Diversity は repeated n-grams に基づき、Coherence は prompt と continuation の SimCSE embedding cosine similarity、Average Reward は reward model の平均、Win Rate は GPT-4 judge によって model response が dataset の preferred response より良いと評価された割合である。HH-RLHF の GPT-4 評価では test set から 300 prompts を random sample し、応答提示順を randomize する。
+- **reward model**: HH-RLHF では `argsearch/llama-7b-rm-float32`、SHP では `openbmb/UltraRM-13b` を使う。appendix では UltraRM-13B が Anthropic HH-RLHF、Standford SHP、Summarization で訓練されていると説明される。
+- **主な結果（Table \(\ref{tab:performance}\), HH-RLHF / Vicuna-7B）**: Base は Diversity 0.816、Coherence 0.568、Average Reward 5.894、Win Rate 57.6、Inference Time 0.60h。Ours は 0.824、0.579、6.214、75.6、0.85h。Ours + Prompting は 0.830、0.577、6.267、80.3、0.93h。CD は Win Rate 72.3 だが Inference Time 47.43h、CD prefix は Win Rate 74.6、32.13h。
+- **主な結果（HH-RLHF / Falcon-7B）**: Base は Win Rate 42.3、Average Reward 3.439。Ours は Win Rate 58.0、Average Reward 3.512、Inference Time 1.93h。Ours + Prompting は Win Rate 62.6、Average Reward 4.083、Inference Time 2.00h。CD prefix は Average Reward 4.397 と高いが、Win Rate は 49.6、Inference Time 48.13h。
+- **主な結果（SHP / Vicuna-7B）**: Base は Win Rate 40.3、Average Reward -5.68。Ours は Win Rate 58.0、Average Reward -5.38。Ours + Prompting は Win Rate 63.6、Average Reward -4.63。
+- **主な結果（SHP / Llama3-8B）**: Base は Win Rate 56.3、Average Reward -4.64。Ours は Win Rate 71.0、Average Reward -4.39。Ours + Prompting は Win Rate 77.0、Average Reward -4.14。
+- **著者が主張する貢献**: introduction では、(1) control perspective から LLM alignment の representation editing method を提案、(2) value function を学習し test time に gradient-based optimization で control signal を計算、(3) 既存 test-time alignment methods を上回り strong generalization ability を示す、と列挙している。
+- **Further Analysis**: LoRA-based PPO / DPO との比較では、Vicuna-7B on HH-RLHF で Re-Control は "competitive alternative to LoRa-based fine-tuning methods" と主張される。HarmfulQA では HH-RLHF で学習した value function を使い、reward model は OOD で accurate ではないため GPT-4 評価に集中し、Ours + Prompting が Vicuna-7B と Falcon-7B の両方で highest GPT-4 win rate と述べられる。
 
-**この式が言ってること**: いまの状態を「価値関数が大きくなる方向」に、$\alpha$ ぶんだけ進める。これを $n$ 回くりかえして、「ちょっとだけ良くなった状態」へ AI を移してから次の単語を出す。push する量を小さく保つことで、AI が暴走しないようにしている。
+## 妥当性と限界
 
-**記号の意味**:
-- $u_t$ … 押す力（最初はゼロ）
-- $\alpha$ … 1 回でどのくらい強く押すか（ステップサイズ。論文では 0.2〜1.0 くらい）
-- $n$ … 押す回数（論文では 30〜200 回）
-- $\nabla_{s_t} V_\phi(\cdot)$ … 「状態を少しだけ変えたら $V$ がどっち向きにどれくらい増えるか」を表す向き（勾配 ＝ 坂の傾き）。$\phi$ は価値関数の中身のパラメータ
-- $V_\phi$ … 学習済みの価値関数（さっきの「すごろくマスの予想表」を実物にしたもの）
+- **この主張を支える根拠**: Table \(\ref{tab:performance}\) は 4 設定（HH-RLHF x Vicuna-7B / Falcon-7B、SHP x Vicuna-7B / Llama3-8B）で Ours / Ours + Prompting が GPT-4 Win Rate を改善していることを示す。特に CD は推論時間が大きく、TeX は controlled decoding が entire reward model を繰り返し forward する一方、Re-Control は 2- or 3-layer value function を通すため速いと説明する。
+- **評価設計の妥当性**: Average Reward だけでなく Diversity / Coherence / GPT-4 Win Rate / Inference Time を同時に見る設計になっている。Falcon-7B の HH-RLHF では CD prefix が Average Reward 4.397 で最大だが Win Rate は Ours より低く、reward model のスコアだけを最終判断にしていない点は重要である。
+- **著者が認めている limitations / future work**: appendix A は、(1) 現状は last layer の hidden space の value function のみで、intermediate layers や low-rank subspace への拡張が future work、(2) current paper は single reward model の目的だけを扱い、multiple conflicting objectives に対する multi-objective optimization が future work、(3) value function 学習は simple one-iteration policy iteration であり、iterations を増やすことや provable convergence を持つ value-function training algorithm が future work、と述べる。
+- **読者として注意すべき点**: hyperparameter study では、\(\alpha\) や \(n\) を増やすと reward が改善するだけでなく、coherence と diversity が nearly zero まで落ちる reward overoptimization が観察される。したがって、Re-Control の効果は test-time intervention の強さを validation set で選ぶ手順に依存する。
+- **読者として注意すべき点**: GPT-4 judge は helpfulness、harmlessness、relevance、accuracy、insightfulness などで 1-10 点を付ける設計だが、人手評価を追加したという記述は TeX 中には明示されていない。SHP については 1,000 random sampled test prompts で評価したと appendix にある一方、HH-RLHF のように「GPT-4 評価は 300 prompts」と明確に分けた記述は限定的である。
+- **Broader Impacts**: appendix B は、value function の学習に "negative goals" を含めると誤用され得るため注意が必要だと述べる。
+- **追加で確認したい実験 / 疑問**: 複数層や low-rank subspace への介入、多目的 reward、value function の policy iteration 回数、reward model と GPT-4 judge の独立性、人手評価、長い生成長での安定性は、この TeX だけでは十分には検証されていない。
 
-**身近な例え**: 暗い丘の上で、足元の傾きだけを頼りに頂上を目指す感じ。一気に走ると崖から落ちるので、ほんの 1 歩ずつ慎重に登る（$\alpha$ を小さく、$n$ を少なく抑える）。これで「元の場所から離れすぎず、でも少しだけ高い場所」へ移れる。
+## 用語メモ
 
-## 何がすごいの？
+- **Re-Control** ... 本論文の提案手法。hidden state 上の value function を学習し、test time に \(u_t\) を勾配上昇で求める dynamic representation editing。
+- **language dynamical system** ... autoregressive LLM を、状態 \(s_t=\{h_t,o_t\}\) と sampled token \(y_t\) によって時間発展する stochastic dynamical system と見たもの。
+- **control signal \(u_t\)** ... 生成ステップ \(t\) で hidden state / output state に加える摂動。実験では last layer の \(o_t\) のみに加える。
+- **zero policy** ... 何も制御しない policy、すなわち \(u_t=0\)。Re-Control はこの policy の value function を一度だけ学習する。
+- **value function \(V_\phi\)** ... state \(s_t\) から最終的に得られる reward の期待値を予測する neural network。実験では 2-3 層 MLP、hidden dimension 4096。
+- **Bellman equation** ... 途中状態の価値を次状態の価値の期待値に結び、EOS では final reward に結びつける再帰式。
+- **implicit regularization** ... objective には \(\lambda\|u_t\|_2^2\) があるが、test time では小さい step size \(\alpha\) と限定された updates \(n\) によって control signal を小さく保つ、という実装上の正則化。
+- **Static RE** ... prompt 後の hidden state から expected reward を予測する linear regression を学習し、その重み方向へ activation space を固定的に shift する baseline。
+- **CD / CD prefix** ... CD は reward score を token probabilities に組み合わせる guided decoding。CD prefix は partially generated responses から expected reward を予測する prefix scorer を使う。
+- **Win Rate** ... GPT-4 judge が、生成応答を dataset の preferred response より良いと評価した割合。HarmfulQA では reference response がないため base model response より良い割合として測る。
+- **reward overoptimization** ... reward を高める方向に強く動かしすぎることで、coherence / diversity が崩れる現象。本論文では Fig. \(\ref{fig:parameter}\) と hyperparameter study で観察される。
 
-- **使ったテストデータ**: HH-RLHF（Anthropic 社が出した「親切で害のない返事」を集めたデータ）、Stanford SHP（人間が良い返事を選んだデータ）、OOD 用に HarmfulQA（わざと意地悪な質問を集めたデータ）。
-- **使った AI 本体**: Vicuna-7B、Falcon-7B-Instruct、Llama3-8B-Instruct（どれも公開済みのチャット用 LLM）。
-- **採点指標**: Diversity（同じ言い回しを繰り返さないか）、Coherence（質問とちゃんと噛み合った答えか）、Average Reward（報酬モデルの平均点）、Win Rate（GPT-4 に審判をやらせて「どっちの返事がいい？」と聞いた勝率。300 問で実施）、Inference Time（しゃべるのにかかった時間）。
-- **数字での結果**（HH-RLHF・Vicuna-7B のとき）:
-  - Base（何もしない）: 勝率 **57.6%**、平均報酬 5.894、時間 0.60h
-  - 提案手法 Re-Control: 勝率 **75.6%**、平均報酬 6.214、時間 0.85h
-  - Re-Control ＋ プロンプト工夫: 勝率 **80.3%**、平均報酬 6.267
-- **他の手法との比較**:
-  - 一番強いライバル「Controlled Decoding (CD)」と比べて、Re-Control は **約 20 倍速い**（47.43h → 0.85h）。CD は同時に複数文を作る並列処理ができない欠点もある。
-  - 固定ベクトルを足すだけの「Static RE（静的な表現の書き換え）」より勝率が **+10〜+25 ポイント** 改善。
-  - LoRA（小さな追加部品で AI を直す方法）を使った PPO・DPO ともほぼ互角（Fig.\ref{fig:ppo}）。つまり「再教育」と「軽量な制御」がほぼ同じ結果まで来ている。
-- **OOD（学習していない種類のデータ）でも有効**: HarmfulQA でも Re-Control＋Prompting が一番高い勝率（Fig.\ref{fig:ood}）。
-- **著者が「貢献」として挙げていること**:
-  1. AI を「時間で変わる確率的なシステム」とみなして、表現の書き換えを**最適制御問題**として定式化した。
-  2. 価値関数を AI の頭の中の数字（隠れ状態）の上に学習して、テスト時に勾配で動的な押し方を決める枠組み Re-Control を提案した。
-  3. 既存の test-time 手法より良く、しかも超高速（CD の 1/20）、再教育（LoRA PPO/DPO）にも見劣りしない、と実験で示した。
+## 読む順番の提案
 
-## キーワード辞典
-
-- **LLM（Large Language Model）** … 大量の文章を読んで覚えた、巨大な「次の単語を予想する機械」。ChatGPT もこれ。
-- **alignment（アラインメント）** … AI を「人間が望む方向」に揃えること（やさしい・正直など）。
-- **autoregressive（自己回帰）** … 「いま出した単語を入力にして、次の単語を出す」を文末まで繰り返す作り方。
-- **hidden state（隠れ状態）** … AI の頭の中にある、考えを表す数字の塊。読めないけど計算には大事な「メモ」。
-- **fine-tuning（ファインチューニング）** … 既存の AI を、別のデータでちょっとだけ作り直すこと。
-- **RLHF** … Reinforcement Learning from Human Feedback ＝ 「人間の好み」を報酬にして強化学習で AI を直す方法。
-- **PPO** … Proximal Policy Optimization ＝ 強化学習でよく使われる安定したアルゴリズム。
-- **DPO** … Direct Preference Optimization ＝ 強化学習を使わずに、人間の好みデータから直接 AI を直す方法。
-- **LoRA** … 大きな AI 全部を直さず、小さな「貼り紙」みたいな追加部品を学習する軽量化テクニック。
-- **prompt engineering** … 質問文の書き方を工夫して、AI に良い返事をさせる手法。
-- **guided decoding / controlled decoding (CD)** … 単語を選ぶときに「報酬モデル」のスコアを使って良さそうな単語を選ぶ手法。
-- **reward model（報酬モデル）** … 出来上がった文章を採点する別の小さな AI。
-- **representation editing（表現の書き換え）** … AI の頭の中の数字を、外からこっそり書き換えて方向を変えるテクニック。
-- **value function（価値関数）** … 「いまの状態から最終的に何点もらえそうか」を予想する小さな関数。
-- **Bellman 方程式** … 「いまの価値 ＝ 次の瞬間の価値の見込み」というふうに価値をつなぐ式。
-- **policy iteration（方策反復）** … 「いまのやり方の良さを測る → やり方を更新する」を交互に繰り返して最適に近づける手順。この論文は **1 回だけ** やる。
-- **gradient ascent（勾配上昇）** … 関数の値が大きくなる方向に少しずつ動いて高い場所を目指す方法。
-- **EOS（End-Of-Sentence）** … 「ここで文が終わり」を表す特別な記号。
-- **OOD（Out-Of-Distribution）** … 学習データに無かった種類のデータ。
-- **GPT-4 as judge** … 「どっちの返事がいい？」を GPT-4 に判定させる評価方法。
-- **diversity / coherence** … 文の多様さ・話のつじつまの合い具合（生成文の質を測る指標）。
-- **reward hacking（報酬ハッキング）** … 採点ルールの抜け穴を突いて、見かけ上だけ高得点を取る現象。意味不明だけど報酬モデルが好きそうな文を出すなど。
-- **implicit regularization（暗黙の正則化）** … 損失関数に罰金項を書かなくても、ステップサイズや更新回数を小さく抑えるだけで「やりすぎ防止」が自然に効くこと。
-
-## ちょっと深掘り（中学生は飛ばして OK）
-
-- **「1 回だけの方策反復」の意味**: 本来の policy iteration は「価値の評価 → 行動の改善」を何度もくり返して最適に近づく。この論文は最初の行動を「何もしない（$u_t=0$）」に固定し、その下で価値関数だけ学習する。**つまり「元のモデルの分布の下での価値」を 1 回学んで終わり**。これだけで test-time にちょっと押すだけで効くのが面白いところ。
-- **介入は最終層の $o_t$ だけ**: $h_t$（過去すべての key-value）に手を入れると次元が膨大になるので、論文では出力直前の $o_t$ にだけ押す力を入れる。価値関数は隠れ次元 4096 の 2〜3 層 MLP。これで充分強いという報告。
-- **報酬ハッキングの観察**: 押す回数 $n$ を増やしたり、$\alpha$ を大きくすると、平均報酬は上がるけど Diversity・Coherence がほぼ 0 まで落ちる領域がある（Fig.\ref{fig:parameter}）。validation set で「3 指標の和」を最大化する $\alpha, n$ を選ぶヒューリスティクス。
-  - HH-RLHF: Vicuna $\alpha=0.5, n=30$、Falcon $\alpha=0.2, n=200$
-  - SHP: Vicuna $\alpha=1.0, n=50$、Llama3 $\alpha=1.0, n=30$
-- **学習設定**: Adam（よく使われる最適化アルゴリズム）, 学習率 $10^{-4}$, バッチ 512, fp16, 100 エポック、NVIDIA A100 80GB。
-- **著者自身が認める限界（appendix A）**:
-  1. 最終層のみへの介入で、複数層 / 低ランク部分空間への一般化は未着手
-  2. 単一の報酬による単目的最適化（helpful × harmless の多目的化はまだ）
-  3. 1 反復の policy iteration なので最適性の理論保証はない
-- **GPT-4 を審判にした評価のバイアス**: 報酬モデルも GPT-4 も同じ「人間の好み」ベースなので、両者が相関して数字が良く見えやすい。人手評価は今回入っていない、という点は読み手としては要注意。
+- まず `main.tex` の abstract を読み、問題設定が fine-tuning のコスト、test-time alignment の限界、representation editing の導入であることを押さえる。
+- 次に `intro.tex` を読み、contributions の 3 点と、Static RE が固定 perturbation で autoregressive nature を使っていないという動機を確認する。正規ノートの Summary の「問題」「貢献」に対応する。
+- 数学的な対応を理解するには `background.tex` の stochastic dynamical system / optimal control を軽く見てから、`method.tex` の Definition "Language dynamical system"、controlled system、objective、Bellman equation、test-time update を順に読む。正規ノートの Re-Control の説明と数式の中心部分に対応する。
+- 実験の読み方は `exp.tex` の Experimental Setup、Baselines、Experimental Results を読んだあと、`table/maintable.tex` の Table \(\ref{tab:performance}\) で 4 設定の数値を確認する。正規ノートの Summary「結果」に対応する。
+- 限界と実装詳細は `appendix.tex` を読む。特に `appendix:limitations`、HH-RLHF / SHP の value network 設定、test-time \(\alpha,n\)、HarmfulQA の OOD 設定、GPT-4 evaluation prompt が重要である。正規ノートの Critical Thoughts と Notes / Quotes に対応する。
+- `main.bbl` は baseline や関連研究の対応を確認するために使う。たとえば Li et al. の Inference-Time Intervention は main.bbl では NeurIPS 2023 として載っており、Static RE の背景を追うときの参照になる。
 
 ## もとの論文・正規ノート
 

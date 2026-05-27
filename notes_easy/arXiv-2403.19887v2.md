@@ -1,4 +1,4 @@
-# Jamba: A Hybrid Transformer-Mamba Language Model（Transformer と Mamba を混ぜた言葉のAI「Jamba」）
+# Jamba: A Hybrid Transformer-Mamba Language Model（Attention-SSM ハイブリッド LLM の位置づけ）
 
 - arXiv: https://arxiv.org/abs/2403.19887
 - 一次ソース: ../papers/arXiv-2403.19887v2/
@@ -8,164 +8,148 @@
 
 ## 一言で言うと
 
-Transformer と Mamba という 2 種類の「文章を読むしくみ」を混ぜて作った大きな AI で、長い文章を速く・少ないメモリで読める新しい言語モデル。
+Jamba は、Transformer の Attention 層、Mamba に代表される state-space model (SSM) 層、Mixture-of-Experts (MoE) を組み合わせ、長文脈での KV cache と throughput の制約を下げつつ、Mixtral や Llama-2 70B に近い標準ベンチマーク性能を狙う decoder-only base LLM である。公開構成は 12B active / 52B total available parameters、256K tokens context をサポートし、著者は “first production-grade Attention-SSM hybrid model” と位置づけている（main.tex Introduction）。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- ChatGPT のような「言葉の AI（言語モデル）」の中心には **Transformer** という仕組みが使われている。これは文章のすべての単語どうしを「全員 vs 全員」で見比べて意味を理解する方法。
-  - ← **言語モデル**: 「次にどんな言葉が来そうか」を当てるのが得意な AI のこと。文章を書いたり質問に答えたりできる。
-  - ← **Transformer**: 文章を読むときに「単語どうしの関係」を全部いっぺんに調べるしくみ。今の AI のほとんどがこれ。
-- でも Transformer には弱点がある。
-  - **長い文章になるほどメモリをすごく食う**。たとえば 25 万単語ぶんの文章を読ませようとすると、メモリ（KV キャッシュ）が 128GB とか必要になる（LLAMA-2 7B の場合）。
-    - ← **メモリ / KV キャッシュ**: AI が「さっき出てきた単語の特徴」をメモしておくノートのこと。長い文章ほどノートが分厚くなる。
-  - **動きが遅い**。新しい単語を 1 個書くたびに、それまでの全単語をもう一度見直す必要があるから。
-- もう 1 つ別の方法に **Mamba**（マンバ）というやり方がある。これは「文章を頭から順番に読んで、1 つの要約メモだけ持って進む」仕組み。メモリも少なく、速い。でも、Transformer に比べて賢さで負けがちだった。
-  - ← **Mamba（SSM の一種）**: 文章を最初から最後まで順番に流して、途中の情報を 1 個のメモにまとめながら進むしくみ。長文に強くて速いけど、賢さで Transformer に少し劣る。
-  - ← **SSM（State Space Model, 状態空間モデル）**: ↑の Mamba のような「順番に読んで 1 個の状態（メモ）を更新していく」種類の AI の総称。
-- そこで「**2 つを混ぜたら、両方のいいとこ取りができるんじゃない？**」と考えたのがこの論文。
+- **問題設定**: Transformer は長文脈で key-value (KV) cache が大きくなり、生成時も各 token で全文脈への計算が必要になる。Mamba/SSM は長距離系列を効率よく扱えるが、同規模 Transformer に性能で遅れるという前提から、Attention と SSM をどの比率で混ぜれば品質・メモリ・throughput の折り合いが取れるかを扱う。
+- **対象範囲 / 仮定**: 対象は pretrained base large language model であり、公開モデルは alignment、instruction tuning、moderation mechanisms を経ていない（main.tex Important notice）。訓練データは Web、books、code を含む in-house dataset で、last update は March 2024、quality filters と deduplication を含むとだけ説明される。
+- **既存研究との差分**: Transformer、Mamba、MoE は既存要素だが、Jamba はこれらを Jamba block として大規模に組み合わせる。関連研究として H3、Hyena、StripedHyena などの Attention-SSM 系が挙げられるが、著者は規模と production-grade 実装の点で Jamba が異なると主張する。
+- **この論文で答えたい問い**: Attention と Mamba の比率 $a:m$、MoE の入れ方 $e,n,K$、明示的な位置情報の要否、Mamba 大規模化時の安定化が、品質・KV cache・throughput・long-context 能力にどう効くかを実験で示す。
 
-## どうやって解いたの？
+## 背景と前提
+
+- **Transformer / Attention**: 文脈中の token 間関係を self-attention で扱う標準的な LLM アーキテクチャ。長文脈では KV cache が制約になるため、Attention 層数を減らすことがメモリ削減に直結する。
+- **Mamba / SSM**: Mamba は state-space model の一種として扱われる。RNN のように単一 summary state を持つ利点を意識しつつ、RNN より訓練を並列化しやすく長距離関係に強いが、著者は「comparably sized Transformer language models」にはまだ性能で遅れると述べる。
+- **MoE**: Jamba では MLP の一部を MoE に置き換え、total available parameters を増やしながら、各 forward step の active parameters と compute を管理するために使う。router が token ごとに top $K$ experts を選ぶ。
+- **baseline との関係**: 標準ベンチマークでは Llama-2 13B、Llama-2 70B、Gemma、Mixtral と比較する。メモリ・throughput・long-context では特に Mixtral-8x7B と Llama-2-70B が比較軸になる。
+- **評価への姿勢**: 著者自身が Evaluation 冒頭で、benchmarks は実アプリケーションで重要なものと部分的にしか相関せず、gaming を誘うため cautiously に扱うと述べる。この論文の数値は、主張の根拠ではあるが、著者も万能な品質測定とは見ていない。
+
+## 提案手法
 
 ### コアアイデア
 
-「Transformer の層（賢いけど重い）」と「Mamba の層（軽くて速いけど少しおバカ）」を、**1：7 の割合で交互に並べる**。つまり 8 個の層のうち 1 個だけ Transformer で、残り 7 個は Mamba。これを「**Jamba ブロック**」と呼び、ブロックを 4 つ縦に積んで巨大な AI を作った。
+Jamba は Transformer layers、Mamba layers、MoE modules を混ぜる hybrid decoder architecture である。1 つの **Jamba block** は $l$ 個の層からなり、各層は Attention module または Mamba module の後に MLP を持つ。一部の MLP は MoE layers に置き換えられる。公開実装では Jamba block を 4 個積み、各 block の中で Attention:Mamba を $a:m=1:7$ にするため、Attention 層は全体で少ない。
 
-例え話：8 人で 1 つのプロジェクトをやるとき、「全員と細かく相談する人（Transformer）」を 1 人だけ入れて、残り 7 人は「前の人の話を聞いて自分の作業をどんどん進める人（Mamba）」にする。会議が少ないから速いし、それでも 1 人だけは全体を見渡してくれているので品質も保てる、というイメージ。
+この設計の狙いは、Attention を完全には捨てずに in-context learning や format adherence に必要な能力を保ち、Mamba 層を多くすることで長文脈時の KV cache と throughput を改善することである。MoE は model capacity を増やすが、top-$K$ routing により active parameters を抑える役割を持つ。
 
-さらに、各層の中の「考える部分（MLP）」の一部を **専門家チーム制（MoE: Mixture-of-Experts）** に置き換える。16 人の専門家がいて、入ってきた単語ごとに「お前はこの 2 人に質問しろ」とルーターが振り分ける。全員に聞かないから速いし、人数（知識の総量）はたくさん保てる。
+### 重要な定義・数式
 
-- ← **MoE（Mixture of Experts, 専門家混合）**: 「全員に毎回聞く」のではなく、「質問ごとに上位の数人だけに聞く」しくみ。全体の知識は多くできるのに、毎回の計算は少なくて済む。
-
-### 仕組み
-
-- step1: **Jamba ブロックを定義する**。1 ブロックは $l=8$ 層。そのうち $a:m = 1:7$ の割合で Attention 層 1 個と Mamba 層 7 個。
-  - ← **Attention（アテンション）**: Transformer の中心の仕組み。「文章のどの単語に注目するか」を計算する。
-- step2: 各層には「Attention か Mamba」のどちらかが入っていて、そのあとに **MLP**（小さい計算ブロック）が付く。
-  - ← **MLP（Multi-Layer Perceptron, 多層パーセプトロン）**: 入ってきた数字をちょっと変形する小さなネットワーク。料理でいう「下味をつける」工程みたいなもの。
-- step3: 2 層ごと（$e=2$）に MLP を **MoE** に置き換える。MoE には $n=16$ 人の専門家がいて、各単語につき上位 $K=2$ 人だけが働く。
-- step4: Jamba ブロックを 4 個積む。全部で 12B（120 億）の active パラメータ、52B（520 億）の総パラメータ。
-  - ← **パラメータ**: AI が学習で覚えた「数字のメモ」の総数。多いほど賢くなりやすいけどメモリも食う。
-  - ← **active パラメータ**: 1 単語を処理するときに実際に使う数字の数。MoE のおかげで「総数は多いけど毎回使う数は少なく」できる。
-- step5: 位置情報（RoPE など）は **使わない**。Mamba 層が「順番に読む」しくみなので、自動的に「これは何番目の単語か」が伝わるから。
-  - ← **RoPE（Rotary Position Embedding）**: Transformer に「何番目の単語か」を教える代表的なやり方。Jamba では不要だった。
-- step6: 7B（70 億）規模になると Mamba の中で数字が爆発して訓練が壊れたので、**RMSNorm**（数字を一定範囲に整える処理）を Mamba 内部に入れて落ち着かせた。
-  - ← **RMSNorm**: 数字が大きくなりすぎないように、毎回スケールを揃える「ものさし合わせ」。
-
-### 主要な数式
-
-この論文には複雑な数式はほぼ出てこない。代わりに「**ブロックの作り方の設計レシピ**」が中心。それを式っぽく書くと：
+TeX 中には目的関数や Mamba 更新式のような中核的な明示式はほぼ無く、主な「数式」は architecture の設計変数である。以下は main.tex の Jamba block 定義と公開構成に出てくる表記を保った整理である。
 
 $$
-\text{1 Jamba ブロック} = (l\ \text{層}) \times (\text{比率}\ a:m) + (e\ \text{層ごとに MoE})
+l,\quad a:m,\quad e,\quad n,\quad K
 $$
 
-**この式が言ってること**: 1 個の Jamba ブロックは「層の数 $l$」「Attention と Mamba の混ぜ比 $a:m$」「何層ごとに専門家チームに切り替えるか $e$」の 3 つの設計値で決まる、ということ。
+**式の意味**: Jamba architecture の自由度を表す記号である。main.tex は “the different degrees of freedom in the Jamba architecture” としてこれらを列挙している。
 
-**記号の意味**:
-- $l$ … 1 ブロックの中の層の数（リリース版は 8）
-- $a:m$ … Attention 層と Mamba 層の比（リリース版は 1:7、つまり 8 層のうち 1 個だけ Attention）
-- $e$ … 何層に 1 回 MoE を入れるか（リリース版は 2、つまり 1 層おき）
+**記号の定義**:
+- $l$ ... 1 つの Jamba block に含まれる層数
+- $a:m$ ... attention-to-Mamba layers の比率
+- $e$ ... single MLP の代わりに MoE を使う頻度
+- $n$ ... MoE layer あたりの total number of experts
+- $K$ ... 各 token で使う top experts の数
 
-**身近な例え**: 料理のレシピみたいなもの。「ハンバーグ 1 個」のレシピが「ひき肉 8 個ぶんに、パン粉 1:7 で混ぜて、2 個に 1 個チーズ入れる」と書かれている感じ。数字を変えれば違う料理（モデル）になる。
-
----
-
-もう 1 つ大事なのは、MoE が「**速さを保ったまま賢さだけ増やす**」しくみであること。
+**この論文での役割**: 品質、KV cache、throughput、model capacity、active parameters の tradeoff を調整するための設計軸である。Ablations and Insights の Tables 4-8 は、主にこの設計空間の妥当性を調べる。
 
 $$
-\text{毎回使うパラメータ数} \approx \frac{K}{n} \times \text{総パラメータ数（MoE 部分）}
+l = 8,\quad a:m = 1:7,\quad e = 2,\quad n = 16,\quad K = 2
 $$
 
-**この式が言ってること**: 16 人の専門家のうち毎回 2 人しか働かないなら、計算量は「2 / 16 = 1/8 倍」で済む。だから「総人数（知識量）」を増やしても、1 回ごとの計算は重くならない。
+**式の意味**: 公開 Jamba 実装の 1 block あたりの具体設定である（main.tex, “Jamba Implementation for a Single 80GB GPU”）。
 
-**記号の意味**:
-- $K$ … 1 単語あたり実際に呼ばれる専門家の数（Jamba は 2）
-- $n$ … 専門家の総数（Jamba は 16）
+**記号の定義**:
+- $l=8$ ... 1 Jamba block は 8 layers
+- $a:m=1:7$ ... 8 layers のうち Attention と Mamba を 1:7 の比率で置く
+- $e=2$ ... every other layer で MLP を MoE に置き換える
+- $n=16$ ... MoE layer ごとに 16 experts
+- $K=2$ ... token ごとに top-2 experts を使う
 
-**身近な例え**: 学校に先生が 16 人いて、生徒は質問するときに「上位 2 人だけ呼ぶ」ルール。先生は 16 人ぶんいるから学校全体の知識は多いけど、生徒 1 人にかかる手間は先生 2 人ぶんで済む。
-
----
-
-長文での **メモリ節約** が Jamba の最大のウリで、それは「Attention 層が少ない＝メモのページ数が少ない」ことから来ている。
+**この論文での役割**: 単一 80GB GPU に収める公開モデルの設計であり、Table 1 の 4GB KV cache、Figure 2 の context length、Figure 3 の throughput 比較につながる。
 
 $$
-\text{KV キャッシュの大きさ} \propto (\text{Attention 層の数}) \times (\text{文章の長さ})
+\text{Available params}=52\text{B},\quad \text{Active params}=12\text{B},\quad \text{KV cache}=4\text{GB}
 $$
 
-**この式が言ってること**: AI が「過去の単語のメモ」を取るのは Attention 層だけ。Attention 層を 8 分の 1 に減らせば、メモも 8 分の 1 くらいになる。
+**式の意味**: Table 1 における Jamba のパラメータ数と、256K context, 16bit での KV cache 量をまとめたものである。
 
-**記号の意味**:
-- $\propto$ … 「だいたい比例する」という意味の記号
-- KV キャッシュ … 過去の単語の特徴を覚えておく「ノート」のメモリ量
+**記号の定義**:
+- Available params ... MoE experts を含む total available parameters
+- Active params ... 1 forward step で実際に使われる parameters
+- KV cache ... attention keys and values を context に対して保存するメモリ
 
-**身近な例え**: 8 人で会議していて、議事録を取る人を 1 人にしぼれば、ノートも 1 冊で済む。8 人全員が議事録を取ると 8 冊いる。Jamba は「議事録係を 1 人にしぼった」ようなもの。
+**この論文での役割**: Jamba の効率主張の中心である。Table 1 では LLAMA-2 (6.7B available / 6.7B active) が 128GB、Mistral が 7.2B active / 32GB、Mixtral が 12.9B active / 32GB、Jamba が 12B active / 4GB と比較される。
 
-## 何がすごいの？
+$$
+\text{L-Eval Avg F1: Mixtral}=0.43,\quad \text{Jamba}=0.44
+$$
 
-- **メモリが圧倒的に少ない**：25 万 6 千単語（256K トークン）の文章を読むとき、必要な KV キャッシュは **4GB だけ**。比較すると：
-  - LLAMA-2（7B）: 128GB
-  - Mistral: 32GB
-  - Mixtral: 32GB
-  - → Jamba は Mixtral の **8 分の 1**、LLAMA-2 の **32 分の 1**（Table 1）
-- **1 枚の GPU（A100 80GB）に収まる**：他のモデルでは無理な「26 万単語の文章」を 1 GPU で扱える。Mixtral と比べると **2 倍**、Llama-2-70B と比べると **7 倍** の文章長を扱える（Figure 2）。
-- **速さも 3 倍**：長い文章（128K トークン）を処理するスピードが Mixtral の **3 倍**（Figure 3）。
-- **賢さは大きいモデルと互角**：標準テストのスコア（Table 2、Jamba と他モデル）：
-  - HellaSwag: **87.1**（Mixtral 86.7, Llama-2-70B 85.3 → トップ）
-  - WinoGrande: **82.5**（Mixtral 81.2, Llama-2-70B 80.2 → トップ）
-  - PIQA: **83.2**（トップ）
-  - MMLU: 67.4（Mixtral 70.6, Llama-2-70B 69.8 → 少し負け）
-  - GSM8K（算数）: 59.9（Mixtral 60.4 → ほぼ同等）
-  - HumanEval（プログラミング）: 29.3（Mixtral 34.8 → 少し負け）
-  - ← **MMLU / GSM8K / HumanEval**: それぞれ「大学レベルの知識テスト」「小学校算数の文章題」「プログラミング問題」の有名なベンチマーク。
-- **長い文章の質問応答も Mixtral 超え**（Table 3、L-Eval の F1 平均）: Jamba **0.44** vs Mixtral 0.43。
-  - ← **L-Eval**: 長い文書を読んでから質問に答えるテスト集。
-  - ← **F1**: 答えがどれだけ合っていたかを 0〜1 で測るスコア（高いほど良い）。
-- **針探し（needle-in-a-haystack）も合格**：26 万単語の長い文章の途中にこっそり 1 文を埋め込んでも、ちゃんと見つけ出せた（Figure 4）。
-- **発見１：Attention は 1/8 で十分**。1:3 でも 1:7 でも性能ほぼ同じだった（Table 4）。だから「1:7」を選んで軽量化した。
-- **発見２：純粋な Mamba は「答え方の形」を真似るのが苦手**。IMDB（映画レビューの「ポジ/ネガ」分類）で、Attention は 84.1 点だったのに Mamba は **48.8 点**しか取れず、しかも答えに「Very Good」「3/10」など指定外の形を出してきた（Table 6）。Attention を 1 層混ぜるだけで治った（Attention-Mamba: 90.9 点）。
-  - これは **induction head**（インダクション・ヘッド）という「真似っこ係」が Attention 層にしか育たないかららしい、と著者は説明している。
-  - ← **induction head**: 「さっき出てきたパターンをコピーして使う」ことを担当する Attention の中の小さな部品。これがあると「お手本を見て真似る」学習がうまくいく。
-- **発見３：MoE は大きいモデルで効く**。7B モデルで MoE 入れたら、OLLM スコアが 36.6 → 38.1、HellaSwag 62.5 → 66.0、NQ 15.4 → 18.9 に上がった（Table 7）。
-- **発見４：位置情報を入れなくても OK**。RoPE 入れた版と入れない版でスコアほぼ同じ（Table 8）。Mamba 層が暗黙に位置を伝えているからと推定。
-- **論文での貢献の主張**（著者本人が言っている事）：
-  1. 実用レベルで初の **Attention + SSM + MoE ハイブリッド** の大規模 LLM を公開
-  2. Mamba と Attention の混ぜ方、MoE の入れ方、位置情報、安定化（RMSNorm）の体系的な比較実験
-  3. 「純粋な Mamba は ICL（お手本を真似る学習）が苦手」という現象の発見と説明
-  4. モデルを Apache 2.0 ライセンスで一般公開 → 研究者みんなが検証できる
-- ← **ICL（In-Context Learning, 文脈内学習）**: 訓練をやり直さず、「いくつかお手本を見せたら、その場でやり方を覚えて真似る」能力。
+**式の意味**: Table 3 の long-context QA benchmarks における 3-shot F1 の平均である。
 
-## キーワード辞典
+**記号の定義**:
+- L-Eval ... long-context QA の評価枠組み
+- Avg F1 ... LongFQA、CUAD、NarrativeQA、NQ、SFiction の F1 平均
+- Mixtral / Jamba ... 比較対象モデル
 
-- **言語モデル** … 「次にどんな言葉が来るか」を予想する AI。これを応用して文章生成・質問応答ができる。
-- **Transformer** … 単語どうしの関係を全部いっぺんに調べるしくみ。今の AI の主流。
-- **Attention（アテンション）** … 文章の中の「どの単語に注目するか」を計算する Transformer の中心部品。
-- **Mamba** … 文章を頭から順番に読んで、1 個のメモを更新しながら進むしくみ。SSM の最新版。長文に強い。
-- **SSM（State Space Model）** … Mamba のような「順番に読んで状態を更新」する系統の AI の総称。
-- **MoE（Mixture of Experts）** … 専門家を 16 人くらい用意して、毎回上位 2 人だけに働かせるしくみ。賢さは保ったまま計算量を抑える。
-- **MLP** … 数字をちょっと変形する小さなネットワーク。Transformer/Jamba の各層に入っている下処理係。
-- **パラメータ** … AI が訓練で覚えた数字の総数。「脳細胞の数」みたいなもの。
-- **active パラメータ** … 1 回の処理で実際に使う数字の数。MoE のおかげで「総数は多いけど毎回使う量は少ない」が可能。
-- **KV キャッシュ** … Attention 層が「過去の単語の特徴」をメモしておく場所。長文ほど分厚くなる。
-- **GQA（Grouped-Query Attention）** … Attention の改良版で、メモを少し共有してメモリを節約するやり方。
-- **SwiGLU** … MLP の中で使われる、ちょっとカッコいい計算式。性能を少し上げる定番テクニック。
-- **RoPE（Rotary Position Embedding）** … 「何番目の単語か」を Attention に教える定番の方法。Jamba では使わなかった。
-- **RMSNorm** … 数字のスケールを揃える整地作業。Mamba の中で爆発防止に使われた。
-- **BPE（Byte-Pair Encoding）** … 文章を「単語の小さなかけら」に切り分けるやり方。Jamba は語彙 64K 個。
-- **ICL（In-Context Learning, 文脈内学習）** … お手本を見せられた瞬間にやり方を真似て答える能力。
-- **induction head** … 「さっき出てきたパターンをそのままコピーして使う」担当の Attention 内の小部品。ICL の土台。
-- **MMLU / GSM8K / HumanEval / HellaSwag / WinoGrande / PIQA / BoolQ / QuAC / NQ / TruthfulQA / BBH / ARC** … 言語モデルの賢さを測る有名なテスト集。それぞれ「大学知識」「算数」「コード」「常識推論」など得意分野が違う。
-- **L-Eval / needle-in-a-haystack** … 長い文章を扱う能力を測るベンチマーク。後者は「干し草の中から針を探す」イメージで、長文の中の 1 行を見つけ出させる。
-- **Apache 2.0** … 「商用利用・改変・再配布自由」の代表的なオープンソースライセンス。
+**この論文での役割**: Jamba が長文脈で Mixtral と同等以上に動くという著者主張を支える。ただし差は平均 0.01 であり、読者は dataset ごとの勝敗も見る必要がある。
 
-## ちょっと深掘り（中学生は飛ばして OK）
+### 実装 / アルゴリズム上の要点
 
-- **「Attention 1 層」がなぜそんなに効くのか**：著者は実際に Attention-Mamba ハイブリッドモデルの Attention 層を覗き、「最後のトークン（":"）が、お手本の正解ラベルに集中して注目している」可視化を示した（Figure 8）。これがいわゆる induction head の働きで、お手本の出力形式を真似る能力を生んでいる。3 つある Attention 層全部で合計 12 個もこういうヘッドが見つかった（モデルの 4・12・20 番目の層）。
-- **1:3 と 1:7 がほぼ同性能**だった結果（Table 4）は「Attention は実は少しでよくて、Mamba を増やすほうがメモリも速度も得」という強い設計指針になっている。
-- **RMSNorm が必要になったタイミング**は 1.3B → 7B にスケールしたとき。loss が突然跳ね上がる「loss spike」が出て、原因が Mamba 内部の活性値（数字）が大きくなりすぎることだった。RMSNorm で抑えたら綺麗に解消（Figure 9）。SSM を大規模化したい人の地雷情報。
-- **「位置情報なしで OK」の根拠**は 1.3B モデル・250B トークン訓練 1 セットだけ（Table 8）なので、本当に超長文（100 万トークン級）でも大丈夫かはまだ要検証。
-- **訓練データ**は 2024 年 3 月時点の Web / 本 / コードを使った社内独自データセット。具体的な量や、最終 12B/52B モデルが何トークンで訓練されたかは TeX に書かれていない。
-- **正規ノートで指摘されている弱点**：(1) 公開されたのは「素のモデル」で、ChatGPT のような対話調整（instruction tuning）はされていない。(2) HumanEval（コード）と TruthfulQA は Mixtral / Llama-2-70B にやや負ける。(3) ablation 実験はほぼ 1.3B か 7B 規模で、最終 12B/52B での再検証はない。
-- **TeX に書かれていない事**（推測しないように注意）: 最終モデルの正確な訓練トークン数、評価時のプロンプトの詳細、比較対象（Mixtral / Llama-2）のスコアを自前で計ったか引用したかの区別。
+- step1: Jamba block を 4 個並べる。各 block は $l=8$ layers、$a:m=1:7$、MoE は every other layer。
+- step2: 各 layer は Attention module または Mamba module の後に MLP を置く。公開構成の図では Attention MoE layer は示されるが、footnote で “our architecture does not use” とされる。
+- step3: MoE layer では $n=16$ experts から token ごとに top $K=2$ experts を router が選ぶ。これにより total available parameters と active parameters を分ける。
+- step4: Mamba layers には large model scale での training stabilization のため RMSNorm を内部 activations に追加する。Figure 9 は loss spikes が抑えられることを示す。
+- step5: 明示的な positional embeddings や RoPE は使わない。著者は Mamba layers が implicit position information を提供すると推定するが、これは Table 8 の 1.3B / 250B tokens 比較に基づく。
+- step6: その他の architecture details は GQA、SwiGLU、MoE load balancing、64K vocabulary、BPE tokenizer、each digit is a separate token、Llama/Mistral tokenizers の dummy space removal。
+- step7: 訓練は NVIDIA H100 GPUs と in-house proprietary framework で実施され、FSDP、tensor parallelism、sequence parallelism、expert parallelism を用いる。Jamba implementation は context lengths of up to 1M tokens で訓練され、released model は up to 256K tokens を扱う。
+
+## 実験・結果
+
+- **データセット / ベンチマーク**: 標準評価は HellaSwag (10-shot)、WinoGrande (5-shot)、ARC-E (0-shot)、ARC-Challenge (25-shot)、PIQA (zero-shot)、BoolQ (10-shots)、QuAC (zero-shot)、GSM8K (3-shot CoT)、HumanEval (pass@1)、NQ (5-shot)、TruthfulQA (zero-shot)、MMLU (5-shot)、BBH (3-shot)。long-context では needle-in-a-haystack、Trec-Fine / NLU Intent / Banking77 / CLINC150 の few-shot classification、L-Eval 由来の NarrativeQA / LongFQA / NQ / CUAD / SFiction を使う。
+- **比較対象 / baseline**: Table 2 では Llama-2 13B、Llama-2 70B、Gemma、Mixtral。Table 3 と Figure 5 では Mixtral。throughput と context length では Mixtral 8x7B と Llama-2-70B。ablation では pure Attention、pure Mamba、Attention-Mamba hybrid、Jamba+MoE、Jamba+RoPE を比較する。
+- **指標**: 標準ベンチマークの task score、HumanEval は pass@1、L-Eval は F1、few-shot classification は exact match with greedy decoding、ablation では OLLM、HellaSwag、WinoGrande、NQ、log-prob per byte on C4 / Books / Code、throughput は tokens/second。
+- **主な結果**: Table 1 では Jamba の KV cache は 256K context, 16bit で 4GB、Mixtral は 32GB、LLAMA-2 (6.7B available / 6.7B active) は 128GB。Figure 2 では single A100 80GB GPU で Jamba が Mixtral の 2x、Llama-2-70B の 7x の context length を扱えるとされる。Figure 3 では single A100 80GB GPU, int8, 8K context, batch variation と、4 A100 GPUs, no quantization, 128K context の両設定で Mixtral に対し 3x throughput と報告される。
+- **主な結果**: Table 2 の Jamba は HellaSwag 87.1、WinoGrande 82.5、ARC-E 73.5、ARC-C 64.4、PIQA 83.2、NQ 45.9、TruthfulQA 46.4、BoolQ 88.2、QuAC 40.9、GSM8K 59.9、HumanEval 29.3、MMLU 67.4、BBH 45.4。Mixtral は MMLU 70.6、HumanEval 34.8、GSM8K 60.4 などで上回るが、Jamba は HellaSwag、WinoGrande、PIQA で表中最高値。
+- **主な結果**: Table 3 の L-Eval 3-shot F1 は LongFQA 0.44、CUAD 0.44、NarrativeQA 0.30、NQ 0.60、SFiction 0.40、Avg 0.44。Mixtral は 0.42、0.46、0.29、0.58、0.42、Avg 0.43。
+- **主な結果**: Table 4 の 1.3B / 250B tokens ablation では、Attention と Mamba より Jamba no MoE が良く、$a:m=1:3$ と $a:m=1:7$ は OLLM 37.2、HellaSwag 65.1、WinoGrande 61.7 とほぼ同じ。Table 5 の 7B / 50B tokens では Jamba no MoE が OLLM、HellaSwag、NQ、C4/Books/Code log-prob で Attention/Mamba を上回る一方、WinoGrande は Attention 59.7、Jamba 58.8、Mamba 55.8 である。
+- **主な結果**: Table 6 では pure Mamba が IMDB 48.8、QuAC 20.2、NarrativeQA 27.7 と落ち、Attention-Mamba は IMDB 90.9、QuAC 26.6、NarrativeQA 43.7。著者は Mamba が “Positive/Negative” 形式に従わず “Very Good” や “3/10” などを出す例を挙げ、ICL / format adherence の問題と解釈する。
+- **主な結果**: Table 7 では 7B / 50B tokens の Attention-Mamba hybrid に MoE を加えると、OLLM 36.6 から 38.1、HellaSwag 62.5 から 66.0、WinoGrande 58.8 から 61.2、NQ 15.4 から 18.9 に改善する。Table 8 では Jamba と Jamba+RoPE の log-prob は同じ値で、明示的位置情報なしでも同程度とされる。
+- **著者が主張する貢献**: 公開実装を Apache 2.0 license で Hugging Face に出し、Attention-SSM hybrid architecture を production-grade に示したこと、長文脈で小さい KV cache と高 throughput を示したこと、Attention/Mamba 比、MoE、位置情報、RMSNorm の設計判断を ablation で支えたこと、pure Mamba の ICL / format adherence の弱点を観察し hybrid の induction-head 的挙動を示したこと。
+
+## 妥当性と限界
+
+- **この主張を支える根拠**: 効率面は Table 1 の KV cache、Figure 2 の single GPU context length、Figure 3 の throughput で支えられる。品質面は Table 2 の標準ベンチマーク、Table 3 と Figures 4-5 の long-context 評価で支えられる。設計面は Tables 4-8 と Figures 6-9 の ablation で、$a:m=1:7$、MoE、RMSNorm、位置情報なしの選択を説明している。
+- **著者が認めている limitations / future work**: 公開モデルは pretrained base model で、alignment / instruction tuning / moderation mechanisms がないため、additional adaptation なしに production environments や end users に使うべきでない。Future work として、hybrid models at large scale で ICL の emergence を調べること、state-space models から attention-like scores を抽出する方向、smaller-scale training runs の checkpoints 公開による追試促進が述べられる。
+- **読者として注意すべき点**: 訓練データは in-house dataset で、具体的なデータ量や最終 12B/52B モデルの正確な訓練 token 数は TeX 中には明示されない。比較ベンチマークの prompt 詳細や、比較対象スコアの取得方法の細部も TeX 中には明示されない。著者自身が benchmarks を cautiously に扱うと述べるため、Table 2 のスコアだけで実アプリケーション性能を断定しない方がよい。
+- **読者として注意すべき点**: Long-context の強さは needle-in-a-haystack、few-shot classification、L-Eval で示されるが、Table 3 の Avg F1 差は Jamba 0.44 vs Mixtral 0.43 と小さい。needle-in-a-haystack は埋め込まれた statement の retrieval なので、長文脈 reasoning 全般を代表するとは限らない。
+- **読者として注意すべき点**: ablation は 1.3B / 250B tokens または 7B / 50B tokens が中心で、最終 12B active / 52B total モデルで全設計を再比較した表は TeX 中にはない。位置情報なしの結論も Table 8 の 1.3B / 250B tokens 比較が根拠であり、すべてのスケール・すべての長文脈条件で保証されたものではない。
+- **追加で確認したい実験 / 疑問**: instruction tuning 後の long-context 性能、より複雑な multi-hop QA や code editing での 256K context 評価、最終スケールでの $a:m$ と MoE 設定の再 ablation、公開モデルの benchmark contamination の検証、pure Mamba の format adherence が SFT や format-aware training でどこまで改善するか。
+
+## 用語メモ
+
+一般的な辞書的定義ではなく、この論文での使われ方を中心に書く。
+
+- **Jamba block**: Transformer layers、Mamba layers、MoE modules を組み合わせる基本単位。公開実装では 4 blocks を積む。
+- **$a:m$**: attention-to-Mamba layers の比率。公開実装は $1:7$。Attention を減らすほど KV cache と long-context compute は下がるが、能力低下の可能性がある。
+- **$l,e,n,K$**: $l$ は block 内層数、$e$ は MoE を入れる頻度、$n$ は experts 数、$K$ は token ごとに使う experts 数。
+- **Available params / active params**: MoE により total available parameters と forward step で使う active parameters が分かれる。Jamba は 52B available、12B active。
+- **KV cache**: Attention の keys and values を context に対して保存するメモリ。Jamba は Attention 層を少なくすることで 256K context, 16bit の KV cache を 4GB にする。
+- **Mamba / SSM**: Jamba の非 Attention 層の基盤。長文脈・throughput に有利だが、pure Mamba は一部 ICL/format adherence タスクで弱いと観察される。
+- **MoE**: MLP の一部を experts に置き換える仕組み。Jamba では every other layer、16 experts、top-2 experts per token。
+- **ICL / induction heads**: few-shot examples の input-output format をその場で利用する能力と、それを支える Attention head の説明。Figure 8 では最後の token “:” から few-shot labels に attention が向く例を示し、3 attention layers（layers 4, 12, 20）に 12 such heads を見つけたと書かれる。
+- **RMSNorm**: 大規模 Jamba の Mamba 内部 activations が大きくなり loss spikes を起こしたため、Mamba layers 内部に追加された正規化。
+- **RoPE / positional information**: Jamba では明示的な positional embeddings や RoPE を使わない。著者は Mamba layers が implicit position information を提供すると推定する。
+- **OLLM**: HuggingFace OpenLLM leaderboard の summary statistic。ablation の小規模評価で使われる。
+- **log-prob per byte**: C4、Books、Code の perplexity 系評価として使われる指標。表では値が高い、つまり負の値が 0 に近いほど良い。
+
+## 読む順番の提案
+
+- まず Abstract と Introduction を読み、Jamba が “hybrid Transformer-Mamba mixture-of-experts (MoE) architecture” として何を解こうとしているか、公開モデルが base model である注意書きを確認する。正規ノートの Summary に対応する。
+- 次に Model Architecture と Figure 1、Table 1 を読む。$l,a:m,e,n,K$、available/active parameters、KV cache の関係が分かると、正規ノートの Takeaway にある「Attention は 1/8 で十分」「KV cache 4GB」が読める。
+- その後、Reaping the Benefits の single GPU 実装と throughput analysis、Figures 2-3 を読む。single 80GB GPU、int8、8K/128K context、3x throughput という主張の条件を確認する。
+- Evaluation では Table 2、Table 3、Figures 4-5 を先に見る。標準ベンチマークの強弱と、long-context 評価で何を測っているかを分けて読む。
+- Ablations and Insights は Tables 4-8、Figures 6-9 の順に読む。正規ノートの Critical Thoughts にある設計妥当性・疑問点はこの節に対応する。
+- main.bbl は、Mamba、Transformer、Mixtral、H3/Hyena/StripedHyena、L-Eval、induction heads など、正規ノートの Related Papers に挙がる先行研究名を確認するために見る。
 
 ## もとの論文・正規ノート
 

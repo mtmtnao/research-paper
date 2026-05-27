@@ -1,4 +1,4 @@
-# Voyager: An Open-Ended Embodied Agent with Large Language Models（大規模言語モデルで動く、終わりのない世界の探検エージェント「ボイジャー」）
+# Voyager: An Open-Ended Embodied Agent with Large Language Models（GPT-4 を用いた Minecraft の open-ended embodied lifelong learning agent）
 
 - arXiv: https://arxiv.org/abs/2305.16291
 - 一次ソース: ../papers/arXiv-2305.16291v2/
@@ -8,127 +8,101 @@
 
 ## 一言で言うと
 
-ChatGPT の親戚（GPT-4 ← OpenAI が作った、すごく賢い文章生成 AI）にマインクラフトを「自分で目標を立てて遊ばせ」、覚えたワザを溜めて使い回せるようにした、初の生涯学習エージェント。
+Minecraft のような固定ゴールを持たない 3D 環境で、GPT-4 に次のタスクを提案させ、JavaScript コードとしてスキルを獲得・保存・再利用させる embodied lifelong learning agent、Voyager を提案する論文。著者は、Voyager が 160 prompting iterations で 63 unique items を発見し、既存 LLM-agent baseline より $3.3 \times$ 多い item、$2.3 \times$ 長い移動距離、最大 $15.3 \times$ 速い tech tree 到達を示したと主張している（abstract, Experiments / Evaluation Results, Table 1）。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- マインクラフトは「クリア」という決まったゴールがなく、木を切る → 道具を作る → 鉄を掘る → ダイヤを取る、と自分で目標を決めて遊んでいくゲーム。人間ならどんどん上達するけど、これを AI にやらせるのが超むずかしい。
-- 今までの AI には大きく 2 タイプあって、どっちも足りない部分がある:
-  - **強化学習タイプ**（試行錯誤して「ご褒美」を最大化するように学ぶ AI ← 犬におやつでお手を教えるイメージ）。動きの 1 コマ 1 コマを学ぶので、長い手順がいるタスクが苦手。
-  - **LLM タイプ**（大規模言語モデル ← 大量の文章を読んで賢くなった文章 AI のこと。ChatGPT がこれ）を使う既存エージェント。1 回 1 回のタスクは出来ても、覚えたことを「次のタスクのために溜めて使い回す」仕組みがなかった。
-- つまり「自分で次の目標を考え、できるようになったことを覚え、新しい世界でも応用する」ことを、人の手助けナシで延々と続ける AI がいなかった。
+- **問題設定**: open-ended world で、エージェントが自分で適切なタスクを提案し、環境フィードバックからスキルを改善し、成功したスキルを記憶して、長時間にわたり探索を続けられるかを扱う。Introduction では、人間プレイヤーが Minecraft で木材採取から diamond tools へ進むように、エージェントにも「propose suitable tasks」「refine skills」「continually explore the world」が必要だと述べる。
+- **対象範囲 / 仮定**: 実験環境は MineDojo 上の Minecraft で、制御には Mineflayer JavaScript APIs を使う。Voyager は Minecraft screen pixels から低レベル操作を直接出す手法ではなく、high-level Mineflayer API とテキスト化された feedback / meta / inventory を前提にする（Experiments / Baselines, Appendix の system-level comparison）。
+- **既存研究との差分**: RL / imitation learning 系は primitive actions 上で動くため、systematic exploration・interpretability・generalization が難しいと位置づけられる。ReAct, Reflexion, AutoGPT などの LLM agent はあるが、著者はそれらを「progressively acquire, update, accumulate, and transfer knowledge over extended time spans」できる lifelong learner ではないと見る。Voyager の差分は、automatic curriculum、self-generated skill library、3 種類の feedback を用いる iterative prompting mechanism を同時に持つ点にある（Fig. 2, Appendix の system-level comparison）。
+- **この論文で答えたい問い**: GPT-4 を black-box API として使うだけで、Minecraft 内で新しいタスクを自律的に選び、実行可能コードのスキルを蓄積し、新しい world / unseen tasks に転用できるか。さらに、automatic curriculum、skill library、environment feedback、execution errors、self-verification、GPT-4 code generation の各要素が実際に性能を支えているかを ablation で検証する。
 
-## どうやって解いたの？
+## 背景と前提
+
+- **Open-ended embodied agent**: この論文での embodied agent は、Minecraft 内の位置、inventory、equipment、nearby blocks / entities、biome、health、hunger などの状態を持ち、環境内で行動する agent を指す。open-ended は、固定された end goal や storyline がなく、agent 側が新しい目的を選び続ける状況を指す。
+- **Minecraft が難しい理由**: Minecraft では procedurally generated 3D terrains を探索し、resource gathering と crafting により wooden tool $\rightarrow$ stone tool $\rightarrow$ iron tool $\rightarrow$ diamond tool のような tech tree を進む必要がある。論文は、この構造が systematic and compositional skills を要求すると説明する（Experiments / Evaluation Results, Table 1）。
+- **LLM を使う前提**: Voyager は GPT-4 を prompting / in-context learning で使い、model parameter access、gradient-based training、finetuning を不要にする。実験では `gpt-4-0314`、`gpt-3.5-turbo-0301`、`text-embedding-ada-002` を使い、temperature は automatic curriculum だけ 0.1、その他は 0 に設定する（Experiments / Experimental Setup）。
+- **Code as action space**: 論文は低レベル motor commands ではなく、Mineflayer を呼び出す JavaScript program を action space にする。program は temporally extended で compositional な action を表せるため、long-horizon Minecraft tasks に向くというのが著者の設計理由である（Introduction, Method / Skill Library）。
+- **Baseline との関係**: ReAct は reasoning traces と action plans を生成する LLM agent、Reflexion は ReAct に self-reflection を加えたもの、AutoGPT は high-level goal を subgoals に分解して ReAct-style loop で実行するものとして再実装される。これらは元々 Minecraft 用ではないため、著者は MineDojo 実験設定に合わせて re-interpret したと明記している（Experiments / Baselines, Appendix / Baselines）。
+- **直接比較しない手法**: VPT、DreamerV3、DECKARD、DEPS、Plan4MC などの prior Minecraft agents は関連研究や Appendix の system-level comparison で扱われる。ただし本文の直接比較対象は ReAct / Reflexion / AutoGPT であり、Voyager は high-level Mineflayer API を使うため、screen pixels から low-level controls を出す既存手法とは apple-to-apple でないと著者は断っている（Experiments / Baselines, Related work, Appendix の system-level comparison）。
+
+## 提案手法
 
 ### コアアイデア
 
-例えるなら、3 人の友達がチームを組んでマインクラフトをプレイしている感じ。
-1 人目は「先生」役で「次は石のツルハシを作ってみよう」とお題を出す。
-2 人目は「ノート係」役で、できるようになったワザを 1 つ 1 つノート（プログラムのコード）にして集めている図鑑みたいなもの。
-3 人目は「審判」役で「今、課題はクリアできた？まだ？じゃあこう直そう」とチェックする。
-この 3 役を全部 GPT-4 という同じ AI に役割を切り替えてやってもらう、というのが Voyager の発想。
+Voyager は 3 つのモジュールからなる（Fig. 2）。1 つ目は **automatic curriculum** で、GPT-4 が「discover as many diverse things as possible」という上位目標、agent state、completed / failed tasks、GPT-3.5 による追加 context を受け取り、次の単一タスクを提案する。2 つ目は **skill library** で、成功した行動を executable code として保存し、program description の embedding を key、program を value とする vector database として管理する（Fig. 4）。3 つ目は **iterative prompting mechanism** で、generated program を実行し、environment feedback、execution errors、self-verification の critique を次ラウンドの prompt に戻してコードを改善する（Method / Iterative Prompting Mechanism）。
 
-そして覚えたワザはふつうの文章じゃなくて **JavaScript のプログラム**（コンピュータへの命令を文で書いたもの ← 料理のレシピみたいに、順番通りやれば同じ結果が出る）として保存する。レシピだから他のレシピと組み合わせて、もっと複雑な料理（＝スキル）を作れる。
+重要なのは、Voyager がスキルを自然言語の計画ではなく JavaScript 関数として保持する点である。例えば論文中では `craftStoneShovel()` や `combatZombieWithSword()` のような関数が例示され、複雑なスキルは既存の簡単な program を compose して作ると説明される。これにより、skill は再利用可能で、人間にも読め、古い skill を model weights に上書きしないため catastrophic forgetting を緩和できる、というのが著者の主張である。
 
-### 仕組み
+### 重要な定義・数式
 
-Voyager の中身は 3 つのモジュール。
+TeX 中に、この手法の中核となる目的関数・更新式・評価式はほぼ明示されていない。したがって、ここでは数式を作らず、本文と Appendix で定義されている主要な設計要素を整理する。
 
-- **モジュール 1: 自動カリキュラム（Automatic Curriculum）**
-  - 「先生」の役。GPT-4 にエージェントの今の状態（持っている道具、近くにあるブロック、いる場所、HP など）を見せて「次にやるべき新しい目標」を出させる。
-  - 大方針はたった一つ「できるだけ多様なことを発見しろ」。これだけで、今いる場所が砂漠なら砂やサボテンを集めるタスクが、森ならまず木を切るタスクが出てくるように動く。
-  - GPT-4 はちょっと高いので、補助の質問（「今これって何だっけ？」みたいな細かい NLP 作業 ← 自然言語処理：文章を扱うコンピュータ処理のこと）は安い GPT-3.5 に振っている。
+- **Automatic curriculum**: GPT-4 による bottom-up task proposal。prompt には、diverse behavior を促す directives、agent の current state、previously completed and failed tasks、GPT-3.5 の self-ask / self-answer による additional context が入る（Method / Automatic Curriculum, Appendix / Automatic Curriculum）。prompt の条件では、次タスクは single phrase で、難しすぎず、novel and interesting で、視覚確認が必要な placing / building / planting / trading tasks は避けるよう指定される（`appendix/prompts/curriculum_prompt.txt`）。
+- **Skill library**: skill は「specific task proposed by the automatic curriculum」を完了する executable code として表現される。新しい skill は GPT-4 が生成・self-verification が確認した後に追加され、program description の embedding で index される。retrieval 時は self-generated task plans と environment feedback の embedding を query context とし、top-5 relevant skills を prompt に入れる（Method / Skill Library, Fig. 4, Appendix / Skill Library）。
+- **Iterative prompting mechanism**: 各ラウンドで generated program を実行し、Minecraft simulation から observations / chat log、interpreter から execution errors、critic GPT-4 から success 判定と critique を得る。self-verification が task completion を確認すれば skill library に追加し、4 rounds で行き詰まれば curriculum に別タスクを要求する（Method / Iterative Prompting Mechanism, Appendix pseudocode）。
+- **Self-verification**: 各タスクに手書き success checker を作る代わりに、別の GPT-4 agent を critic として使う。入力は agent state と task で、出力は JSON の `reasoning`, `success`, `critique` である。著者は、これは成功判定と mistake reflection の両方を行うため Reflexion の self-reflection より comprehensive だと述べる（Method / Iterative Prompting Mechanism, `appendix/prompts/critic_prompt.txt`）。
+- **Prompting iteration**: 表では明示式ではなく実験単位として使われる。Table 1 と Table 2 の caption は、成功した trial 数を 3 回中の fraction で示し、数値は prompting iterations の平均であり、少ないほど efficient と説明している。
 
-- **モジュール 2: スキルライブラリ（Skill Library）**
-  - 「ノート係」の役。タスクをクリアできた時のコードを「`craftStoneShovel()`（石のシャベルを作る）」のような名前で保存していく図鑑。
-  - 新しいタスクが来たら、図鑑から「今のタスクに似たコード」を 5 個くらい引っ張ってきて GPT-4 に見せる。GPT-4 はそれを参考にして新しいコードを書くので、ゼロから書くより早い。
-  - 似てるかどうかの判定には「埋め込み（embedding ← 文章を数の並びに変換して、似た意味の文章が近い数の並びになるようにする技術。ここでは OpenAI の text-embedding-ada-002 という API を使う）」を使う。
-  - コードのままなので、組み合わせて複雑なワザに発展できる（レシピを組み合わせて新しい料理を作るイメージ）。古いワザを上書きしないので「前にできていたのに急に出来なくなる現象」（catastrophic forgetting ← 破滅的忘却：新しいことを覚えると古い記憶が消える、AI でよくある困った現象）が起きない。
+### 実装 / アルゴリズム上の要点
 
-- **モジュール 3: イテレーティブ・プロンプティング（Iterative Prompting）**
-  - 「審判 ＆ 直し屋」の役。GPT-4 が書いたコードを実際にマインクラフトで動かして、3 種類のフィードバックでコードを直していく:
-    1. **環境フィードバック**: ゲーム側から返るメッセージ。例: 「鉄インゴットが 7 個足りないから鉄の胸当ては作れません」
-    2. **実行エラー**: プログラムが壊れた時のエラー（料理のレシピで「材料 X はキッチンにないよ」と言われる感じ）
-    3. **セルフ検証（Self-Verification）**: もう 1 体の GPT-4 を「審判（critic ← 評価役）」として立てて、「今の状態見て、このタスク達成できてる？できてないなら何が足りない？」と判定させる。
-  - 直しは **最大 4 ラウンドまで**。4 回やってもダメなら諦めて、先生役に別のタスクを頼む。
-  - 審判が「OK」と言ったコードだけが図鑑に登録される。
+- step1: `environment.reset()` で agent state を得る。curriculum agent は completed tasks と failed tasks から exploration progress を作り、agent state と合わせて `propose_next_task` を呼ぶ（Appendix pseudocode）。
+- step2: 各タスクについて最大 4 rounds 実行する。round ごとに skill manager が task と environment feedback から関連 skill を retrieval し、action agent が task、前回 code、environment feedback、execution errors、critique、retrieved skills を使って JavaScript code を生成する。
+- step3: `environment.step(code)` でコードを実行し、更新後の agent state、environment feedback、execution errors を得る。その後 critic agent が `check_task_success(task, agent_state)` を実行する。
+- step4: success なら `skill_manager.add_skill(code)` で skill library に追加し、curriculum に completed task として登録する。失敗のまま 4 rounds を終えた場合は failed task として登録し、次の task proposal に進む。
+- step5: action prompt では `exploreUntil`, `mineBlock`, `craftItem`, `placeItem`, `smeltItem`, `killMob`, chest 操作用 API などの control primitive と Mineflayer API が与えられる。GPT-4 には `bot.chat` で intermediate progress を出すこと、infinite loops や event listeners を避けること、関数名を意味のあるものにすることが指定される（Appendix / Skill Library, `appendix/prompts/action_prompt.txt`）。
 
-- **裏ワザ的な工夫**
-  - **温度（temperature ← AI が文章を生成するときの「気まぐれ度」。0 なら毎回同じ答え、大きいほどバラついた答えになる）** は、先生役だけ 0.1（少し多様性を持たせる）、それ以外は全部 0（同じ答えを安定して出す）。
-  - **連鎖思考プロンプティング（Chain-of-Thought ← AI に「考えを書きながら答えて」と指示する技術）** を使って、コードを書く前に GPT-4 に「どう書くか」を言葉で説明させる。
+## 実験・結果
 
-### 主要な数式
+- **データセット / ベンチマーク**: MineDojo 上の Minecraft。主な評価は open-ended exploration、tech tree mastery、map coverage、newly instantiated world における zero-shot generalization to unseen tasks。探索と tech tree は最大 160 prompting iterations、zero-shot tasks は最大 50 prompting iterations で評価される（Experiments / Evaluation Results, Table 1, Table 2）。
+- **比較対象 / baseline**: ReAct、Reflexion、AutoGPT。追加比較として `Voyager w/o Skill Library`、`AutoGPT w/ Our Skill Library`、ablation variants（Manual Curriculum、Random Curriculum、w/o Environment Feedback、w/o Execution Errors、w/o Self-Verification、GPT-3.5 など）が使われる（Experiments / Baselines, Experiments / Ablation Studies, Appendix / Ablations）。
+- **指標**: unique items discovered、prompting iterations to unlock tech tree levels、map traversal distance、unseen task の success fraction out of three trials、skill retrieval accuracy。Table 1 / Table 2 では N/A (0/3) は最大 iteration 内に失敗したことを意味する。
+- **主な結果**: Voyager は 160 prompting iterations で 63 unique items を発見し、baseline より $3.3 \times$ 多いと報告される。map coverage では baselines より $2.3 \times$ 長い距離を移動する（Experiments / Evaluation Results, `figures/main_experiment.tex`, `figures/map.tex`）。
+- **Tech tree mastery**: Table 1 では、Voyager は Wooden Tool を $6 \pm 2$ iterations (3/3)、Stone Tool を $11 \pm 2$ (3/3)、Iron Tool を $21 \pm 7$ (3/3)、Diamond Tool を 102 (1/3) で unlock する。AutoGPT は Wooden $92 \pm 72$ (3/3)、Stone $94 \pm 72$ (3/3)、Iron $135 \pm 103$ (3/3)、Diamond は N/A (0/3)。ReAct と Reflexion は全レベル N/A (0/3)。著者は、Voyager が wooden level を $15.3 \times$、stone level を $8.5 \times$、iron level を $6.4 \times$ 速く unlock し、diamond level に到達した唯一の手法だと述べる（Experiments / Evaluation Results, Table 1）。
+- **Zero-shot generalization**: inventory を clear し、新しい world に reset して unseen tasks を評価する。Voyager は Diamond Pickaxe $19 \pm 3$ (3/3)、Golden Sword $18 \pm 7$ (3/3)、Lava Bucket $21 \pm 5$ (3/3)、Compass $18 \pm 2$ (3/3) を達成する。ReAct、Reflexion、AutoGPT は 4 tasks すべて N/A (0/3)。AutoGPT w/ Our Skill Library は Diamond Pickaxe 39 (1/3)、Golden Sword 30 (1/3)、Lava Bucket N/A (0/3)、Compass 30 (2/3) で、skill library が plug-and-play asset として他手法にも効くという著者の主張を支えている（Table 2）。
+- **Ablation**: random curriculum に置き換えると discovered item count が $93\%$ 落ちる。self-verification を除くと $-73\%$。code generation を GPT-3.5 に置き換えると、GPT-4 版 Voyager は $5.7 \times$ 多く unique items を得る。skill library を外すと later stages で plateau しやすいと説明される（Experiments / Ablation Studies, `figures/ablation.tex`）。
+- **Multimodal feedback from humans**: 著者は、当時利用可能な GPT-4 API が text-only であるため Voyager は visual perception を現在サポートしないと書く。その上で、人間が critic または curriculum の役割を担うと Nether Portal や house のような 3D structures を構築できることを示す（Experiments / Multimodal Feedback from Humans, `figures/human.tex`）。
+- **著者が主張する貢献**: Introduction と abstract では、Voyager を「the first LLM-powered embodied lifelong learning agent in Minecraft」とし、automatic curriculum、ever-growing executable-code skill library、environment feedback / execution errors / self-verification を組み込む iterative prompting により、Minecraft で継続的に探索・skill acquisition・new discoveries を行えると主張する。
 
-この論文は「GPT-4 にどう指示文を渡すか」という設計の話なので、紙に書く方程式はほぼ出てこない。本文 TeX 中にも中核となる数式は登場しない。なので「数式の解説」は省略する。
+## 妥当性と限界
 
-数値で出てくる重要な指標を 1 つだけ平易に言うと、「**プロンプティング iteration（イテレーション）**」というのが性能の単位になっている。これは「GPT-4 に 1 回お題を出して、コード書いて、動かして、直す」までの 1 セットのこと。少ない iteration でゴールにたどり着けるほど効率がいい。
+- **この主張を支える根拠**: exploration、tech tree、map coverage、zero-shot generalization の複数軸で ReAct / Reflexion / AutoGPT と比較している。特に Table 2 では新 world・empty inventory・unseen tasks で評価し、skill library の転用性を AutoGPT w/ Our Skill Library でも確認している。さらに ablation で automatic curriculum、skill library、self-verification、GPT-4 code generation の寄与を個別に落としている。Appendix では 309 samples の skill retrieval 評価で Top-5 Acc $96.5 \pm 0.3$ も示される。
+- **著者が認めている limitations / future work**: GPT-4 API は GPT-3.5 より $15 \times$ expensive であり、GPT-4 の code generation quality が必要だと述べる。iterative prompting があっても正しい skill を生成できず stuck する場合がある。self-verification は spider string を spider を倒した成功 signal と認識しない例がある。automatic curriculum は存在しない `copper sword` や `copper chestplate` を提案することがあり、code generation でも cobblestone を fuel として使う、提供されていない API を呼ぶなどの hallucination が起こる（Limitations and Future Work）。
+- **読者として注意すべき点**: 直接比較は high-level Mineflayer API を使う LLM-based agents 同士であり、Minecraft screen pixels から low-level controls を出す既存手法とは apple-to-apple ではない。したがって、Voyager の強さは「3D perception や sensorimotor control を解いた」ことではなく、GPT-4 とコード API を使う open-ended planning / skill accumulation の設計にある。
+- **読者として注意すべき点**: Table 1 と Table 2 は 3 trials であり、Diamond Tool は Voyager でも 102 iterations (1/3) である。著者は最高値や倍率を強調するが、成功率・分散・統計的有意性は読者側で慎重に見る必要がある。
+- **読者として注意すべき点**: cost の limitation は $15 \times$ という相対価格には触れるが、1 trial あたりの token 数や USD、baseline と同じ token / USD budget での比較は TeX 中には示されていない。
+- **読者として注意すべき点**: Broader Impacts では Minecraft は safe and harmless 3D video game environment とされる一方、physical robots など他ドメインに適用する場合は、人間による safety constraints が必要だと書かれている。
+- **追加で確認したい実験 / 疑問**: 同一 token / USD 予算での比較、より多い random seeds / trials、160 iterations を超える長期運用での skill library サイズと retrieval 精度、failed tasks の記録が後続の task proposal に与える影響、vision-language model を用いて human feedback なしで 3D structures を評価できるかを確認したい。これらは読者側の疑問であり、TeX 中で実施済みとは書かれていない。
 
-## 何がすごいの？
+## 用語メモ
 
-すべて論文 TeX に書いてある数値のみ:
+一般的な辞書的定義ではなく、この論文での使われ方を中心に書く。
 
-- **発見した道具・アイテムの数**: Voyager は 160 iteration で **63 個のユニークなアイテム**を発見。ベースライン（比較対象）の **3.3 倍**（abstract / experiment §4.3）。
-- **マップを動いた距離**: ベースラインの **2.3 倍**（experiment §4.3）。
-- **テックツリー（道具の進化段階）の到達速度**（Table 1, 3 回試行の平均, 最大 160 iteration）:
+- **Voyager**: GPT-4 を black-box query で使う Minecraft agent。automatic curriculum、skill library、iterative prompting mechanism からなる。
+- **Embodied lifelong learning agent**: Minecraft world 内で行動し、探索しながら skill を増やし、過去の知識を将来の task に再利用する agent。
+- **Automatic curriculum**: agent state と exploration progress に応じて GPT-4 が次タスクを提案するモジュール。著者は in-context form of novelty search とも位置づける。
+- **Skill library**: 成功した行動 program を保存する ever-growing library。program description の embedding で index し、new task では関連 skill を検索して prompt に入れる。
+- **Executable code**: Voyager の skill 表現。Mineflayer JavaScript APIs と control primitive APIs を呼ぶ async function として生成される。
+- **Iterative prompting mechanism**: code generation、実行、feedback 取得、critic による確認、再生成を繰り返す仕組み。最大 4 rounds で打ち切る。
+- **Environment feedback**: `bot.chat()` などを通じて得る進捗や失敗理由のテキスト。例として iron chestplate に iron ingots が 7 個足りないという feedback が示される。
+- **Execution errors**: JavaScript interpreter から返る invalid operations や syntax errors。code debugging の材料として prompt に戻される。
+- **Self-verification**: 別の GPT-4 を critic として使い、task が成功したかを判定し、失敗時に critique を出させる仕組み。
+- **Prompting iteration**: この論文の実験単位。Table 1 / Table 2 では、少ない prompting iterations で成功するほど efficient とされる。
+- **MineDojo**: Voyager の simulation environment の土台。Minecraft AI 研究用 framework として使われる。
+- **Mineflayer**: Minecraft bot を JavaScript から制御する high-level API。Voyager はこれを motor controls として使う。
+- **Tech tree mastery**: Wooden Tool、Stone Tool、Iron Tool、Diamond Tool へ順に到達できるかを測る評価。compositional skills の獲得を試す。
+- **Zero-shot generalization**: skill library を学習した後、inventory を空にし、新しく生成した world で unseen tasks を from scratch に解く評価。
+- **ReAct / Reflexion / AutoGPT**: 比較対象の LLM agent。論文では Minecraft にそのまま使えるわけではないため、MineDojo setting に合わせて re-interpret / re-implement している。
+- **Catastrophic forgetting**: continual learning で新しいことを学ぶと古い能力が失われる問題。Voyager は skill を code library として外部記憶に追加するため、この問題を緩和すると著者は述べる。
+- **Hallucination**: LLM が存在しない item や API をもっともらしく出す問題。この論文では `copper sword`、`copper chestplate`、cobblestone fuel、存在しない API 呼び出しが例示される。
 
-  | 道具 | Voyager | AutoGPT | ReAct / Reflexion |
-  |---|---|---|---|
-  | 木の道具 | 6±2 iter（3/3 成功）| 92±72（3/3）| 0/3 |
-  | 石の道具 | 11±2（3/3）| 94±72（3/3）| 0/3 |
-  | 鉄の道具 | 21±7（3/3）| 135±103（3/3）| 0/3 |
-  | ダイヤの道具 | **102（1/3）**| 0/3 | 0/3 |
+## 読む順番の提案
 
-  Voyager だけがダイヤ層まで到達。論文 abstract は木の道具に関して **15.3 倍速い**、石は 8.5 倍速い、鉄は 6.4 倍速いと書いている。
-- **新しい世界での未知タスク（ゼロショット汎化 ← zero-shot generalization：訓練していない新しい問題をいきなり解くこと）**（Table 2, 最大 50 iteration, 持ち物ゼロ・新マップ）: Voyager は Diamond Pickaxe / Golden Sword / Lava Bucket / Compass の **4 タスク全部で 3/3 成功**（18〜21 iteration 程度）。ReAct / Reflexion / AutoGPT 単体は全部 0/3。
-- **スキル図鑑は持ち運べる**: 同じ AutoGPT に Voyager のスキル図鑑を差し込んであげると、Diamond Pickaxe・Golden Sword は 1/3、Compass は 2/3、Lava Bucket は 0/3 まで上がる。図鑑だけ抜き出して別の AI に渡しても効くことを示している（Table 2, experiment §4.3）。
-- **アブレーション**（部品を 1 つずつ抜いて性能が下がるか確認する実験）の主な数値（experiment §4.4）:
-  - 自動カリキュラムをランダムに置き換えると、発見アイテム数が **-93%**。
-  - セルフ検証モジュールを取ると **-73%**。
-  - コード生成だけ GPT-3.5 に下げると、Voyager の **1/5.7** しかアイテムを取れない。
-
-- **著者が論文中で挙げている貢献**（intro 末尾より）:
-  1. LLM だけで動く、初めての「身体を持って終わりのない世界で生涯学習する」エージェント。
-  2. 実行可能なコードをスキルの単位にして、組み立て可能・解釈可能・壊れにくい記憶を作ったこと。
-  3. 環境フィードバック・エラー・セルフ検証を組み合わせた反復プロンプティングの仕組み。
-  4. MineDojo 上で、既存の LLM エージェントを大きく上回る成績を出し、新しい世界でも応用できることを示したこと。
-
-## キーワード辞典
-
-- **LLM（Large Language Model）** … 大量の文章を学んで賢くなった文章 AI のこと。本論文では GPT-4 を使う。
-- **GPT-4 / GPT-3.5** … OpenAI 社の LLM。GPT-4 の方がだいぶ賢いが料金は 15 倍高い。論文中の値は GPT-4 = `gpt-4-0314`、GPT-3.5 = `gpt-3.5-turbo-0301`。
-- **エンボディド（embodied）エージェント** … ゲーム世界や現実世界に「体」を持って動き回る AI のこと。文章だけ返す AI と対比される言葉。
-- **生涯学習（lifelong learning）** … 一度の勉強で終わらず、ずっと続けて新しいことを覚え続けること。
-- **MineDojo** … マインクラフトを AI 研究用に使えるようにしたオープンソース基盤。Voyager の実験土台。
-- **Mineflayer** … マインクラフトを JavaScript（プログラミング言語）から動かせる高水準ライブラリ。「右に歩け」「ブロックを置け」のような命令を提供する。
-- **API（Application Programming Interface）** … ソフトウェア同士が会話するための窓口の総称。
-- **プロンプト（prompt）** … LLM に渡す指示文。「次のタスクを考えて」みたいなお願いの文章のこと。
-- **プロンプティング iteration** … 「指示 → コード生成 → 実行 → 結果フィードバック」を 1 セットとした単位。論文中の性能の単位。
-- **In-context learning（インコンテキスト学習）** … LLM に例を 2〜3 個見せるだけで、その場でやり方を覚えてくれる現象。Voyager がスキル図鑑から類似コードを引いて見せるのもこれを利用している。
-- **Chain-of-Thought（連鎖思考）** … LLM に答えだけ言わせず「考える過程」も書かせる指示の仕方。考えながら答えると正解率が上がりやすい。
-- **温度（temperature）** … LLM の答えのばらつき度合いを決める数値。0 だと安定、高くするとランダムさが増す。
-- **埋め込み（embedding）** … 文章を「意味が近いほど近い数の並び」に変換する技術。検索や類似度判定に使う。
-- **ベースライン（baseline）** … 比較対象として置く既存手法のこと。Voyager は ReAct・Reflexion・AutoGPT と比べた。
-- **ReAct / Reflexion / AutoGPT** … LLM エージェントの先行手法。それぞれ「考えと行動を交互に出す」「失敗を振り返って次に活かす」「ゴールを小タスクに分解して回す」のが特徴。元々マインクラフト用ではないので、論文では再解釈して動かしている。
-- **テックツリー** … マインクラフトで「木 → 石 → 鉄 → ダイヤ」と順番にしか作れない道具の進化系統樹。
-- **ゼロショット汎化（zero-shot generalization）** … 練習していない新しい問題を、初めての状態でいきなり解けること。
-- **アブレーション（ablation）** … 部品を 1 つずつ取り外して、その部品が本当に効いているか確かめる実験。
-- **破滅的忘却（catastrophic forgetting）** … AI が新しいことを覚えると古いことを忘れてしまう、よくある困った現象。
-- **ハルシネーション（hallucination）** … LLM が「もっともらしいけど嘘」を堂々と言ってしまう現象。Voyager でも「銅の剣（存在しない）」を作れと指示する例があった。
-- **クリティック（critic）** … 強化学習などで「今のやり方どう？」と評価する役。Voyager では別の GPT-4 がこの役をやる。
-- **セルフ検証（self-verification）** … 自分（と同じ AI）が課題達成できたかを判定する仕組み。
-
-## ちょっと深掘り（中学生は飛ばして OK）
-
-- **「コードをスキルの単位にする」設計が効いている理由**: ふつう AI のスキルは数字のかたまり（モデルの重み）で保存されるけど、それだと取り出して読むことも、組み合わせることもしにくい。コードは人間が読めるし、関数呼び出しで組み立て可能で、デバッグもできる。だから図鑑として運用しやすい。
-- **セルフ検証が一番効くアブレーション結果（-73%）の意味**: Reflexion のような「失敗を反省させる」だけの仕組みと違い、Voyager のセルフ検証は「成功したかどうか」を独立した GPT-4 が判定する。これが「次のタスクへ進むか / 同じタスクをやり直すか」のスイッチになっており、ゴールがあいまいなオープンワールドで、報酬関数の代わりに働いている。
-- **GPT-3.5 だと 1/5.7 になる**: 同じ仕組みでも、土台の LLM のコード生成能力が「ある閾値」を越えていないと連続学習として成立しない。設計の問題ではなく「LLM の地力」が支配的に効くポイント。
-- **著者自身が認める限界**（discussion §）:
-  - GPT-4 の費用が高い（GPT-3.5 の 15 倍）。
-  - 行き詰まることがある（4 ラウンドでも書ききれないタスク）。
-  - セルフ検証が誤判定する（クモを倒した証拠の「クモの糸」を成功シグナルだと認識しない例）。
-  - カリキュラム LLM が幻覚で「銅の剣」「銅の胸当て」（マイクラに存在しない）を要求することがある。コード生成側も丸石（cobblestone）を燃料扱いする、存在しない関数を呼ぶなどのハルシネーション例がある。
-- **比較の注意点**: 著者は VPT や DreamerV3 のような「ピクセル画像から低レベル操作を学ぶマイクラ AI」とは直接比較しない、と明示している（apple-to-apple ではないため）。Voyager の貢献は「LLM エージェントというカテゴリの中で SOTA（State Of The Art ← その時点での最高性能）」と読むのが正しい。
-- **マルチモーダル（複数の入力モード、特に視覚）は未対応**: Voyager は文章しか扱わない。家やネザーゲートのような 3D の構造物作りは、人間が「審判」「先生」を肩代わりして実演している（experiment §4.5）。
+- まず abstract と Introduction の第 2-4 段落を読み、Minecraft を open-ended lifelong learning の testbed として使う理由、agent に必要な 3 能力、Voyager の 3 モジュールを押さえる。正規ノートの Summary の「問題」「手法」と対応する。
+- 次に Fig. 2 と Method を読む。Automatic Curriculum、Skill Library、Iterative Prompting Mechanism の入力・出力を追うと、正規ノートの「3 モジュール構成」の説明が読めるようになる。
+- Appendix の pseudocode `appendix/pseudocode/voyager.py` を見ると、4 rounds の retry、skill retrieval、critic 判定、success / failed task 登録の制御フローが具体化する。これは正規ノートの「iterative prompting は最大 4 round」の根拠に対応する。
+- 実験は Experiments の Experimental Setup と Baselines で model / temperature / MineDojo / Mineflayer / baseline の前提を確認してから、Table 1、Table 2、`figures/main_experiment.tex`、`figures/map.tex`、`figures/ablation.tex` を読む。正規ノートの「結果」「Critical Thoughts」の数値はここに対応する。
+- Limitations and Future Work は最後に必ず読む。cost、inaccuracies、hallucinations は、正規ノートの「弱み / 疑問」や「比較の注意点」を TeX 根拠つきで読むための中心箇所である。
 
 ## もとの論文・正規ノート
 

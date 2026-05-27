@@ -1,4 +1,4 @@
-# Attention Is All You Need（注意（attention）だけで十分だよ）
+# Attention Is All You Need（self-attention のみで系列変換を行う Transformer の提案）
 
 - arXiv: https://arxiv.org/abs/1706.03762
 - 一次ソース: ../papers/arXiv-1706.03762v7/
@@ -8,150 +8,179 @@
 
 ## 一言で言うと
 
-文を読みながら順番に処理するのをやめて、「どの単語に注目するか」を計算するだけで翻訳できる新しい仕組み（Transformer）を作ったら、英→独翻訳でこれまでの記録を一気に超えた、という話。
+RNN や convolution を使わず、attention mechanism だけで encoder-decoder 型の sequence transduction model を作れるかを問う論文である。提案する Transformer は、WMT 2014 English-to-German で 28.4 BLEU、WMT 2014 English-to-French で 41.8 BLEU を報告し、著者は「more parallelizable」「significantly less time to train」と主張する（`ms.tex` abstract, Table `tab:wmt-results`）。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- やりたいこと: 英語の文を日本語やドイツ語に翻訳する AI（「機械翻訳」と呼ばれる仕事）を、もっと速く・もっと正確に作りたい。
-- 困っていたこと（昔の方法の弱点）:
-  - 昔は RNN（リカレントニューラルネット ← 「文を 1 単語ずつ順番に読んで、前の単語の感想を覚えながら次に進む」やり方の AI）を使っていた。
-  - これだと **必ず 1 単語ずつ順番に処理する** ので、コンピュータの中で同時並行で計算できない。文が長いほど時間がかかる。
-  - たとえるなら、本を読むときに「1 ページ目を読み終わってからじゃないと 2 ページ目を開いてはダメ」というルールがあるようなもの。10 人で手分けして読めば速いのに、それができない。
-  - また「文の最初の単語」と「文の最後の単語」が関係している（例: It → 何を指す？）とき、その関係を学ぶのが難しかった。距離が遠い情報ほど忘れちゃう。
+- **問題設定**: 入力系列を出力系列へ変換する sequence transduction、特に machine translation を対象に、既存の encoder-decoder モデルで中心的だった recurrent layer や convolutional layer の代替を検討する。
+- **対象範囲 / 仮定**: 入力 token と出力 token を learned embedding に変換し、decoder は previously generated symbols を追加入力として使う auto-regressive model である。系列順序は recurrence/convolution から得られないため、positional encoding を embedding に足す。
+- **既存研究との差分**: 既存の有力モデルは RNN/LSTM/GRU、または Extended Neural GPU、ByteNet、ConvS2S のような convolutional model を使う。attention は多くの場合 recurrent network と併用されていたが、この論文は「entirely on self-attention」「without using sequence-aligned RNNs or convolution」として Transformer を位置づける（`background.tex`）。
+- **この論文で答えたい問い**: recurrence と convolution を捨てても、self-attention と position-wise feed-forward layer だけで翻訳品質を保ち、かつ訓練の並列化と長距離依存の扱いを改善できるか。
 
-- そこで著者たちは: 「順番に読む」のをやめて、**最初から全単語を見渡して『どの単語が今の単語と関係深いか』を一気に計算する** 方法だけで翻訳機を作ろうとした。
+## 背景と前提
 
-## どうやって解いたの？
+- RNN 系モデルでは位置 $t$ の hidden state $h_t$ が $h_{t-1}$ と入力位置 $t$ に依存するため、training example 内の系列方向の並列化が難しい。Introduction はこの「inherently sequential nature」が長い系列で問題になると述べる。
+- Convolutional model は全位置の hidden representation を並列に計算できるが、任意の 2 位置を関係づける操作数は ConvS2S で距離に対して線形、ByteNet で対数的に増えると説明される（`background.tex`）。
+- Self-attention は、1 つの系列内の異なる位置を関係づけ、sequence representation を計算する attention mechanism である。論文は reading comprehension、abstractive summarization、textual entailment、sentence representation での先行利用に触れるが、sequence transduction model 全体を self-attention のみにした点を新規性としている。
+- Why Self-Attention 節は、layer type を比較する軸として、per-layer complexity、minimum number of sequential operations、maximum path length を置く。Table `tab:op_complexities` では Self-Attention が $O(n^2 \cdot d)$、$O(1)$、$O(1)$、Recurrent が $O(n \cdot d^2)$、$O(n)$、$O(n)$ と整理される。
+- 著者は self-attention layer が recurrent layer より computational complexity 上速い条件を、sequence length $n$ が representation dimensionality $d$ より小さい場合と述べる。これは word-piece や byte-pair representations を使う state-of-the-art machine translation で多い、と説明される（`why_self_attention.tex`）。
+
+## 提案手法
 
 ### コアアイデア
 
-クラスに 30 人いて、誰かが「今日の宿題ってなんだっけ？」と質問したとする。すると、その質問は **クラス全員に同時に届く** よね。みんなが「自分は答えを知ってるかな？」と考えて、いちばん関係ありそうな人（先生のメモを見てた人）の声が大きく届く。これが「注意（attention）」のイメージ。
+Transformer は encoder-decoder 構造を保つが、encoder と decoder の各層を stacked self-attention と point-wise, fully connected layer で構成する（Figure `fig:model-arch`）。Encoder は入力系列 $(x_1,\ldots,x_n)$ を continuous representations $\mathbf{z}=(z_1,\ldots,z_n)$ に写し、decoder は $\mathbf{z}$ と既知の出力 token を使って $(y_1,\ldots,y_m)$ を 1 要素ずつ生成する。
 
-Transformer は文中の各単語が「他のどの単語に注目すべきか」を **同時に・一気に** 計算する仕組みだけで作られている。だから「前の単語が終わるまで待つ」必要がなく、コンピュータの中で全単語を並列に処理できる。さらに「注目の仕方」を 8 通りも同時に試して（後述の multi-head）、文法的な関係・意味的な関係などいろんな切り口で単語のつながりを捉える。
+Encoder は $N=6$ identical layers からなり、各 layer は multi-head self-attention と position-wise feed-forward network の 2 sub-layer を持つ。Decoder も $N=6$ layers だが、masked self-attention、encoder-decoder attention、position-wise feed-forward network の 3 sub-layer を持つ。各 sub-layer の周囲には residual connection があり、その後に layer normalization を置く。TeX の表記では $\mathrm{LayerNorm}(x + \mathrm{Sublayer}(x))$ で、全 sub-layer と embedding layer の出力次元は $d_{\text{model}}=512$ である。
 
-### 仕組み
+Attention は query、key、value の対応から value の weighted sum を返す関数として定義される。Transformer ではこれを multi-head 化し、encoder self-attention、decoder masked self-attention、encoder-decoder attention の 3 つの用途で使う。Decoder の masked self-attention では、auto-regressive property を保つため、softmax 入力の illegal connections を $-\infty$ にする（`model_architecture.tex`）。
 
-- **step 1**: 入力文（例: "I am a student"）の各単語を、数字の列に変換する（embedding ← 単語を数字のリストに置きかえる作業。たとえば "cat" → [0.2, -0.1, 0.7, ...] みたいに、500 個くらいの数字で 1 単語を表す）。
-- **step 2**: 順番情報がそのままだと消えてしまうので、「これは何番目の単語か」を表す数字（**positional encoding** ← 位置の番号札）を足す。
-- **step 3**: 入力側（encoder ← 文を「理解する」担当）に、同じ作りの層を 6 段重ねる。各段で:
-  - 各単語が「自分が他のどの単語に注目すべきか」を計算（**self-attention** ← 文の中の単語同士でお互いに注目し合うこと）。
-  - その後、単語ごとに小さな計算（FFN）をかける。
-- **step 4**: 出力側（decoder ← 翻訳文を「作る」担当）も同じく 6 段。違いは:
-  - 翻訳文を 1 単語ずつ作っていく途中で、**まだ出していない未来の単語を盗み見ない** ようにマスク（目隠し）をかける。これを「masked self-attention」と呼ぶ。
-  - もう 1 段、入力側で理解した結果も見にいく層がある（**encoder-decoder attention**）。
-- **step 5**: 最後に「次に来る単語の候補」のうち、どれが一番ありえるかを確率で出して、いちばん高いものを選ぶ（実際には beam search ← 候補をいくつか残しながら少しずつ選ぶ探索法、を使う）。
+### 重要な定義・数式
 
-### 主要な数式
+$$
+\mathrm{Attention}(Q, K, V) = \mathrm{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
+$$
 
-#### ① Scaled Dot-Product Attention（一番大事な式）
+**式の意味**: Scaled Dot-Product Attention の定義である。Query と key の dot product を $\sqrt{d_k}$ で割り、softmax によって value への重みを作り、その重み付き和を出力する。
 
-$$ \mathrm{Attention}(Q, K, V) = \mathrm{softmax}\!\left(\frac{QK^T}{\sqrt{d_k}}\right) V $$
+**記号の定義**:
+- $Q$ ... queries をまとめた行列
+- $K$ ... keys をまとめた行列
+- $V$ ... values をまとめた行列
+- $d_k$ ... query と key の次元
+- $QK^T$ ... query と key の compatibility score
 
-**この式が言ってること**: 「質問 $Q$」が「鍵 $K$」とどれくらい合うかを掛け算で点数にして、その点数を softmax（← 点数を「合計が 1 の割合」に変換する道具。「点数が高いやつほど大きな割合になる」関数）で割合に変えてから、「中身 $V$」を割合ぶんだけ取り出して合計する。要するに「関係ありそうな単語の情報を、関係の強さに応じて混ぜて取ってくる」式。
+**この論文での役割**: Transformer の attention sub-layer の基本演算である。著者は、$q$ と $k$ の各成分が平均 0、分散 1 の独立確率変数なら $q \cdot k$ の分散が $d_k$ になるため、large $d_k$ で softmax が小さい勾配領域に入ることを避ける目的で $1/\sqrt{d_k}$ scaling を入れる、と説明する（`model_architecture.tex` footnote）。
 
-**記号の意味**:
-- $Q$ … query（質問）。今注目している単語が「何を知りたいか」を表す数字の列。
-- $K$ … key（鍵）。他の各単語が「自分はこういう情報を持ってますよ」と看板を出している数字の列。
-- $V$ … value（中身）。実際に取り出される情報そのもの。
-- $QK^T$ … $Q$ と $K$ の掛け算。質問と鍵の「相性の良さ」を点数化する操作（中学では習わないけど「内積（ないせき）」と呼ばれる。2 つの数字の列を要素ごとに掛けて全部足すと、似てるほど大きな値になる、と覚えれば OK）。
-- $d_k$ … 鍵 $K$ の長さ（鍵を表す数字が何個並んでいるか）。本論文では 64。
-- $\sqrt{d_k}$ … $d_k$ の平方根。$\sqrt{64}=8$。点数が大きくなりすぎないように割って小さくする「ブレーキ」。
-- $\mathrm{softmax}(\cdot)$ … 点数たちを「合計 1 の割合」に変える関数。
+$$
+\begin{aligned}
+\mathrm{MultiHead}(Q,K,V) &= \mathrm{Concat}(\mathrm{head}_1,\ldots,\mathrm{head}_h)W^O \\
+\mathrm{head}_i &= \mathrm{Attention}(QW_i^Q,KW_i^K,VW_i^V)
+\end{aligned}
+$$
 
-**身近な例え**: 図書館で「ピラミッドについて知りたい！」と質問する場面。本棚に並ぶ本の背表紙（鍵 $K$）と質問（$Q$）を見比べて、「エジプトの本」「数学の本」「料理の本」…のうちエジプトの本が一番合うので 80%、数学の本（図形ピラミッド）が 15%、料理の本が 5%、…と割合をつける。そして各本の中身（$V$）をその割合だけ抜き出して混ぜたものを「答え」にする。$\sqrt{d_k}$ で割るのは「点数が極端に開きすぎて、いつも 1 冊の本しか開かれない」状況を防ぐためのブレーキ。
+**式の意味**: Query、key、value を head ごとに learned linear projections で低次元へ写し、それぞれで attention を並列に計算し、結果を結合して再射影する。
 
-#### ② Multi-Head Attention（注目を 8 つ並行する）
+**記号の定義**:
+- $h$ ... attention head の数。この論文の base model では $h=8$
+- $W_i^Q,W_i^K,W_i^V$ ... head $i$ 用の projection matrices
+- $W^O$ ... concatenated heads を $d_{\text{model}}$ 次元へ戻す projection matrix
+- $\mathrm{head}_i$ ... $i$ 番目の Scaled Dot-Product Attention の出力
 
-$$ \mathrm{MultiHead}(Q, K, V) = \mathrm{Concat}(\mathrm{head}_1, \ldots, \mathrm{head}_h) W^O $$
-$$ \mathrm{head}_i = \mathrm{Attention}(QW_i^Q,\ KW_i^K,\ VW_i^V) $$
+**この論文での役割**: 単一 head の weighted average だけでは異なる位置・表現部分空間への同時注意が制限されるため、著者は multi-head attention によって「different representation subspaces at different positions」へ同時に attend できると主張する。Base model では $h=8$、$d_k=d_v=d_{\text{model}}/h=64$ で、計算量は full dimensionality の single-head attention と同程度とされる。
 
-**この式が言ってること**: 上の attention を **$h$ 通り（本論文では 8 通り）並行で** やって、結果をつなげて 1 つにまとめる。8 つそれぞれが「違う角度」で注目してくれるので、文法的なつながり・意味的なつながり・遠くの単語との関係…などを同時に拾える。
+$$
+\mathrm{FFN}(x)=\max(0,xW_1+b_1)W_2+b_2
+$$
 
-**記号の意味**:
-- $h$ … 並行する個数（head の数）。本論文では 8。
-- $\mathrm{head}_i$ … $i$ 番目の attention（$i$ は 1 から 8）。
-- $W_i^Q, W_i^K, W_i^V$ … $i$ 番目の head 用の「$Q, K, V$ を変換する道具」。AI が学習で覚える数字の表。
-- $W^O$ … 最後にまとめる用の変換の表。
-- $\mathrm{Concat}$ … 8 個の結果を横にずらっとつなげる操作（しおりを 8 枚並べてセロハンテープで貼るイメージ）。
+**式の意味**: 各位置に同一に適用される position-wise feed-forward network の定義である。2 つの線形変換の間に ReLU activation を挟む。
 
-**身近な例え**: 探偵の捜査で 8 人のチームを組む。1 人は指紋を、1 人は足跡を、1 人は証言を、1 人は時間関係を… と **同時に違う観点で調べる**。最後に集まって全員の報告書を 1 冊にまとめれば、1 人が全部調べるより速いし見落としも少ない。
+**記号の定義**:
+- $x$ ... ある位置の representation
+- $W_1,W_2,b_1,b_2$ ... feed-forward network の learned parameters
+- $\max(0,\cdot)$ ... ReLU activation
+- $d_{\text{model}}$ ... 入出力次元。この論文では 512
+- $d_{ff}$ ... inner-layer 次元。この論文では 2048
 
-#### ③ Positional Encoding（順番の番号札）
+**この論文での役割**: Attention が位置間の情報交換を担う一方、FFN は各位置で同じ非線形変換を行う。Encoder と decoder の各 layer に含まれる基本 sub-layer であり、kernel size 1 の 2 つの convolution とも説明される。
 
-$$ PE_{(pos, 2i)} = \sin\!\left(\frac{pos}{10000^{2i/d_{\text{model}}}}\right) ,\quad PE_{(pos, 2i+1)} = \cos\!\left(\frac{pos}{10000^{2i/d_{\text{model}}}}\right) $$
+$$
+\begin{aligned}
+PE_{(pos,2i)} &= \sin(pos / 10000^{2i/d_{\text{model}}}) \\
+PE_{(pos,2i+1)} &= \cos(pos / 10000^{2i/d_{\text{model}}})
+\end{aligned}
+$$
 
-**この式が言ってること**: 「これは文の何番目の単語か」を、波（sin と cos ← 角度を入れると -1 から +1 のあいだの値が返ってくる関数。高校で習う「波の形を表す関数」）で表現する。位置 $pos$ が変わると波の値も変わるので、その値を単語の数字列に足してやれば、AI は「これは 3 番目の単語だな」「これは 17 番目だな」と区別できるようになる。
+**式の意味**: Sinusoidal positional encoding の定義である。偶数次元には sine、奇数次元には cosine を使い、各次元が異なる周波数の sinusoid になる。
 
-**記号の意味**:
-- $pos$ … 単語の位置（1 番目なら $pos=1$、2 番目なら $pos=2$ …）。
-- $i$ … 数字列の何個目の成分を計算しているか（0, 1, 2, ...）。
-- $d_{\text{model}}$ … 1 単語を表す数字列の長さ（本論文では 512）。
-- $\sin, \cos$ … 波の形を表す関数。$pos$ が変わるとなめらかに上下する。
+**記号の定義**:
+- $pos$ ... token の系列内位置
+- $i$ ... positional encoding の dimension index
+- $d_{\text{model}}$ ... embedding と positional encoding の次元
+- $PE_{(pos,2i)}$, $PE_{(pos,2i+1)}$ ... 位置 $pos$ に対応する encoding の各成分
 
-**身近な例え**: 体育の整列で、生徒に「1, 2, 3, ...」と番号を書いた札を首から下げてもらうのと似ている。ただし普通の番号だと「番号が近い＝距離が近い」が直感的に分かりにくいので、代わりに **波の高さ** で位置を表す。波だと「1 番目と 2 番目の差」と「101 番目と 102 番目の差」が同じパターンになるので、AI が「お隣どうし」「3 個離れ」みたいな相対的な距離を学びやすい。
+**この論文での役割**: Transformer は recurrence も convolution も持たないため、token order を明示的に注入する必要がある。著者は、任意の fixed offset $k$ について $PE_{pos+k}$ が $PE_{pos}$ の linear function として表せるので relative positions を学びやすい、という仮説から sinusoidal 版を選ぶ。Table `tab:variations` row (E) では learned positional embeddings と nearly identical results と報告される。
 
-## 何がすごいの？
+$$
+lrate = d_{\text{model}}^{-0.5}\cdot
+\min({step\_num}^{-0.5},\ {step\_num}\cdot {warmup\_steps}^{-1.5})
+$$
 
-論文中の数値はすべて TeX から確認したもの。
+**式の意味**: Adam optimizer と組み合わせて使う learning rate schedule である。最初は線形に増加し、その後は step number の inverse square root に比例して減少する。
 
-- **WMT 2014 英→独翻訳** で BLEU スコア（← 翻訳の良さを 0〜100 で測る指標。お手本の文とどれだけ単語が一致するか）が:
-  - Transformer (big) で **28.4 BLEU**。
-  - これまでの最強モデル（複数モデルを合体させた "ensemble" を含む）より **2.0 BLEU 以上高い** 新記録。
-  - 小型版（base）でも **27.3 BLEU** で、過去のすべてのモデルを上回った。
-- **WMT 2014 英→仏翻訳** でも **41.8 BLEU** で、単一モデルでの新記録。
-- **学習の速さ**:
-  - 計算コストは $3.3 \times 10^{18}$ FLOPs（FLOPs ← 計算の総回数の単位）で、ConvS2S（畳み込みを使った当時の競合）の $9.6 \times 10^{18}$ の **約 1/3**。
-  - big モデルでも 8 台の GPU で **3.5 日** で学習完了。base モデルなら **12 時間**。
-- **翻訳以外でも使える**:
-  - 英語の構文解析（文の構造を木の形で当てる仕事）で、専用チューニングほぼなしで **F1=91.3**（WSJ データのみ学習）、半教師ありで **F1=92.7** を達成。
-- **著者が論文で「貢献」として挙げていること**:
-  1. RNN も CNN も使わずに self-attention だけで作った初の翻訳モデル。
-  2. WMT'14 英独・英仏で訓練コストを大きく減らしつつ SOTA（state-of-the-art ← 当時の世界最高）を達成。
-  3. multi-head attention + scaled dot-product + sin/cos の位置エンコーディング、というレシピを示した。
-  4. head 数・$d_k$・dropout・PE のいろんな組み合わせをアブレーション（← 部品を 1 つずつ抜いて精度の変化を見る実験）した。
-  5. 翻訳以外（構文解析）でも汎用性を示した。
+**記号の定義**:
+- $lrate$ ... learning rate
+- $d_{\text{model}}$ ... model representation dimension
+- $step\_num$ ... training step number
+- $warmup\_steps$ ... warmup の長さ。この論文では 4000
 
-## キーワード辞典
+**この論文での役割**: 実験結果を支える training regime の一部である。論文は Adam の $\beta_1=0.9$、$\beta_2=0.98$、$\epsilon=10^{-9}$ とともにこの schedule を使う（`training.tex`）。
 
-出現順に並べる。
+### 実装 / アルゴリズム上の要点
 
-- **Transformer** … この論文が提案した、attention だけで作られた翻訳 AI の名前。今や ChatGPT の T も Transformer の T。
-- **sequence transduction（系列変換）** … 「単語の並び」を別の「単語の並び」に変換する仕事（翻訳・要約・音声認識など）。
-- **encoder-decoder（エンコーダー・デコーダー）** … 入力を理解する部品（encoder）と、出力を作る部品（decoder）に分ける作り方。
-- **RNN / LSTM / GRU** … どれも「1 単語ずつ順番に読む」昔の AI。LSTM と GRU は RNN の進化版。
-- **CNN（畳み込みニューラルネット）** … 画像で有名な AI の仕組み。文に使うと「近くの数単語をまとめて見る」処理になる。
-- **attention（アテンション）** … 「どの情報に注目するか」を計算する仕組み。情報の重み付き平均をとる。
-- **self-attention** … 1 つの文の中で、単語同士がお互いに注目し合う attention。
-- **encoder-decoder attention** … 出力側（翻訳中の単語）が入力側（元の文）に注目するための attention。
-- **Query / Key / Value（$Q, K, V$）** … attention の登場人物 3 名。Q=質問、K=鍵（看板）、V=中身。
-- **softmax** … 点数たちを「合計 1 の割合」に変える関数。大きい点数ほど大きな割合になる。
-- **scaled dot-product** … 内積（掛けて足す）に $\sqrt{d_k}$ で割るブレーキをかけた attention の計算法。
-- **multi-head attention** … attention を 8 通り並列でやって結果をつなげる作り。
-- **mask（マスク）** … decoder で「未来の単語を見ない」ようにする目隠し。$-\infty$ を入れて softmax 後の確率を 0 にする。
-- **FFN（feed-forward network）** … 各単語にかける小さな計算（2 段の変換 + ReLU）。
-- **ReLU** … 「マイナスは 0、プラスはそのまま」と返すシンプルな関数。$\max(0, x)$。
-- **embedding（埋め込み）** … 単語を数字のリストに変換すること。
-- **positional encoding** … 単語の位置（何番目か）を波で表した数字列。
-- **BLEU** … 翻訳の良さを測る点数（0〜100、高いほど良い）。
-- **WMT** … 機械翻訳の世界大会で使われる標準データセットの名前。
-- **dropout** … 学習中にランダムに数字を消す訓練テク。覚えすぎ（過学習）を防ぐ。
-- **label smoothing** … 「正解は 100% 正解、他は 0%」とせず、ちょっとだけ他にも確率を残す訓練テク。
-- **Adam** … AI の学習でよく使われる「学習の進めかた」の 1 つ。
-- **FLOPs** … コンピュータの計算回数の単位。多いほど大きな計算をしている。
-- **constituency parsing（句構造解析）** … 文を「主語のかたまり」「動詞のかたまり」… と木の形で分解する仕事。
-- **F1** … 正解率の一種（0〜100）。高いほど良い。
-- **ensemble（アンサンブル）** … 複数モデルの予測を平均して精度を上げるテク。
+- 入力 token と出力 token は learned embeddings に変換され、embedding layer では重みを $\sqrt{d_{\text{model}}}$ 倍する。入力 embedding、出力 embedding、pre-softmax linear transformation は同じ weight matrix を共有する。
+- Encoder は 6 層で、各層は multi-head self-attention と position-wise FFN からなる。各 sub-layer は residual connection と layer normalization に包まれる。
+- Decoder は 6 層で、masked decoder self-attention、encoder-decoder attention、position-wise FFN を持つ。Masked self-attention は future position を参照しないように softmax 入力で $-\infty$ を入れる。
+- Attention の 3 用途は、encoder-decoder attention、encoder self-attention、decoder self-attention である。Encoder-decoder attention では query が previous decoder layer、key/value が encoder output から来る。
+- Base model は $N=6$、$d_{\text{model}}=512$、$d_{ff}=2048$、$h=8$、$d_k=d_v=64$、$P_{drop}=0.1$、$\epsilon_{ls}=0.1$、100K steps、65M parameters である（Table `tab:variations`）。
+- Big model は $N=6$、$d_{\text{model}}=1024$、$d_{ff}=4096$、$h=16$、$d_k=d_v=64$、$P_{drop}=0.3$、$\epsilon_{ls}=0.1$、300K steps、213M parameters である（Table `tab:variations`）。Big 行の $d_k,d_v,\epsilon_{ls}$ 欄は空欄だが、caption の「Unlisted values are identical to those of the base model」に従う。なお WMT 2014 English-to-French の Transformer (big) は $P_{drop}=0.1$ を使い、0.3 ではないと `results.tex` が明記する。
+- Training は 8 NVIDIA P100 GPUs の 1 machine で行う。Base model は 1 step 約 0.4 秒で 100,000 steps または 12 hours、big model は 1 step 1.0 秒で 300,000 steps または 3.5 days と書かれている。
+- Training batch は approximate sequence length でまとめられ、各 batch は約 25000 source tokens と約 25000 target tokens を含む。推論では base は last 5 checkpoints、big は last 20 checkpoints を averaging し、beam size 4、length penalty $\alpha=0.6$、maximum output length は input length + 50 を使う。
 
-## ちょっと深掘り（中学生は飛ばして OK）
+## 実験・結果
 
-- **なぜ $\sqrt{d_k}$ で割るのか？** $Q$ と $K$ の成分がランダムで「平均 0・ばらつき 1」だとすると、$QK^T$ の値の「ばらつき」は $d_k$ になる（足す個数が増えればばらつきも増えるから）。$d_k=64$ だとばらつきが 64、極端に大きな点数が出る → softmax がほぼ「1 つだけ 100%」になってしまい、他の単語の重みがほぼ 0 になる → 学習信号がほとんど流れなくなる。そこで $\sqrt{d_k}$ で割って点数のばらつきを 1 に戻す。
-- **multi-head の最適な数**: Table 2(A) によると、head 数 1 で BLEU 24.9、4 で 25.5、8 で 25.8（最良）、16 で 25.8、32 で 25.4。少なすぎても多すぎても悪い「ちょうど良いところ」が 8。
-- **層の深さ・幅**: 6 層・512 次元が base。big は 6 層・1024 次元・FFN 内部 4096・head 16。big で 213M（2 億 1300 万）パラメータ、base で 65M。
-- **sin/cos の位置エンコーディング vs 学習した位置エンコーディング**: ほぼ同じ精度（BLEU 25.7 vs 25.8）。著者は sin/cos を選んだ理由として「訓練で出てきたより長い文にも外挿（がいそう ← 学習範囲の外まで予測を伸ばすこと）できる可能性がある」と説明。ただしこの外挿性は本論文では実証されていない。
-- **訓練レシピの細部**: Adam $\beta_1=0.9, \beta_2=0.98, \epsilon=10^{-9}$。学習率は最初の 4000 ステップは線形に増やして、その後は $1/\sqrt{\text{ステップ数}}$ で減らす（warmup 付き inverse-sqrt スケジュール）。dropout 0.1（big は 0.3）、label smoothing 0.1。
-- **計算量の比較**（Table 1）: self-attention は層あたり $O(n^2 d)$、recurrent は $O(n d^2)$。文の長さ $n$ が次元 $d$（=512）より短ければ self-attention の方が速い。ただし $n$ が大きくなると $n^2$ が効いてくるので、著者自身も「近所だけに注目する制限版」を将来課題として挙げている。
-- **decoder のマスク**: softmax を計算する直前に、未来の位置に対応する点数を $-\infty$ にする。$\exp(-\infty)=0$ なので、softmax の結果その位置の重みが 0 になり、未来の情報を盗み見られなくなる。
-- **限界として著者自身が認めていること**: (1) 文が長くなると $n^2$ で計算量が爆発する、(2) 翻訳と構文解析しか試していない、(3) 推論時は結局 1 単語ずつ作るので速くならない、を Conclusion と Why Self-Attention 節で明言している。
+- **データセット / ベンチマーク**: WMT 2014 English-German は約 4.5M sentence pairs、shared source-target vocabulary 約 37000 tokens の byte-pair encoding。WMT 2014 English-French は 36M sentences、32000 word-piece vocabulary。追加評価として Penn Treebank の WSJ portion を使った English constituency parsing を扱い、WSJ only は約 40K training sentences、semi-supervised は high-confidence and BerkleyParser corpora の約 17M sentences を用いる。
+- **比較対象 / baseline**: Machine translation では ByteNet、Deep-Att + PosUnk、GNMT + RL、ConvS2S、MoE、および Deep-Att + PosUnk Ensemble、GNMT + RL Ensemble、ConvS2S Ensemble と比較する（Table `tab:wmt-results`）。Constituency parsing では Vinyals & Kaiser et al.、Petrov et al.、Zhu et al.、Dyer et al.、Huang & Harper、McClosky et al.、Luong et al. などと比較する（Table `tab:parsing-results`）。
+- **指標**: Translation quality は BLEU、training cost は FLOPs。Ablation は English-to-German development set newstest2013 上の PPL(dev)、BLEU(dev)、params。Parsing は WSJ Section 23 F1。
+- **主な結果**: WMT 2014 EN-DE では Transformer (base model) が 27.3 BLEU、Transformer (big) が 28.4 BLEU。Table `tab:wmt-results` 上の既存最高 EN-DE は ConvS2S Ensemble 26.36 BLEU で、本文は big が best previously reported models including ensembles を more than 2.0 BLEU 上回ると述べる。
+- **主な結果**: WMT 2014 EN-FR では Transformer (base model) が 38.1 BLEU、Table `tab:wmt-results` と abstract の Transformer (big) が 41.8 BLEU とする。Table 上の既存 single model 最高は MoE 40.56 BLEU、ensemble 最高は ConvS2S Ensemble 41.29 BLEU。EN-FR の big model は dropout rate $P_{drop}=0.1$ を使う。一方、`results.tex` 本文には big 41.0 BLEU とも書かれており TeX 内に不一致がある。このノートでは表と abstract の 41.8 を主値として扱い、不一致を明記する。
+- **主な結果**: Training Cost は Transformer base が $3.3\cdot10^{18}$ FLOPs、Transformer big が $2.3\cdot10^{19}$ FLOPs。ConvS2S は EN-DE $9.6\cdot10^{18}$、MoE は EN-DE $2.0\cdot10^{19}$、GNMT + RL Ensemble は EN-DE $1.8\cdot10^{20}$ と表に示される。
+- **主な結果**: Ablation では base が PPL 4.92、BLEU 25.8、65M params。Head 数の row (A) は $h=1$ で BLEU 24.9、$h=4$ で 25.5、$h=16$ で 25.8、$h=32$ で 25.4。Row (B) では $d_k=16$ が BLEU 25.1、$d_k=32$ が 25.4 で、著者は attention key size を小さくすると品質が落ちると述べる。
+- **主な結果**: English constituency parsing では Transformer (4 layers) が WSJ only, discriminative で WSJ 23 F1 = 91.3、semi-supervised で 92.7。WSJ only では Dyer et al. (2016) の 91.7 に次ぎ、semi-supervised では表中の semi-supervised baseline（最高 92.1）を上回る。ただし Table `tab:parsing-results` には multi-task の Luong et al. (2015) 93.0 と generative の Dyer et al. (2016) 93.3 も載っており、訓練設定別に読む必要がある。
+- **著者が主張する貢献**: Abstract と Conclusion は、Transformer を recurrence と convolution を完全に捨てた attention-based architecture として提示し、翻訳で new state of the art、訓練時間の短縮、English constituency parsing への generalization を主張する。
+
+## 妥当性と限界
+
+- **この主張を支える根拠**: Table `tab:op_complexities` は self-attention の sequential operations と maximum path length が $O(1)$ であることを、recurrent の $O(n)$ と対比する。Introduction と Results はこの並列化上の利点が訓練時間の短縮につながるという筋立てで、12 hours on eight P100 GPUs（base）と 3.5 days（big）を示す。
+- **この主張を支える根拠**: Table `tab:wmt-results` は WMT 2014 EN-DE/EN-FR での BLEU と FLOPs を既存モデルと並べる。EN-DE では big 28.4 BLEU が既存 ensemble を含む表中の値より高く、base 27.3 BLEU も既存 published models and ensembles を上回ると本文が述べる。
+- **この主張を支える根拠**: Table `tab:variations` は head 数、$d_k$、layer 数、$d_{\text{model}}$、$d_{ff}$、dropout、label smoothing、positional encoding の変更が PPL/BLEU に与える影響を示す。ただし多くは base model から 1 軸ずつ変える ablation である。
+- **著者が認めている limitations / future work**: Why Self-Attention 節は、very long sequences では self-attention を neighborhood size $r$ に制限することで計算性能を改善できるかもしれないと述べ、これを future work とする。Conclusion でも images、audio、video のような large inputs and outputs に対して local, restricted attention mechanisms を調べる予定と書く。
+- **著者が認めている limitations / future work**: Conclusion は「Making generation less sequential」も research goal として挙げる。これは decoder が auto-regressive に 1 要素ずつ出力する設計であることと対応する。
+- **読者として注意すべき点**: TeX にある実験は二つの machine translation task と English constituency parsing に限られる。より広い NLP タスクや非テキスト modality での実証は、この論文内では future work として扱われる。
+- **読者として注意すべき点**: Attention visualization は layer 5 of 6 の long-distance dependency、anaphora resolution、sentence structure に関する例を示すが、qualitative evidence である。Head が「clearly learned to perform different tasks」と本文は述べるものの、定量的な head 機能分類までは TeX 中にない。
+- **追加で確認したい実験 / 疑問**: Sinusoidal positional encoding は learned positional embeddings と nearly identical results で、著者は長い系列への extrapolation 可能性を理由に選ぶが、訓練時より長い系列での比較実験は TeX 中には明示されていない。
+- **追加で確認したい実験 / 疑問**: Restricted self-attention の neighborhood size $r$ を変えたときの BLEU、FLOPs、maximum path length の実測は、この論文の表にはない。
+
+## 用語メモ
+
+一般的な辞書的定義ではなく、この論文での使われ方を中心に書く。
+
+- **Sequence transduction**: 入力 token 系列を出力 token 系列に写す問題群。本文では language modeling や machine translation の文脈で導入され、実験の中心は WMT 2014 translation である。
+- **Transformer**: Recurrence と convolution を使わず、multi-headed self-attention と position-wise FFN によって encoder-decoder を構成するモデル名。
+- **Encoder-decoder structure**: Encoder が $(x_1,\ldots,x_n)$ を $\mathbf{z}=(z_1,\ldots,z_n)$ に写し、decoder が $\mathbf{z}$ と既知の出力を使って $(y_1,\ldots,y_m)$ を生成する構造。
+- **Auto-regressive**: Decoder が次の token を出す際に、previously generated symbols を追加入力として消費する性質。Transformer decoder は future positions を mask してこれを保つ。
+- **Self-attention / intra-attention**: 1 つの系列内の異なる位置を関係づけ、系列の representation を計算する attention mechanism。この論文では encoder と decoder の主要な位置間通信として使われる。
+- **Encoder-decoder attention**: Decoder 側の query が encoder output の key/value に attend する attention。従来の sequence-to-sequence attention に相当する役割を担う。
+- **Query, key, value**: Attention function の入力。Query と key から compatibility を計算し、その重みによって value を weighted sum する。
+- **Scaled Dot-Product Attention**: Dot-product attention に $1/\sqrt{d_k}$ の scaling factor を入れたもの。大きい $d_k$ で softmax が極端になり勾配が小さくなる問題を抑えるためと説明される。
+- **Multi-head attention**: $Q,K,V$ を head ごとに異なる learned projections へ写して attention を並列実行し、結果を concatenate する機構。Base model では 8 heads。
+- **Position-wise Feed-Forward Network**: 各位置に別々かつ同一に適用される 2 層の fully connected network。入力・出力次元は $d_{\text{model}}=512$、inner-layer は $d_{ff}=2048$。
+- **Positional encoding**: Recurrence/convolution がない Transformer に順序情報を入れるため、encoder/decoder stack の bottom で embedding に加える encoding。この論文は sinusoidal 版を採用する。
+- **Byte-pair encoding / word-piece**: 翻訳データを subword token に分割する方法。EN-DE では shared source-target vocabulary 約 37000 tokens の byte-pair encoding、EN-FR では 32000 word-piece vocabulary。
+- **BLEU**: Translation quality の評価指標。Table `tab:wmt-results` の主指標。
+- **PPL(dev)**: Model variations で使われる development set perplexity。Caption は byte-pair encoding による per-wordpiece perplexities であり、per-word perplexities と比較すべきでないと注意する。
+- **F1**: English constituency parsing の WSJ Section 23 評価指標。
+- **Restricted self-attention**: 入力系列全体ではなく neighborhood size $r$ のみを見る self-attention。Table `tab:op_complexities` では $O(r\cdot n\cdot d)$、maximum path length $O(n/r)$ とされ、future work として扱われる。
+
+## 読む順番の提案
+
+- まず `ms.tex` の abstract と Conclusion を読み、著者が Transformer を「based solely on attention mechanisms」「first sequence transduction model based entirely on attention」と位置づける主張を押さえる。正規ノートでは Summary の問題設定と貢献に対応する。
+- 次に `introduction.tex` と `background.tex` を読み、RNN の sequential nature、ConvS2S/ByteNet の距離に応じた操作数、self-attention の先行利用を確認する。正規ノートでは Takeaway の「並列化できることが主要な動機」に対応する。
+- `model_architecture.tex` は Figure `fig:model-arch`、Scaled Dot-Product Attention、Multi-Head Attention、Position-wise FFN、Embeddings and Softmax、Positional Encoding の順に読む。正規ノートの手法箇条書きと数式の根拠はほぼここにある。
+- `why_self_attention.tex` の Table `tab:op_complexities` を読む。Self-Attention、Recurrent、Convolutional、restricted Self-Attention の complexity、sequential operations、maximum path length が、この論文の妥当性説明の中心である。
+- `training.tex` でデータセット、batching、8 NVIDIA P100 GPUs、Adam、learning rate schedule、dropout、label smoothing を確認する。正規ノートの訓練レシピに対応する。
+- `results.tex` は Table `tab:wmt-results`、Table `tab:variations`、Table `tab:parsing-results` を優先して読む。EN-FR の 41.8 と 41.0 の TeX 内不一致もここで確認する。
+- 最後に `visualizations.tex` を読み、attention head の long-distance dependency、anaphora resolution、sentence structure に関する qualitative evidence を確認する。これは主張の補助であり、定量実験とは分けて読む。
 
 ## もとの論文・正規ノート
 

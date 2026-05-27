@@ -1,4 +1,4 @@
-# Auto-Encoding Variational Bayes（オートエンコーダ風の変分ベイズ法）
+# Auto-Encoding Variational Bayes（連続潜在変数をもつ有向確率モデルの変分推論を SGD で学習可能にする論文）
 
 - arXiv: https://arxiv.org/abs/1312.6114
 - 一次ソース: ../papers/arXiv-1312.6114v11/
@@ -8,154 +8,194 @@
 
 ## 一言で言うと
 
-絵を「作る AI」と「読み取る AI」を 2 つペアで同時に学習させて、ランダムな数から新しい絵を作れるようにした仕組み。
+この論文は、連続潜在変数をもつ有向確率モデルで、周辺尤度や真の事後分布が解析不能な場合でも、変分下界を微分可能な Monte Carlo 推定量に変換して SGD/Adagrad で学習する SGVB estimator と AEVB algorithm を提案する。i.i.d. データセットの各データ点にある連続潜在変数について、共有された recognition model $q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x})$ を学習することで、データ点ごとの MCMC や反復推論なしに近似事後推論を行う、というのが著者の主張である。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- たくさんの絵（手書き数字 MNIST や顔写真 Frey Face）を見せて、「同じような絵を新しく作れる AI」を作りたい。これは「絵の特徴を覚えて、絵の世界の地図を頭の中に持つ AI」のイメージ。
-- そのためには「絵の裏側にある正体（特徴）」を推測する力が必要。たとえば手書きの「3」を見せられたら、「これは数字の 3 だな」「ちょっと太字だな」「右に傾いてるな」みたいな**隠れた性質**を当てたい。この隠れた性質をこの論文では $\mathbf{z}$（潜在変数、ラテント）と呼ぶ。
-  - **潜在変数（ラテント）** ← データの裏に隠れている「数で表した特徴」のこと。本物の数値が直接は見えないので「潜（ひそ）んでいる」と呼ぶ。
-- 以前の方法（**wake-sleep アルゴリズム** ← 1995 年に Hinton らが作った古い方法、目的が 2 つあって 1 つにまとまっていなかった、や **MCEM** ← サイコロをたくさん振って計算するやり方で時間がかかる）には欠点があった:
-  - サンプル（サイコロを振った結果）から計算した「進む方向の目安」がブレすぎる。
-  - データ 1 個ごとにいちいち長い計算が必要で、データが大量にあると間に合わない。
-- だから「ブレずに」「データ 1 個でも一瞬で」学習できる新しい方法が必要だった。
+- **問題設定**: データ $\mathbf{X}=\{\mathbf{x}^{(i)}\}_{i=1}^N$ が i.i.d. に与えられ、未観測の連続潜在変数 $\mathbf{z}$ を経て $\mathbf{x}$ が生成されると仮定する。有向生成モデルは $p_{\boldsymbol{\theta}}(\mathbf{z})p_{\boldsymbol{\theta}}(\mathbf{x}\mid\mathbf{z})$ で、近似事後分布として $q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x})$ を導入する。
+- **対象範囲 / 仮定**: $\mathbf{x}$ は連続または離散変数でよいが、潜在変数 $\mathbf{z}$ は連続である。本文の基本設定では、グローバルパラメータ $\boldsymbol{\theta}$ は ML または MAP、潜在変数は変分推論で扱う。$p_{\boldsymbol{\theta}}(\mathbf{z})$ と $p_{\boldsymbol{\theta}}(\mathbf{x}\mid\mathbf{z})$ の PDF は $\boldsymbol{\theta}$ と $\mathbf{z}$ に関して almost everywhere differentiable と仮定される（`Problem scenario`）。
+- **既存研究との差分**: 通常の mean-field VB は近似事後に関する期待値を解析的に解く必要があり、一般には難しい。naive Monte Carlo gradient estimator は高分散で実用上問題がある。wake-sleep は同じように recognition model を使うが、2 つの目的関数を同時に最適化し、それらは周辺尤度またはその下界の最適化に対応しない、と本文は述べる。
+- **この論文で答えたい問い**: intractable posterior、intractable marginal likelihood、大規模データセットという条件下で、近似 ML/MAP 推定、潜在変数の近似事後推論、周辺推論を効率的に行えるか。
 
-## どうやって解いたの？
+## 背景と前提
+
+- 変分推論では、真の事後分布 $p_{\boldsymbol{\theta}}(\mathbf{z}\mid\mathbf{x})$ の代わりに扱いやすい $q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x})$ を最適化する。この論文では、$q_{\boldsymbol{\phi}}$ は mean-field VB のように閉形式の期待値から更新されるものではなく、生成モデルのパラメータ $\boldsymbol{\theta}$ と同時に学習される recognition model である。
+- 論文中の encoder / decoder は確率的な意味で使われる。$q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x})$ は、データ点 $\mathbf{x}$ から code $\mathbf{z}$ の分布を出す probabilistic encoder。$p_{\boldsymbol{\theta}}(\mathbf{x}\mid\mathbf{z})$ は、code $\mathbf{z}$ から $\mathbf{x}$ の分布を出す probabilistic decoder である。
+- SGVB estimator は、$q_{\boldsymbol{\phi}}$ からのサンプルを $\boldsymbol{\phi}$ に依存する確率ノードとして扱うのではなく、$\boldsymbol{\phi}$ に依存しない補助ノイズ $\boldsymbol{\epsilon}$ と微分可能な変換 $g_{\boldsymbol{\phi}}$ に書き換える。これにより Monte Carlo 推定量を $\boldsymbol{\phi}$ について微分できる。
+- 主な比較対象は wake-sleep algorithm と Monte Carlo EM (MCEM) である。関連研究として、Stochastic Variational Inference、Blei et al. 2012 の stochastic search 系、Ranganath et al. 2013 の Black Box Variational Inference、Salimans & Knowles 2013、DARN、Rezende et al. 2014 などが `iclr14_sva.bbl` に挙がる。
+
+## 提案手法
 
 ### コアアイデア
 
-絵を「作る役」と「読み取る役」の 2 人のニューラルネットワークを同時に育てる。
+著者は、周辺尤度 $\log p_{\boldsymbol{\theta}}(\mathbf{x})$ を直接評価・微分できない代わりに、変分下界 $\mathcal{L}(\boldsymbol{\theta},\boldsymbol{\phi};\mathbf{x})$ を最大化する。問題は、下界に含まれる $q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x})$ に関する期待値を、低分散かつ $\boldsymbol{\phi}$ について微分可能に推定することである。
 
-- **ニューラルネットワーク** ← 数を入れると数が出てくる「学習できる関数」。たくさんの「重み」というつまみが付いていて、学習中につまみが少しずつ調整されていく。
-- 「読み取る役」（**エンコーダ** = encoder、絵を見て特徴の数 $\mathbf{z}$ を当てる係）と、「作る役」（**デコーダ** = decoder、特徴の数 $\mathbf{z}$ を渡されたら絵を描く係）を、**同じ目標**を目指して同時に練習させる。
+そのために、サンプル $\tilde{\mathbf{z}}\sim q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x})$ を
+$\tilde{\mathbf{z}}=g_{\boldsymbol{\phi}}(\boldsymbol{\epsilon},\mathbf{x})$、$\boldsymbol{\epsilon}\sim p(\boldsymbol{\epsilon})$
+と再パラメータ化する。Gaussian の例では $\mathbf{z}=\boldsymbol{\mu}+\boldsymbol{\sigma}\odot\boldsymbol{\epsilon}$、$\boldsymbol{\epsilon}\sim\mathcal{N}(\mathbf{0},\mathbf{I})$ である。
 
-例え話: 暗号の「送信係」と「受信係」を一緒に練習させると思えばよい。送信係は「絵 → 数（短い暗号）」、受信係は「数 → 絵」に変換する。両方の腕が上がれば、ランダムな数を渡しても受信係がそれっぽい絵を描けるようになる。
+i.i.d. データセットのケースでは、この推定量を使って recognition model と generative model を同時最適化する AEVB algorithm を構成する。recognition model にニューラルネットワークを使う場合、著者はこれを variational auto-encoder と呼ぶ。
 
-ただし「読み取る役」の出す答えはランダム性を持つ（同じ絵を見せても少しブレた数を出す）ので、そのままだと「読み取る役のつまみをどう動かせば良くなるか」が計算しづらい。そこで使うのが**リパラメタライゼーション・トリック**という小ワザ。
+### 重要な定義・数式
 
-- **リパラメタライゼーション・トリック** ← ランダムさを「ノイズ $\epsilon$」という別の部品に押し出して、本体の計算を普通の関数にする裏ワザ。これで微分（つまみをどう動かせばいいかの計算）ができるようになる。
-- **微分** ← 「この数を少し増やすと、結果はどれだけ動くか」を測る数学。山登りで「どっちに 1 歩進めば高くなるか」を見ているイメージ。微積分は中 2 では習わないので「方向の目安を出す道具」と覚えれば OK。
+$$
+\begin{aligned}
+\log p_{\boldsymbol{\theta}}(\mathbf{x}^{(i)})
+&= D_{KL}\!\left(q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x}^{(i)}) \,\|\, p_{\boldsymbol{\theta}}(\mathbf{z}\mid\mathbf{x}^{(i)})\right)
++ \mathcal{L}(\boldsymbol{\theta},\boldsymbol{\phi};\mathbf{x}^{(i)}) \\
+\mathcal{L}(\boldsymbol{\theta},\boldsymbol{\phi};\mathbf{x}^{(i)})
+&= -D_{KL}\!\left(q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x}^{(i)}) \,\|\, p_{\boldsymbol{\theta}}(\mathbf{z})\right)
++ \mathbb{E}_{q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x}^{(i)})}
+\left[\log p_{\boldsymbol{\theta}}(\mathbf{x}^{(i)}\mid\mathbf{z})\right]
+\end{aligned}
+$$
 
-### 仕組み
+**式の意味**: 周辺対数尤度を、真の事後と近似事後の KL divergence と、変分下界に分解している。KL は非負なので、$\mathcal{L}$ は datapoint $i$ の marginal likelihood の lower bound になる（`eq:lowerbound`, `eq:lowerbound2`）。
 
-- step1: 絵 $\mathbf{x}$ を「読み取る役」（エンコーダ）に入れる。エンコーダは「特徴の数 $\mathbf{z}$」がどんな分布（どんな値が出やすいか）なのかを返す。具体的には平均 $\mu$ とばらつき $\sigma$ の 2 つの数。
-  - **平均** ← データの「だいたい真ん中の値」。テストの点数の平均と同じ意味。
-  - **ばらつき**（標準偏差 $\sigma$）← データが平均からどれだけ散らばっているかの目安。みんなが似た点数なら小さく、バラバラなら大きい。
-- step2: 平均 $\mu$ とばらつき $\sigma$ から「サイコロを振って」具体的な $\mathbf{z}$ を 1 つ作る。このとき $\mathbf{z} = \mu + \sigma \times \epsilon$ という形にする（$\epsilon$ は正規分布から振ったランダムな数）。
-  - **正規分布** ← つりがね型のグラフで表される、自然界でよく出てくるランダムさの形。身長とかテストの点数の散らばり方がだいたいこの形になる。
-- step3: その $\mathbf{z}$ を「作る役」（デコーダ）に入れて、絵を復元してもらう。元の絵にどれだけ近いかを採点する（**復元誤差**）。
-- step4: 同時に、「読み取る役」が出した $\mathbf{z}$ の分布が、あらかじめ決めた基準の分布（平均 0、ばらつき 1 の正規分布）からあまり離れすぎないように罰を与える（**KL 罰**）。
-- step5: 「復元の良さ」と「基準からの離れすぎへの罰」の合計を「下界（かかい、ELBO）」と呼んで、これを大きくする方向に両方のネットワークのつまみを同時に動かす。
-  - **下界（ELBO）** ← Evidence Lower BOund の略。本当に計算したい「絵らしさのスコア」が直接は計算できないので、その**少なくともこれよりは大きい**という目安の数を代わりに最大化する。
-- step6: たくさんの絵を**ミニバッチ**（一度に 100 枚ずつ）で繰り返し見せて学習する。
-  - **ミニバッチ** ← 全部のデータを一気に使わず、毎回少しずつランダムに選んで使うやり方。荷物を小分けに運ぶイメージ。
+**記号の定義**:
+- $\mathbf{x}^{(i)}$ ... $i$ 番目の観測データ
+- $\mathbf{z}$ ... 未観測の連続潜在変数
+- $p_{\boldsymbol{\theta}}(\mathbf{z})$ ... 生成モデルの prior
+- $p_{\boldsymbol{\theta}}(\mathbf{x}\mid\mathbf{z})$ ... 生成モデルの likelihood / decoder
+- $q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x})$ ... 真の事後分布を近似する recognition model / encoder
+- $D_{KL}(\cdot\|\cdot)$ ... 2 つの分布の KL divergence
 
-### 主要な数式
+**この論文での役割**: AEVB はこの下界を最大化する。第 1 項は近似事後を prior に近づける正則化項として解釈され、第 2 項は decoder の expected reconstruction term として解釈される。
 
-#### ① 下界（ELBO、学習で最大化したい目標）
+$$
+\tilde{\mathbf{z}} = g_{\boldsymbol{\phi}}(\boldsymbol{\epsilon},\mathbf{x}),\quad
+\boldsymbol{\epsilon}\sim p(\boldsymbol{\epsilon}),\quad
+\mathbb{E}_{q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x}^{(i)})}[f(\mathbf{z})]
+= \mathbb{E}_{p(\boldsymbol{\epsilon})}[f(g_{\boldsymbol{\phi}}(\boldsymbol{\epsilon},\mathbf{x}^{(i)}))]
+\simeq \frac{1}{L}\sum_{l=1}^L f(g_{\boldsymbol{\phi}}(\boldsymbol{\epsilon}^{(l)},\mathbf{x}^{(i)}))
+$$
 
-$$ \mathcal{L}(\bm{\theta}, \bm{\phi}; \mathbf{x}^{(i)}) = - D_{KL}\big(q_{\bm{\phi}}(\mathbf{z}|\mathbf{x}^{(i)}) \,\|\, p_{\bm{\theta}}(\mathbf{z})\big) + \mathbb{E}_{q_{\bm{\phi}}(\mathbf{z}|\mathbf{x}^{(i)})}\big[\log p_{\bm{\theta}}(\mathbf{x}^{(i)}|\mathbf{z})\big] $$
+**式の意味**: $q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x})$ から直接サンプリングする代わりに、$\boldsymbol{\phi}$ に依存しないノイズ $\boldsymbol{\epsilon}$ から微分可能な変換で $\mathbf{z}$ を作る。本文ではこれを reparameterization trick として導入する。
 
-**この式が言ってること**: 学習のゴール（目標スコア）は 2 つの足し算でできている。前半は「読み取る役の出す $\mathbf{z}$ の分布が、基準の分布からどれだけ離れているかの罰」（マイナス記号がついているので、離れすぎないほど点が高い）。後半は「$\mathbf{z}$ から元の絵をどれだけうまく復元できたかのご褒美」。両方を足した合計が大きいほど良い AI ということ。
+**記号の定義**:
+- $\tilde{\mathbf{z}}$ ... $q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x})$ からのサンプルとして扱う変数
+- $g_{\boldsymbol{\phi}}$ ... ノイズとデータから潜在変数サンプルを作る微分可能な変換
+- $\boldsymbol{\epsilon}$ ... 補助ノイズ変数。Gaussian 例では $\mathcal{N}(\mathbf{0},\mathbf{I})$
+- $f(\mathbf{z})$ ... 期待値を取りたい任意の関数
+- $L$ ... datapoint あたりの Monte Carlo サンプル数
 
-**記号の意味**:
-- $\mathcal{L}$ … 下界（最大化したい合計スコア）
-- $\bm{\theta}$（シータ） … 「作る役」（デコーダ）のつまみの集まり
-- $\bm{\phi}$（ファイ） … 「読み取る役」（エンコーダ）のつまみの集まり
-- $\mathbf{x}^{(i)}$ … $i$ 番目の絵（データ 1 個）
-- $\mathbf{z}$ … その絵の裏にある特徴の数（潜在変数）
-- $q_{\bm{\phi}}(\mathbf{z}|\mathbf{x})$ … 絵 $\mathbf{x}$ を見たときに「読み取る役」が答える $\mathbf{z}$ の分布
-- $p_{\bm{\theta}}(\mathbf{x}|\mathbf{z})$ … 特徴 $\mathbf{z}$ を渡されたとき「作る役」が描く絵の分布
-- $p_{\bm{\theta}}(\mathbf{z})$ … 事前に決めた $\mathbf{z}$ の基準の分布（普通は平均 0、ばらつき 1 の正規分布）
-- $D_{KL}(A \| B)$ … 分布 A が分布 B からどれだけズレているかの数値（**KL ダイバージェンス**、必ず 0 以上、ピッタリ同じなら 0）
-- $\mathbb{E}[\cdots]$ … 「期待値」、ランダムにたくさんサンプルした時の平均（「サイコロを 1000 回振った平均の目」みたいなもの）
-- $\log$ … 自然対数。**ここでは「数が 0 に近いほどものすごく大きなマイナスになる関数」と思っておけば良い**。「絵らしさの確率」が低い（うまく作れなかった）ときに大きな罰になる。
+**この論文での役割**: 下界の Monte Carlo 推定量を $\boldsymbol{\phi}$ について微分可能にする中心技術である。本文は inverse CDF、location-scale family、composition を、適用可能な分布クラスとして列挙している。
 
-**身近な例え**: テストの成績評価に近い。「ノートが先生のお手本ノートからどれだけ離れているか」のマイナス点と、「テスト本番でどれだけ正解できたか」のプラス点を足した合計を最大化したい、という採点表。ノートをサボっても本番だけうまくいく可能性はあるけど、両方バランス良くやらないと点が伸びない。
+$$
+\widetilde{\mathcal{L}}^{B}(\boldsymbol{\theta},\boldsymbol{\phi};\mathbf{x}^{(i)})
+= -D_{KL}\!\left(q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x}^{(i)}) \,\|\, p_{\boldsymbol{\theta}}(\mathbf{z})\right)
++ \frac{1}{L}\sum_{l=1}^L \log p_{\boldsymbol{\theta}}(\mathbf{x}^{(i)}\mid\mathbf{z}^{(i,l)}),
+\quad
+\mathbf{z}^{(i,l)} = g_{\boldsymbol{\phi}}(\boldsymbol{\epsilon}^{(i,l)},\mathbf{x}^{(i)})
+$$
 
-#### ② リパラメタライゼーション・トリック（ランダムさを外に追い出す変身）
+**式の意味**: SGVB estimator B である。KL 項が解析積分できる場合、サンプリングで推定するのは reconstruction 側だけになるため、generic estimator A より typically less variance と説明される（`eq:estimator2`）。
 
-$$ \mathbf{z} = \bm{\mu} + \bm{\sigma} \odot \bm{\epsilon}, \quad \bm{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I}) $$
+**記号の定義**:
+- $\widetilde{\mathcal{L}}^{B}$ ... estimator B による下界の Monte Carlo 推定量
+- $\mathbf{z}^{(i,l)}$ ... datapoint $i$ に対する $l$ 番目の潜在サンプル
+- $\boldsymbol{\epsilon}^{(i,l)}$ ... そのサンプルを作る補助ノイズ
+- $\log p_{\boldsymbol{\theta}}(\mathbf{x}^{(i)}\mid\mathbf{z}^{(i,l)})$ ... decoder がデータ点 $\mathbf{x}^{(i)}$ を説明する対数尤度
 
-**この式が言ってること**: 「読み取る役」が出した平均 $\mu$ とばらつき $\sigma$ を使って、$\mathbf{z}$ を「$\mu$ にずらして、$\sigma$ で拡大した $\epsilon$」として作る。ランダムさは $\epsilon$ に押し込んだので、$\mu$ や $\sigma$ を動かしても式の形は普通の足し算・かけ算のまま。これで「つまみをどう動かせばいいか」が計算できるようになる。
+**この論文での役割**: 実験で使う Gaussian prior / Gaussian approximate posterior のケースでは、KL 項を閉形式で計算できるため、この estimator B が実用的な目的関数になる。
 
-**記号の意味**:
-- $\mathbf{z}$ … 特徴の数（最終的に「作る役」に渡すもの）
-- $\bm{\mu}$（ミュー） … 「読み取る役」が出した平均（だいたいこのあたり、という数）
-- $\bm{\sigma}$（シグマ） … 「読み取る役」が出したばらつき（どれくらい散らすか）
-- $\bm{\epsilon}$（イプシロン） … 平均 0・ばらつき 1 の正規分布から振ったランダムな数（「外から持ってきたサイコロの目」）
-- $\odot$ … 同じ位置同士でかけ算する記号（バラバラに並んだ数同士を、それぞれペアでかける）
-- $\mathcal{N}(\mathbf{0}, \mathbf{I})$ … 平均 0、ばらつき 1 の正規分布（一番標準的なつりがね型）
+$$
+\mathcal{L}(\boldsymbol{\theta},\boldsymbol{\phi};\mathbf{X})
+\simeq
+\widetilde{\mathcal{L}}^{M}(\boldsymbol{\theta},\boldsymbol{\phi};\mathbf{X}^{M})
+= \frac{N}{M}\sum_{i=1}^{M}\widetilde{\mathcal{L}}(\boldsymbol{\theta},\boldsymbol{\phi};\mathbf{x}^{(i)})
+$$
 
-**身近な例え**: 料理のレシピでいう「基本の生地」を $\epsilon$、「味付け」を $\mu$ と $\sigma$ と考える。基本の生地はいつも同じレシピで作って、それを使って「甘くする ($\mu$ をずらす)」「水を増やしてゆるくする ($\sigma$ をかける)」と最終的なお菓子 $\mathbf{z}$ ができる。基本の生地（ランダムさ）を外で作っておけば、「甘さをどれだけ変えると味がどう変わるか」を落ち着いて確かめられる。
+**式の意味**: full dataset の lower bound を、ランダムに選んだ minibatch $\mathbf{X}^M$ で推定する式である（`eq:minibatchestimator`）。
 
-#### ③ ガウス分布同士の KL 罰の閉じた式（実際にコードで使う形）
+**記号の定義**:
+- $\mathbf{X}$ ... $N$ 個のデータ点からなる全データセット
+- $\mathbf{X}^{M}$ ... $M$ 個の datapoint からなるランダム minibatch
+- $N$ ... 全データ数
+- $M$ ... minibatch size
+- $\widetilde{\mathcal{L}}$ ... estimator A または B による datapoint ごとの下界推定量
 
-$$ -D_{KL} = \frac{1}{2} \sum_{j=1}^{J} \left( 1 + \log \sigma_j^2 - \mu_j^2 - \sigma_j^2 \right) $$
+**この論文での役割**: 大規模データセットで online / minibatch stochastic optimization を可能にする部分である。実験では $M=100$、$L=1$ が使われる。
 
-**この式が言ってること**: 「読み取る役」が出した $\mathbf{z}$ の分布と、基準の分布（平均 0・ばらつき 1）との離れ具合を、計算で 1 行に書ける形。$\mu$ が 0 から離れるほど、$\sigma$ が 1 から離れるほど、罰が大きくなる。サンプリング（サイコロを振る）をしなくても**そのまま計算できる**のがミソ。
+$$
+\begin{aligned}
+\mathcal{L}(\boldsymbol{\theta},\boldsymbol{\phi};\mathbf{x}^{(i)})
+&\simeq
+\frac{1}{2}\sum_{j=1}^{J}
+\left(1+\log((\sigma_j^{(i)})^2)-(\mu_j^{(i)})^2-(\sigma_j^{(i)})^2\right)
++ \frac{1}{L}\sum_{l=1}^{L}\log p_{\boldsymbol{\theta}}(\mathbf{x}^{(i)}\mid\mathbf{z}^{(i,l)}) \\
+\mathbf{z}^{(i,l)}
+&= \boldsymbol{\mu}^{(i)}+\boldsymbol{\sigma}^{(i)}\odot\boldsymbol{\epsilon}^{(l)},\quad
+\boldsymbol{\epsilon}^{(l)}\sim\mathcal{N}(\mathbf{0},\mathbf{I})
+\end{aligned}
+$$
 
-**記号の意味**:
-- $J$ … 特徴の数 $\mathbf{z}$ が何個の数を並べたものか（次元の数。例: 20 次元なら 20 個の数を並べる）
-- $\mu_j$ … $\mathbf{z}$ の $j$ 番目の数の「平均」
-- $\sigma_j$ … $\mathbf{z}$ の $j$ 番目の数の「ばらつき」
-- $\sigma_j^2$ … ばらつきの 2 乗（**分散**と呼ぶ）
-- $\log$ … 自然対数（前と同じ。1 を入れると 0 になり、1 より小さい数を入れるとマイナスになる関数）
-- $\sum_{j=1}^{J}$ … $j=1$ から $J$ まで全部足す（順番に足し算していく記号）
-- $-D_{KL}$ … 「離れ具合の罰」の **マイナス**（だから大きい方が嬉しい、下界の一部）
+**式の意味**: Variational Auto-Encoder 例で、prior $p_{\boldsymbol{\theta}}(\mathbf{z})=\mathcal{N}(\mathbf{0},\mathbf{I})$、近似事後 $q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x}^{(i)})=\mathcal{N}(\boldsymbol{\mu}^{(i)},(\boldsymbol{\sigma}^{(i)})^2\mathbf{I})$ のときの下界推定量である（`eq:gaussian_estimator`）。
 
-**身近な例え**: 「平均テストとどれだけ違うか」を計算するみたいなもの。クラスの平均点（基準）からあなたの点数の散らばり（$\mu, \sigma$）がどれくらいズレているか、それぞれの科目ごとに $J$ 個ぶん足し算する。ズレが大きいほど罰が大きい。
+**記号の定義**:
+- $J$ ... 潜在変数 $\mathbf{z}$ の次元数
+- $\mu_j^{(i)}$ ... encoder MLP が datapoint $i$ に対して出す平均ベクトルの $j$ 番目の要素
+- $\sigma_j^{(i)}$ ... encoder MLP が datapoint $i$ に対して出す標準偏差ベクトルの $j$ 番目の要素
+- $\odot$ ... 要素ごとの積
+- $\mathcal{N}(\mathbf{0},\mathbf{I})$ ... centered isotropic multivariate Gaussian
 
-## 何がすごいの？
+**この論文での役割**: VAE として最も具体的に実装される目的関数である。appendix の Gaussian KL 解により、KL 側はサンプリングせず閉形式で計算できる。
 
-- **データセット**: MNIST（手書き数字、白黒の小さい絵がたくさん）と Frey Face（人の顔の動画から切り出した小さい絵）の 2 種類で実験した。
-- **隠れユニット数**（ニューラルネットワークの中間の「ニューロン」の個数）: MNIST では 500 個、Frey Face では 200 個（小さいデータセットなので過学習を避けるため少なめ）。
-- **ミニバッチサイズ** $M=100$、サンプル数 $L=1$（データ 1 個につき $\epsilon$ を 1 回振るだけで足りた）。
-- **下界の比較（Figure 2）**: MNIST では潜在変数 $\mathbf{z}$ の次元 $N_{\mathbf{z}} \in \{3, 5, 10, 20, 200\}$、Frey Face では $\{2, 5, 10, 20\}$ の各場合で、AEVB は wake-sleep より**速く収束し、最終的な下界も高い**。**潜在変数の数を増やしても過学習しない**（次元 200 でも下界が下がらない）。
-  - **過学習** ← 練習問題は完璧に解けるけど本番では失敗する状態。覚えすぎて応用が利かない感じ。
-- **周辺尤度（マージナル尤度）の比較（Figure 3）**: 隠れユニット 100 個、潜在次元 3 で、wake-sleep と MCEM（HMC サンプラー使用）と比較。AEVB は wake-sleep より良い**周辺尤度**に到達した。MCEM は小さいデータセットでは競合するが、MNIST 全体には適用が難しい（オンライン学習ではないため）。
-  - **周辺尤度** ← データそのものの「ありそうさ」の点数。本当はこれを最大化したいが、直接は計算しづらい。
-- **2 次元の潜在空間の可視化（Figure 4）**: 潜在次元を 2 に絞り、基準の正規分布の**逆 CDF**で格子状に並べた点をデコーダに通すと、MNIST では「3 → 8 → 9」のように手書き数字が、Frey Face では「笑顔 → 真顔 → しかめっ面」のように顔が、なめらかに変化する地図ができた。
-  - **逆 CDF** ← 「下からこの割合の位置はどの値か」を返す関数。例: 中央値 (50 % の位置) を返す。
-- **MNIST のランダムサンプル（Figure 5）**: 潜在次元 2 / 5 / 10 / 20 のそれぞれで、ランダムな $\mathbf{z}$ から作った数字の画像を提示。
-- **論文が掲げる「貢献」（contributions、著者の言葉）**:
-  1. リパラメタライゼーションを使って、変分下界を「微分できてブレが小さい」推定量（SGVB）に書き換えた。
-  2. その推定量を使って、認識モデル（エンコーダ）と生成モデル（デコーダ）を同時最適化するアルゴリズム AEVB を提案した。これにより新しい絵を見たときも、エンコーダの 1 回の計算で $\mathbf{z}$ の分布が出る。
+### 実装 / アルゴリズム上の要点
 
-## キーワード辞典
+- step1: $\boldsymbol{\theta},\boldsymbol{\phi}$ を初期化する。
+- step2: full dataset から minibatch $\mathbf{X}^{M}$ をランダムに引く。
+- step3: ノイズ分布 $p(\boldsymbol{\epsilon})$ からランダムサンプルを引く。
+- step4: minibatch estimator $\widetilde{\mathcal{L}}^{M}$ の勾配 $\nabla_{\boldsymbol{\theta},\boldsymbol{\phi}}\widetilde{\mathcal{L}}^{M}$ を計算する。
+- step5: SGD または Adagrad で $\boldsymbol{\theta},\boldsymbol{\phi}$ を更新し、収束まで繰り返す。
+- 実験では minibatch size $M=100$、datapoint あたりのサンプル数 $L=1$。パラメータは $\mathcal{N}(0,0.01)$ から初期化し、Adagrad の global stepsize は $\{0.01,0.02,0.1\}$ から training set の初期 performance に基づいて選ぶ。小さな weight decay は prior $p(\boldsymbol{\theta})=\mathcal{N}(0,\mathbf{I})$ に対応すると本文にある。
+- appendix の MLP 定義では、Bernoulli decoder は single hidden layer の fully-connected network で確率 $\mathbf{y}=f_\sigma(\mathbf{W}_2\tanh(\mathbf{W}_1\mathbf{z}+\mathbf{b}_1)+\mathbf{b}_2)$ を出す。Gaussian encoder/decoder は diagonal covariance Gaussian の $\boldsymbol{\mu}$ と $\log\boldsymbol{\sigma}^2$ を hidden layer $\mathbf{h}=\tanh(\mathbf{W}_3\mathbf{z}+\mathbf{b}_3)$ から出し、encoder として使う場合は $\mathbf{z}$ と $\mathbf{x}$ を入れ替える。
 
-- **VAE（Variational Auto-Encoder）** … この論文で提案された手法。エンコーダ MLP がガウス分布を返すバージョンの AEVB のこと。
-- **AEVB（Auto-Encoding Variational Bayes）** … VAE の学習アルゴリズム全体の名前。
-- **SGVB（Stochastic Gradient Variational Bayes）** … 下界を「サンプリングで近似して微分可能にした推定量」の名前。AEVB の中で使われる。
-- **ELBO / 下界** … Evidence Lower BOund の略。本当に計算したい対数尤度の代わりに最大化する目安の数。
-- **潜在変数 / ラテント** $\mathbf{z}$ … データの裏に隠れている「特徴を数で表したもの」。
-- **エンコーダ / 認識モデル** $q_{\bm{\phi}}(\mathbf{z}|\mathbf{x})$ … 絵を見て特徴 $\mathbf{z}$ の分布を当てる係（読み取る役）。
-- **デコーダ / 生成モデル** $p_{\bm{\theta}}(\mathbf{x}|\mathbf{z})$ … 特徴 $\mathbf{z}$ から絵を描く係（作る役）。
-- **MLP（多層パーセプトロン）** … ニューラルネットワークの一番基本の形。今回は中間層が 1 つ（fully-connected）。
-- **リパラメタライゼーション・トリック** … 「ランダムな $\mathbf{z}$」を「ノイズ $\epsilon$ + 普通の関数」に書き換える小ワザ。微分を可能にする。
-- **KL ダイバージェンス** $D_{KL}$ … 2 つの分布のズレを表す数値。0 以上、ピッタリ同じなら 0。
-- **正規分布 / ガウス分布** $\mathcal{N}(\mu, \sigma^2)$ … つりがね型の分布。
-- **ミニバッチ** … 毎回データを少しずつ（100 個など）使って学習する方法。
-- **SGD / Adagrad** … つまみを少しずつ動かして目標を上げていく定番の最適化アルゴリズム。Adagrad は「動かす量」を自動で調整するタイプ。論文では Adagrad のステップサイズを $\{0.01, 0.02, 0.1\}$ から選んだ。
-- **wake-sleep アルゴリズム** … 1995 年に提案された古い学習方法。目的関数が 2 つに分かれていて、下界に直接対応しないのが弱点。比較相手。
-- **MCEM（Monte Carlo EM）** … サンプリングを使う古典的な学習法。データ 1 個ごとに長い計算が必要で大きなデータには不向き。比較相手。
-- **HMC（Hybrid / Hamiltonian Monte Carlo）** … 高品質なサンプリング手法。MCEM の中で使われている。
-- **周辺尤度（マージナル尤度）** … データそのものの「ありそうさ」の総合点。直接計算は難しい。
-- **過学習** … 練習データを覚えすぎて本番で失敗する現象。
-- **再構成誤差** … デコーダが描いた絵が元の絵からどれだけズレたかの数値。下界の後半項に相当。
-- **事前分布** $p(\mathbf{z})$ … $\mathbf{z}$ について「あらかじめ決めた基準の分布」。今回は平均 0・ばらつき 1 の正規分布。
-- **事後分布** $p(\mathbf{z}|\mathbf{x})$ … 絵 $\mathbf{x}$ を見た後の $\mathbf{z}$ の分布。これを直接計算するのが大変なので、エンコーダ $q_{\bm{\phi}}$ で近似する。
+## 実験・結果
 
-## ちょっと深掘り（中学生は飛ばして OK）
+- **データセット / ベンチマーク**: MNIST と Frey Face。Frey Face は continuous data として扱われ、decoder は Gaussian outputs を使い、means は decoder output の sigmoidal activation で $(0,1)$ に制約される。
+- **比較対象 / baseline**: wake-sleep algorithm。estimated marginal likelihood の比較では Monte Carlo EM (MCEM) with Hybrid Monte Carlo (HMC) sampler も使う。wake-sleep には AEVB と同じ encoder / recognition model を使う。
+- **指標**: Figure 2 は estimated average variational lower bound per datapoint。Figure 3 は estimated marginal likelihood。Figure 3 の PDF には $N_{\text{train}}=1000$ と $N_{\text{train}}=50000$ のパネルがある。
+- **主な結果**: Figure 2 の caption では、AEVB は wake-sleep より considerably faster に収束し、all experiments で better solution に到達したと著者が述べる。Figure 2 のパネル題名では、MNIST は $N_{\mathbf{z}}=\{3,5,10,20,200\}$、Frey Face は $N_{\mathbf{z}}=\{2,5,10,20\}$ が確認できる。caption は estimator variance が小さい、具体的には $<1$ だったため省略したとも述べる。
+- **主な結果**: likelihood lower bound の実験では、MNIST に 500 hidden units、Frey Face に 200 hidden units を使う。Frey Face の hidden units が少ない理由は、データセットが considerably smaller で overfitting を防ぐためと説明される。著者は、superfluous latent variables did not result in overfitting と述べ、variational bound の regularizing nature で説明している。
+- **主な結果**: marginal likelihood の比較では、encoder/decoder は 100 hidden units、latent variables は 3。本文は、より高次元の latent space では estimates became unreliable と述べる。appendix の estimator は sampled space が low、具体的には less than 5 dimensions で十分なサンプルがある場合に good estimates を出す、と制限を明記している。
+- **主な結果**: visualization では、2D latent space の generative model について、Gaussian prior の inverse CDF で unit square 上の座標を $\mathbf{z}$ に変換し、それぞれの $\mathbf{z}$ に対する $p_{\boldsymbol{\theta}}(\mathbf{x}\mid\mathbf{z})$ を描画する。Figure 5 は MNIST の learned generative models からの random samples を、2-D、5-D、10-D、20-D latent space で示す。
+- **著者が主張する貢献**: reparameterization によって variational lower bound の simple differentiable unbiased estimator を得ること、i.i.d. データセットの continuous latent variables per datapoint に対して recognition model を学習して posterior inference を効率化すること、そして標準的な stochastic gradient methods で最適化できること。
 
-- **なぜ素朴な Monte Carlo（スコア関数推定）はダメか**: 普通にやると $\nabla_{\bm{\phi}} \mathbb{E}_{q}[f(\mathbf{z})] \approx \frac{1}{L} \sum f(\mathbf{z}^{(l)}) \nabla \log q(\mathbf{z}^{(l)})$ になるが、これは分散が非常に大きく（[Blei et al. 2012] でも指摘）、実用にならない。リパラメタライゼーションは「$f(\mathbf{z})$ をそのまま微分できる」ので分散が小さい。
-- **Estimator A と Estimator B の違い**: A は KL 項もサンプリングで近似する一般形。B は KL 項を解析的に積分できる場合（ガウス×ガウスなど）で、分散がさらに小さい。実用上 B が標準。
-- **リパラメタライゼーションが使える分布の 3 類型**: (1) 逆 CDF が計算できる分布（指数・コーシー・ロジスティック・レイリー・パレートなど）、(2) 位置–スケール族（ラプラス・スチューデント t・一様・ガウスなど）、(3) 合成（対数正規 = 正規の指数、ガンマ = 指数の和、ディリクレ = ガンマの重み付け和、ベータ・カイ二乗・F など）。離散分布には素直には使えない。
-- **論文中の閉形式 KL（appendix B）**: $-D_{KL}(\mathcal{N}(\mu, \sigma^2) \| \mathcal{N}(0, I)) = \frac{1}{2} \sum_j (1 + \log \sigma_j^2 - \mu_j^2 - \sigma_j^2)$。これを下界に直接組み込めるので、サンプリングが必要なのは復元項だけになる。
-- **周辺尤度推定の限界**: 著者自身が「5 次元以下でしか信頼できない」と明記。だから Figure 3 では潜在次元 3 に限定している。Figure 2 の高次元（200 次元）での test log-likelihood は本文には載っていない（下界の比較のみ）。
-- **autoencoder との関係**: SGVB の目的関数を見ると「KL 罰 + 復元誤差（負）」の形になっており、これは正則化付き autoencoder と同じ構造。ただし通常の autoencoder で必要な「正則化ハイパラの調整」が、VAE では下界の理論から自動で決まる、と著者は主張。
-- **並行発見**: Rezende+ 2014（DLGM）が独立に同じリパラメタライゼーションに到達している、と Related work で明記されている。
-- **実装デフォルト**: $M=100, L=1$、初期化 $\mathcal{N}(0, 0.01)$、Adagrad、prior $p(\bm{\theta}) = \mathcal{N}(0, I)$ に相当する弱い weight decay。
+## 妥当性と限界
+
+- **この主張を支える根拠**: 理論面では、KL 分解により lower bound を定義し、reparameterization により expectation の Monte Carlo 推定量を $\boldsymbol{\phi}$ について微分可能にする。実験面では、MNIST と Frey Face で lower bound を比較し、MNIST では estimated marginal likelihood も比較して、wake-sleep / MCEM との差を図で示す。
+- **著者が認めている limitations / future work**: Full VB、つまり global parameters $\boldsymbol{\theta}$ への変分推論は appendix に導出だけあり、experiments are left to future work と本文にある。marginal likelihood estimator は sampled space が less than 5 dimensions 程度でないと信頼しにくく、本文でも高次元 latent space で estimates became unreliable と述べる。Future work は、hierarchical / convolutional encoder-decoder、time-series models、global parameters への SGVB、latent variables をもつ supervised models である。
+- **読者として注意すべき点**: 論文の主要実験は MNIST と Frey Face の 2 データセットであり、encoder/decoder も比較的 simple な single hidden layer MLP である。Gaussian diagonal covariance の近似事後は footnote で simplifying choice であって method の limitation ではないとされるが、この TeX で示される実験はその設定に基づく。
+- **読者として注意すべき点**: Figure 2 の高次元 latent space の比較は variational lower bound の比較であり、同じ高次元設定での marginal likelihood 推定は提示されていない。Figure 3 の marginal likelihood は 3 latent variables に限定される。
+- **読者として注意すべき点**: wake-sleep は discrete latent variables にも適用できる点を本文が advantage として挙げる。一方、この論文の reparameterization trick と AEVB の中心設定は continuous latent variables である。
+- **追加で確認したい実験 / 疑問**: Estimator A と Estimator B の分散差を同じモデルで定量比較する実験、潜在次元を増やしたときの有効次元や KL 項の内訳、deep / convolutional encoder-decoder で同じ比較をした場合の収束、より信頼できる高次元 marginal likelihood estimator による評価は、TeX 中には明示されていない。
+
+## 用語メモ
+
+一般的な辞書的定義ではなく、この論文での使われ方を中心に書く。
+
+- **SGVB (Stochastic Gradient Variational Bayes)**: reparameterization した variational lower bound の Monte Carlo 推定量。標準的な stochastic gradient ascent で最適化できることが重視される。
+- **AEVB (Auto-Encoding VB)**: i.i.d. データセットと datapoint ごとの continuous latent variables の設定で、SGVB estimator を使って recognition model と generative model を同時学習するアルゴリズム。
+- **Variational Auto-Encoder**: recognition model に neural network を使う AEVB の具体例。本文では encoder $q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x})$ と decoder $p_{\boldsymbol{\theta}}(\mathbf{x}\mid\mathbf{z})$ の確率モデルとして説明される。
+- **recognition model / probabilistic encoder**: $\mathbf{x}$ を入力として、可能な code $\mathbf{z}$ の分布を返す $q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x})$。真の事後 $p_{\boldsymbol{\theta}}(\mathbf{z}\mid\mathbf{x})$ の近似である。
+- **probabilistic decoder**: code $\mathbf{z}$ から観測 $\mathbf{x}$ の分布を返す $p_{\boldsymbol{\theta}}(\mathbf{x}\mid\mathbf{z})$。Bernoulli または Gaussian MLP として実装される。
+- **variational lower bound / lower bound / ELBO**: 周辺対数尤度の下界。本文の記号では $\mathcal{L}(\boldsymbol{\theta},\boldsymbol{\phi};\mathbf{x})$。
+- **reconstruction error**: estimator B の $\log p_{\boldsymbol{\theta}}(\mathbf{x}^{(i)}\mid\mathbf{z}^{(i,l)})$ に対応する項を、auto-encoder の言葉で negative reconstruction error と説明している。
+- **reparameterization trick**: $\mathbf{z}\sim q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x})$ を、$\mathbf{z}=g_{\boldsymbol{\phi}}(\boldsymbol{\epsilon},\mathbf{x})$、$\boldsymbol{\epsilon}\sim p(\boldsymbol{\epsilon})$ に書き換える方法。
+- **Estimator A / Estimator B**: Estimator A は $\log p_{\boldsymbol{\theta}}(\mathbf{x},\mathbf{z})-\log q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x})$ をサンプル平均する generic estimator。Estimator B は KL を解析的に計算し、reconstruction 項だけをサンプル平均する低分散版。
+- **MCEM / HMC**: marginal likelihood 比較の baseline。appendix では MCEM は encoder を使わず、posterior gradient で HMC サンプリングする。10 HMC leapfrog steps、acceptance rate 90%、その後 5 weight update steps と書かれている。
+
+## 読む順番の提案
+
+- まず `iclr14_sva.tex` の Abstract と Introduction を読み、問いが "directed probabilistic models", "continuous latent variables", "intractable posterior distributions", "large datasets" の組み合わせであることを押さえる。正規ノートでは `Summary（著者の主張）` の問題設定に対応する。
+- 次に `Method` の `Problem scenario` と Figure 1 caption を読む。ここで $p_{\boldsymbol{\theta}}(\mathbf{z})p_{\boldsymbol{\theta}}(\mathbf{x}\mid\mathbf{z})$ と $q_{\boldsymbol{\phi}}(\mathbf{z}\mid\mathbf{x})$ の役割を確認する。
+- その後、`The variational bound` の `eq:lowerbound`, `eq:lowerbound2` を読む。正規ノートの Takeaway にある「KL 正則化 + reconstruction」の理解につながる。
+- 次に `The SGVB estimator and AEVB algorithm` の `eq:fullestimator`, `eq:estimator2`, `eq:minibatchestimator` と Algorithm 1 を読む。ここが AEVB の学習手順そのもの。
+- `The reparameterization trick` は Gaussian の例だけでなく、inverse CDF、location-scale、composition の 3 類型を確認する。正規ノートの reparameterization trick の説明に対応する。
+- `Example: Variational Auto-Encoder` と appendix の `Solution of -D_KL`, `MLP's as probabilistic encoders and decoders` を読む。`eq:gaussian_estimator` が実装に最も近い式である。
+- 実験は `Experiments`、Figure 2、Figure 3、appendix の `Marginal likelihood estimator` と `Monte Carlo EM` を合わせて読む。正規ノートの `Critical Thoughts` の、評価設計と限界の議論につながる。
+- 最後に `Related work`, `Conclusion`, `Future work`, `iclr14_sva.bbl` を読み、wake-sleep、SVI、DARN、Rezende et al. 2014 との位置づけを確認する。
 
 ## もとの論文・正規ノート
 

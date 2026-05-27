@@ -1,4 +1,4 @@
-# Language Models are Few-Shot Learners（言語モデルは「ちょっとお手本を見せるだけで」学べる）
+# Language Models are Few-Shot Learners（大規模自己回帰言語モデルにおける in-context learning の実証）
 
 - arXiv: https://arxiv.org/abs/2005.14165
 - 一次ソース: ../papers/arXiv-2005.14165v4/
@@ -8,146 +8,153 @@
 
 ## 一言で言うと
 
-すごく大きな「文章の続きを当てるAI」（パラメータ1750億個＝GPT-3）に、お手本を数個見せるだけで、追加の練習なしで色んな国語タスクをかなりこなせる、という発見。
+この論文は、175B パラメータの自己回帰型言語モデル GPT-3 を含む 8 サイズの同一モデル系列を訓練し、重み更新なしで zero-shot / one-shot / few-shot 評価を行うと、モデル規模の増大に伴って in-context learning 性能が滑らかに向上することを示す。著者の主張は「タスクごとの fine-tuning なしでも、多くの NLP ベンチマークで既存の fine-tuned SOTA に近づく、または一部で上回る」だが、WiC・ANLI・RACE・QuAC など明確に苦手な領域と、test-set contamination や bias / misuse / energy の問題も同時に扱っている。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- これまでのAIは、新しいタスク（例：英文の感情を判定する、要約する、翻訳する）ごとに「正解つきの練習問題」を **数千〜数十万問** 集めて、AI に追加レッスン（fine-tuning：ファインチューニング、← AI を特定の仕事用に追加で訓練すること）を受けさせる必要があった。
-- でも、人間はそんな大量の例を見なくても「悲しい文か嬉しい文か当ててね、これが例だよ」と **2〜3 個の例** を見せるだけで、新しい仕事をだいたいできるようになる。
-- AI も「追加レッスン無し・お手本だけ」で人間みたいに新タスクをこなせるようにしたい。
-- 既存の方法（GPT-2）でこれを試したら、Natural Questions という質問応答タスクで正解率 4% しか出なかった。話にならない。
-- さらに「追加レッスン専用のデータ」に頼ると、AI がそのデータの **クセに過剰適合** してしまい、本番では弱い、という問題もあった。
+- **問題設定**: 近年の NLP は大規模テキストで pre-training した後、タスクごとの教師データで fine-tuning する方式が強い。しかしその方式は、タスクごとに数千から数十万のラベル付き例を必要とし、狭い fine-tuning 分布への過適合や spurious correlations の利用を招きうる、という問題を持つ。
+- **対象範囲 / 仮定**: 対象は GPT-2 系の autoregressive Transformer language model であり、評価時には「without any gradient updates or fine-tuning」と明記される。タスク指定は自然言語の指示と、文脈中に入れたデモ例だけで行う。モデルはすべて $n_{\mathrm{ctx}}=2048$ tokens の context window を使う。
+- **既存研究との差分**: GPT-2 でも in-context learning 的な評価は行われたが、Natural Questions で 4% など fine-tuning に大きく劣っていた。GPT-3 論文は、モデルを 125M から 175B まで 3 桁にわたり拡大し、zero-shot / one-shot / few-shot を体系的に比較する。
+- **この論文で答えたい問い**: 言語モデルを大きくすると、単に language modeling loss が下がるだけでなく、few-shot のタスク適応能力、すなわち文脈中の例からタスクを実行する能力も強くなるのか。
 
-身近な例で言うと、これまでは「テスト前に過去問を何万問も解かないと点を取れない生徒」だったのを、「先生がテスト中に解き方の例を 2〜3 個見せてくれれば、その場で解ける生徒」にしたい、というイメージ。
+## 背景と前提
 
-## どうやって解いたの？
+- **Language model**: この論文では主に、左から右に token を予測する autoregressive language model を指す。GPT-3 は GPT-2 と同じ系統のモデルで、タスクごとの分類ヘッドや専用アーキテクチャを追加しない。
+- **Fine-tuning**: pre-trained model の重みを、タスク固有の supervised dataset で更新する方式。論文はこれを強力な baseline と認めたうえで、タスク固有データへの依存と OOD generalization の弱さを問題にする。
+- **Meta-learning / in-context learning**: introduction の脚注では、外側の学習で幅広いスキルやパターン認識能力を獲得し、推論時にその能力を使ってタスクに素早く適応または認識する構造を meta-learning と呼ぶ。特に、入力文脈内で起きる内側の過程を "in context-learning" と呼ぶ。
+- **Zero-shot / one-shot / few-shot**: zero-shot は自然言語のタスク説明だけ、one-shot は説明に 1 個のデモを加える、few-shot は $K$ 個のデモを加える設定である。few-shot の $K$ は context window に収まる範囲で、通常 10 から 100 個とされる。
+- **比較対象**: BERT, RoBERTa, T5, XLNet などの fine-tuned model、closed-book QA の T5-11B / T5-11B+SSM、open-domain QA の RAG、翻訳の XLM / MASS / mBART、各ベンチマークの fine-tuned SOTA が主な比較対象である。
+
+## 提案手法
 
 ### コアアイデア
 
-**AI のサイズ（覚えられる数のキャパシティ）を、これまでにないくらい大きくする**。具体的には、これまでで最大級だった同種モデル（17 億〜170 億パラメータ級）の **10 倍**、1750 億パラメータ（175B）まで巨大化させる。パラメータ（← AI の中にあるツマミの数。大きいほど色んなパターンを覚えられる）が増えると、「お手本だけで新タスクをこなす力」が **自然と伸びる**、という仮説を実証する。
+著者の方法は、新しい学習アルゴリズムを提案するというより、GPT-2 系の autoregressive Transformer を 175B パラメータまで拡大し、同じモデル系列を 8 サイズで訓練して、in-context learning が scale とともにどう変わるかを測るものである。モデルは GPT-2 の modified initialization, pre-normalization, reversible tokenization を使い、例外として Sparse Transformer に似た alternating dense and locally banded sparse attention patterns を層に入れる。
 
-例えるなら、引き出しが 100 個しかない机だと、覚えられる事も限られて応用が利かない。でも引き出しが 1750 億個あれば、「ジャンケンの勝ち方」「英語→フランス語」「足し算」みたいな細かい知識を全部しまっておけて、テストの時に「あ、これはあの引き出しだ」と取り出せる。論文はこの仮説を、サイズ違いの 8 個のモデル（125M, 350M, 760M, 1.3B, 2.7B, 6.7B, 13B, 175B）で実験して確かめた。
+訓練データは filtered Common Crawl, WebText2, Books1, Books2, Wikipedia の混合である。Table \ref{table:dataset} では Common Crawl (filtered) が 410B tokens / training mix 60% / 0.44 epochs、WebText2 が 19B / 22% / 2.9 epochs、Books1 が 12B / 8% / 1.9 epochs、Books2 が 55B / 8% / 0.43 epochs、Wikipedia が 3B / 3% / 3.4 epochs とされる。高品質と見なすデータセットは、サイズ比例ではなく高い比率でサンプリングされる。
 
-### 仕組み
+最大モデル GPT-3 175B は 96 layers, $d_{\mathrm{model}}=12288$, 96 heads, $d_{\mathrm{head}}=128$, batch size 3.2M tokens, learning rate $0.6 \times 10^{-4}$ である。Table \ref{table:param} の caption は、全モデルが total 300 billion tokens で訓練されたと明記する。
 
-- step1: **超巨大な「次の単語当てゲーム」AI を作る**。インターネット上の大量の文章（合計 3000 億トークン分。token：トークン ← 単語や単語のかけらの単位）を読ませて、「この単語の次に来るのは何？」をひたすら当てさせる訓練を行う。これだけ。タスクごとの追加レッスンはしない。
-- step2: モデルの中身は **Transformer（トランスフォーマー）** という種類のニューラルネットワーク（← 人工の脳神経網。たくさんの簡単な計算ユニットが繋がって複雑な計算をする仕組み）。GPT-2 と同じ作りで、注意機構（attention：アテンション ← 入力のどこに注目するかをモデル自身が決める仕組み）を少しだけ工夫した版（Sparse Transformer の dense と局所スパースを交互に使う）。
-- step3: 一番大きいモデル（175B）は 96 層・隠れ次元 12288・96 個の注意ヘッドという巨大さ。入力として一度に 2048 トークンまで読める（context window：コンテキストウィンドウ ← AI が一度に見られる文章の長さ）。
-- step4: **データ** はインターネット全体をフィルタリングした CommonCrawl（410B tokens, 60%）と、WebText2（22%）、Books1（8%）、Books2（8%）、Wikipedia（3%）を質に応じて混ぜる。質の高いものは何度も読ませる。
-- step5: 評価のときは **3 つの設定** を試す:
-  - **zero-shot（ゼロショット）**: 「次の英文をフランス語にしてね」と説明だけ書いて、お手本は 0 個。
-  - **one-shot（ワンショット）**: 説明＋お手本 1 個。
-  - **few-shot（フューショット）**: 説明＋お手本 10〜100 個（K 個）。
-- step6: **大事なポイント**: どの設定でも、AI の中身（パラメータ）は **1 ミリも書き換えない**。ただ「お手本＋本番の問題」を文章として入力して、続きを書かせるだけ。これを **in-context learning（インコンテキスト・ラーニング ← 入力文脈の中で学ぶ）** と呼ぶ。
-- step7: 24 種類以上の国語ベンチマーク（← AI の力を測る標準テストセット）で性能を測り、サイズが大きくなると性能がどう伸びるかを観察する。
+### 重要な定義・数式
 
-### 主要な数式
+TeX 中には、通常の言語モデル目的関数を明示する式は少ない。そのため、ここでは本文で明示される設計・評価上の式に絞る。
 
-論文自体は数式がとても少ないけど、中核の考え方は次の 2 つ。
+$$
+d_{\mathrm{ff}} = 4 \ast d_{\mathrm{model}}
+$$
 
-#### 1. 「次の単語当て」モデルの考え方
+**式の意味**: Transformer の feedforward layer の幅を、bottleneck layer の幅 $d_{\mathrm{model}}$ の 4 倍にするというモデル設計である。Table \ref{table:param} の説明で、全モデルに共通する構造として述べられる。
 
-AI がやってるのは、文章 $w_1, w_2, \dots, w_{t-1}$ を見て、次の単語 $w_t$ が何になりそうか、その「ありそうさ（確率）」を計算すること。文章全体の「ありそうさ」は、各単語の「次に来そうさ」を全部かけ合わせて表す:
+**記号の定義**:
+- $d_{\mathrm{ff}}$ ... feedforward layer の次元数
+- $d_{\mathrm{model}}$ ... bottleneck layer の unit 数、すなわち Transformer の主な hidden dimension
+- $\ast$ ... TeX 中の表記に従った乗算記号
 
-$$ P(w_1, w_2, \dots, w_n) = P(w_1)\cdot P(w_2 \mid w_1) \cdot P(w_3 \mid w_1, w_2) \cdots P(w_n \mid w_1, \dots, w_{n-1}) $$
+**この論文での役割**: 8 サイズの GPT-3 系列を比較する際、細部のアーキテクチャ差ではなく主に model size の効果を見るための共通設計である。
 
-**この式が言ってること**: 「文章全体の自然さ」は、「最初の単語の出やすさ」×「最初の単語の後にこの 2 番目の単語が来る出やすさ」×「…」と、左から順に「次の単語が出る出やすさ」をひたすら掛け算したもの、という意味。AI はこの掛け算の中身を覚えるように訓練される。
+$$
+n_{\mathrm{ctx}}=2048
+$$
 
-**記号の意味**:
-- $w_1, w_2, \dots, w_n$ … 文章を構成する単語（実際は単語の細かい部品＝トークン）を順番に並べたもの。
-- $P(w_t)$ … 単語 $w_t$ が出てくる「ありそうさ」を表す数（0〜1 の間。1 に近いほど絶対出る、0 に近いほど絶対出ない）。確率（← 「サイコロで 6 が出る目のありそうさ」のような、0〜1 の間の数）のこと。
-- $P(w_t \mid w_1, \dots, w_{t-1})$ … 「これまでに $w_1$〜$w_{t-1}$ が並んだ後で、次が $w_t$ になる」ありそうさ。「縦棒 $\mid$」は「〜という前提のもとで」と読む。
-- $\cdot$（点）… 掛け算の記号。
-- $n$ … 文章の長さ（単語の数）。
+**式の意味**: すべてのモデルが一度に条件づけられる context window は 2048 tokens である、という設定である。
 
-**身近な例え**: しりとりみたい。「りんご」の次に「ゴリラ」が来る自然さは、最初の「り」から始まる単語が「りんご」になる自然さ × 「りんご」の次に「ゴリラ」が来る自然さ。これを最後まで掛け算していく。AI はものすごい量の文章を読んで、「この言葉のあとはこの言葉が来やすい」を全部覚えている、いわば究極のしりとり名人。
+**記号の定義**:
+- $n_{\mathrm{ctx}}$ ... モデルが推論時に参照できる文脈長
+- $2048$ ... token 数
 
-#### 2. few-shot：お手本 K 個を文脈に詰める
+**この論文での役割**: few-shot 評価で文脈に入れられるデモ数 $K$ の上限を決める。本文では、典型的には 10 から 100 examples が入ると説明される。
 
-few-shot 設定では、AI に入力として渡すのはおおまかに次のような文章:
+$$
+\frac{P(\mathrm{completion} | \mathrm{context})}{P(\mathrm{completion} | \mathrm{answer\_context})}
+$$
 
-$$ \text{入力} = \underbrace{\text{タスクの説明}}_{\text{自然言語}} \;\;+\;\; \underbrace{(x_1, y_1),\, (x_2, y_2),\, \dots,\, (x_K, y_K)}_{\text{お手本 }K\text{ 個}} \;\;+\;\; \underbrace{x_{\text{本番}}}_{\text{答えてほしい問題}} $$
+**式の意味**: ARC, OpenBookQA, RACE のような一部の multiple choice task で、completion の条件付き尤度を、その completion 自体の無条件に近い出やすさで割って正規化する評価式である。
 
-**この式が言ってること**: 「タスクの説明文」＋「問題と答えのペアを K 個」＋「本番の問題」を、一本の長い文章として AI に渡す。すると AI は「続き＝本番の答え」を書いてくれる。中身（パラメータ）は変えない。
+**記号の定義**:
+- $P(\mathrm{completion} | \mathrm{context})$ ... 問題文脈を与えたとき、その選択肢 completion が出る確率
+- $P(\mathrm{completion} | \mathrm{answer\_context})$ ... generic な `"Answer: "` または `"A: "` だけを answer_context としたとき、その completion が出る確率
+- $\mathrm{context}$ ... デモ例と対象問題の文脈
+- $\mathrm{answer\_context}$ ... completion が答えであることだけを促す汎用文字列
 
-**記号の意味**:
-- $x_i$ … $i$ 番目のお手本の「問題」部分（例: 英文 "Hello"）。
-- $y_i$ … $i$ 番目のお手本の「答え」部分（例: フランス語訳 "Bonjour"）。
-- $K$ … お手本の数。論文では普通 10〜100 個。$K=0$ なら zero-shot, $K=1$ なら one-shot, それ以上なら few-shot。
-- $x_{\text{本番}}$ … 答えを出してほしい本番の問題。
-- $+$ … ここでは「文章としてくっつける」という意味（足し算ではない）。
+**この論文での役割**: multiple choice で長さや選択肢固有の出やすさに引きずられないようにする評価上の工夫である。結果の解釈では、モデルが重み更新なしで選択肢を比較している点を押さえる必要がある。
 
-**身近な例え**: 数学の宿題プリント。一番上に「分数の計算をしましょう」と説明が書いてあって、その下に解き方のお手本問題と答えが 3 問くらい印刷されていて、最後に「では、これを解いてください: 1/2 + 1/3 = ?」と本番の問題がある、あの形式。AI に渡す入力もちょうどそんな感じのプリント。
+$$
+\alpha = 0.6
+$$
 
-#### 3.（参考）スケーリング則: サイズが大きいほど賢くなる
+**式の意味**: free-form completion task で使う beam search の length penalty である。beam width は 4 とされる。
 
-論文には明示の数式は無いけど、結論として「**お手本だけで解く力**は、AI のサイズが大きくなるほどスムーズに伸びる」という観察が中心。aggregate_performance の図1で 42 ベンチマーク平均の正解率が、モデルサイズが 10 倍になるごとにほぼ一定の割合で上がっていく様子が示されている。
+**記号の定義**:
+- $\alpha$ ... beam search における length penalty
+- beam width 4 ... 同時に保持する候補列の数
 
-論文の Results 冒頭でも「power-law（べき乗則 ← かたっぽが 10 倍になると、もう片っぽがいつも同じ割合だけ変わる関係）を、これまでより **さらに 100 倍（two orders of magnitude）の範囲** 引き延ばしても、ほとんどズレない」と書かれている。
+**この論文での役割**: QA や翻訳など自由生成を評価するタスクで、生成長の偏りを抑えながら F1, BLEU, exact match など標準指標で採点するための設定である。
 
-**身近な例え**: 自転車のギアと速度の関係に似ていて、「ペダルを 2 倍速く漕いだら必ず速度がこのくらい上がる」というルールが、すごく速く漕いでもまだ崩れずに成立し続けている感じ。
+### 実装 / アルゴリズム上の要点
 
-## 何がすごいの？
+- step1: GPT-2 系の autoregressive Transformer を 8 サイズ訓練する。サイズは GPT-3 Small 125M, Medium 350M, Large 760M, XL 1.3B, 2.7B, 6.7B, 13B, 175B である。
+- step2: Common Crawl を quality-based filtering し、document level の fuzzy deduplication を行い、WebText2 / Books1 / Books2 / English-language Wikipedia を加える。
+- step3: 各モデルを 300B tokens 訓練する。大モデルでは matrix multiply 内と layer 間の model parallelism を併用し、V100 GPU cluster を使う。
+- step4: 評価時はモデル重みを更新しない。few-shot では各評価例に対して、原則としてそのタスクの training set から $K$ 個の例をランダムに引き、context と completion の形で文脈に入れる。例外として、LAMBADA と StoryCloze は development set から、original Winograd は同じ dataset から conditioning examples を引く。
+- step5: multiple choice は completion の likelihood を比較し、free-form completion は beam search で生成して F1 / BLEU / exact match など標準指標で採点する。
+- step6: benchmark contamination を調べるため、pretraining set との 13-gram overlap を用いて clean subset を作り、元スコアとの差を比較する。
 
-論文中で報告されている主な数字を、TeX を確認して並べる:
+## 実験・結果
 
-- **LAMBADA（次の単語当てクイズ）**: few-shot で **86.4%**。これまでの最高記録より **+18%** 改善。
-- **TriviaQA（雑学クイズ）**: few-shot で **71.2%**。資料を見ずに答える設定（closed-book）で、追加レッスン済みの最高記録（RAG: 68.0）を **上回った**。「巨大モデルが持っている知識だけで答える」が成立してしまった例。
-- **PTB（文章のもっともらしさを測るタスク）**: zero-shot で **perplexity 20.50**（perplexity：パープレキシティ ← AI がどれくらい次の単語に迷うかを示す数。小さいほど自信あり）。これまでの最高記録より **15 ポイント** 改善。
-- **SuperGLUE（8 個の国語タスクをまとめた標準テスト）**: few-shot で **71.8**。BERT-Large（69.0、追加レッスン済み）を超えたが、追加レッスン専用の最強モデル（89.0）にはまだ届かない。
-- **算術タスク**: 2 桁の足し算 **100%**、2 桁の引き算 **98.9%**、3 桁足し算 **80.2%**、3 桁引き算 **94.2%**。一方で 4 桁は 25–26%、5 桁は 9–10% と、桁が増えるとガクッと落ちる。
-- **人間が書いたニュース記事と GPT-3 が書いたニュース記事の見分けテスト**: 人間の正答率は約 **52%（＝コインを投げて当てるのとほぼ同じ）**。比較用の小さいモデル（control model）では約 **88%** で見分けられたので、175B のときだけ「ほぼ見分けがつかない」状態に到達。
-- **苦手なタスク**: WiC（2 文比較）は 49.4% で完全に当てずっぽうレベル。ANLI、RACE、QuAC も低い。
+- **データセット / ベンチマーク**: language modeling / cloze / completion では PTB, LAMBADA, StoryCloze, HellaSwag、closed-book QA では Natural Questions, WebQuestions, TriviaQA、翻訳では WMT'14 Fr-En, WMT'16 De-En, WMT'16 Ro-En、推論系では Winograd, Winogrande, PIQA, ARC, OpenBookQA、読解では CoQA, DROP, QuAC, SQuADv2, RACE、集約ベンチマークでは SuperGLUE、さらに ANLI, arithmetic, word scrambling, SAT analogies, news article generation などを使う。
+- **比較対象 / baseline**: fine-tuned SOTA, fine-tuned BERT-Large, RoBERTa, T5-11B, T5-11B+SSM, RAG, XLM, MASS, mBART, UnifiedQA 系の SOTA など。比較の注意点として、GPT-3 側は原則として fine-tuning なしである。
+- **指標**: accuracy, F1, BLEU, exact match, perplexity, human detection accuracy など。PTB は zero-shot perplexity、SuperGLUE は task ごとの accuracy / F1 と平均、翻訳は multi-bleu.perl の BLEU、ニュース生成は人間評価者の mean accuracy である。
+- **主な結果**: Figure \ref{graph:compute} では cross-entropy validation loss の power-law trend が "additional two orders of magnitude" まで大きくは崩れないとされる。Figure \ref{figure:aggregate_performance} は 42 個の accuracy-denominated benchmarks の平均で、zero-shot も伸びるが few-shot がより速く伸びる、と説明する。
+- **主な結果**: PTB は GPT-3 zero-shot perplexity 20.5 で、Table \ref{table:language} の SOTA 35.8 より低い。LAMBADA は GPT-3 few-shot accuracy 86.4%, perplexity 1.92 で、Table \ref{table:completion} の SOTA accuracy 68.0 を上回る。
+- **主な結果**: closed-book QA では Table \ref{table:question} で TriviaQA が zero-shot 64.3, one-shot 68.0, few-shot 71.2 であり、RAG の 68.0 を few-shot が上回る。NaturalQS は few-shot 29.9、WebQS は few-shot 41.5 で、T5-11B+SSM の NaturalQS 36.6 / WebQS 44.7 には届かない。
+- **主な結果**: 翻訳は Table \ref{table:translation} で GPT-3 few-shot が Fr$\to$En 39.2, De$\to$En 40.6, Ro$\to$En 39.5 と into-English で強い。一方 En$\to$Ro は 21.0 で、supervised SOTA 38.5 や MASS 35.2 より大きく低い。本文は GPT-2 由来の byte-level BPE tokenizer が英語中心だったことを弱点候補として挙げる。
+- **主な結果**: SuperGLUE は Table \ref{table:superglue} で GPT-3 few-shot average 71.8、fine-tuned BERT-Large 69.0、fine-tuned SOTA 89.0 である。COPA は 92.0、WSC は 80.1、ReCoRD F1 は 91.1 と強いが、WiC は 49.4 で random chance と述べられる。
+- **主な結果**: arithmetic は Table \ref{table:arithmetic} で GPT-3 few-shot が 2D+ 100.0, 2D- 98.9, 3D+ 80.4, 3D- 94.2, 4D+ 25.5, 4D- 26.8, 5D+ 9.3, 5D- 9.9, 2Dx 29.2, 1DC 21.3 である。本文中では 3D addition 80.2 と書かれる箇所があるが、表では 80.4 であるため、このノートでは表値を優先して両者の差に注意する。
+- **主な結果**: 3 桁算術の test set と training data の一致確認では、2,000 個の addition のうち 17 matches (0.8%)、2,000 個の subtraction のうち 2 matches (0.1%) しか見つからず、著者は単純な memorization では説明しにくいと論じる。
+- **主な結果**: news article generation では、短い約 200 word 記事で human accuracy が control 86% に対し GPT-3 175B は 52% (Table \ref{table:generation})、約 500 word 記事でも control 88% に対し GPT-3 175B は 52% (Table \ref{table:generation_long}) である。著者はこれを synthetic text と human-written text の区別困難化として Broader Impacts に接続する。
+- **著者が主張する貢献**: 175B autoregressive LM の訓練、zero-shot / one-shot / few-shot の体系的比較、スケールと in-context learning の関係の実証、多様な NLP / synthetic tasks での評価、contamination analysis、bias / misuse / energy を含む broader impacts の予備的検討である。
 
-著者が「貢献（contribution）」として主張しているのは大きく次の点:
+## 妥当性と限界
 
-- (1) 1750 億パラメータの自己回帰型言語モデル GPT-3 を実際に訓練して、性能を公開で示した。
-- (2) zero-shot / one-shot / few-shot を「タスク用データへの依存量の連続軸」として整理した。
-- (3) **モデルが大きくなるほど in-context learning がはっきり強くなる**（zero-shot と few-shot の差自体が拡大する）ことを 8 サイズで実証した。
-- (4) 人間が見分けられない品質のニュース記事生成を実証した。
-- (5) 学習データに評価データの中身が混ざる「データ汚染（test-set contamination）」を 13 単語連続一致で系統的に調べる枠組みを示し、影響を解析した。
-- (6) 偏見、悪用、エネルギーコストといった社会的影響を Broader Impacts として論じた。
+- **この主張を支える根拠**: 同一モデル系列を 125M から 175B まで 8 サイズで訓練し、同じ zero-shot / one-shot / few-shot プロトコルで多くのタスクを評価しているため、モデルサイズと in-context learning 性能の関係を横断的に観察できる。Figure \ref{graph:compute} と Figure \ref{figure:aggregate_performance} は、loss と下流タスク性能の両方で scale に伴う滑らかな傾向を示す。
+- **この主張を支える根拠**: 評価時に fine-tuning をしないことが一貫しており、few-shot で性能が上がる場合、それは重み更新ではなく文脈中のデモの利用による。SuperGLUE の Figure \ref{graph:superglue_analysis} では model size と context examples の両方で性能が伸びると説明される。
+- **この主張を支える根拠**: contamination について、著者は 13-gram overlap による clean subset を作り、元スコアとの差を比較している。PIQA は 29% flagged / clean subset で 3 percentage point decrease、Winograd は 45% flagged / 2.6% decrease として、結果に asterisk を付ける。4 Wikipedia language modeling benchmarks と Children's Book Test はほぼ training data に含まれ、1BW は高い割合が training set に含まれるため報告しない。
+- **著者が認めている limitations / future work**: GPT-3 は長文生成で意味的反復、coherence 低下、自己矛盾、non-sequitur を起こしうる。common sense physics、WiC / ANLI のような comparison tasks、QuAC / RACE など一部読解タスクも弱い。
+- **著者が認めている limitations / future work**: autoregressive model に限定したため、bidirectional architectures や denoising objectives を含まない。著者は、WIC, ANLI, QuAC, RACE などの弱さは、比較・読み返し・短い答え生成が必要なタスクで bidirectionality が効く可能性と関係すると述べる。
+- **著者が認めている limitations / future work**: few-shot learning が本当に test time に新タスクを "from scratch" で学んでいるのか、訓練時に学んだタスクを認識しているだけなのかは曖昧であり、task によって位置が異なる可能性がある。
+- **著者が認めている limitations / future work**: pre-training の sample efficiency は人間より大きく劣り、推論も高価で扱いにくい。distillation は将来方向として挙げられるが、hundreds of billions parameters の規模では新しい課題がある。
+- **著者が認めている limitations / future work**: Broader Impacts では intentional misuse、bias / fairness / representation、energy efficiency が扱われる。Energy 節は GPT-3 175B の training compute を several thousand petaflop/s-days とし、Table \ref{table:total_compute_calculations} は GPT-3 175B を 3.64E+03 PF-days / 3.14E+23 flops とする。
+- **読者として注意すべき点**: Figure \ref{figure:aggregate_performance} の 42 benchmark 平均は著者自身が "not a rigorous or meaningful benchmark in itself" と注意している。全体平均が上がっても、WiC 49.4 や ANLI の chance 近辺のような弱点は隠れやすい。
+- **読者として注意すべき点**: GPT-3 few-shot と fine-tuned SOTA の比較は、訓練条件や使えるタスク固有データ量が異なる。これは論文の問題設定そのものだが、同一 compute 予算や同一データ利用条件での比較ではない。
+- **追加で確認したい実験 / 疑問**: 苦手な comparison tasks について、同規模の bidirectional model や denoising objective と直接比較すると、弱さが autoregressive objective 由来か scale 不足かを切り分けられる可能性がある（TeX 中では future direction として示唆されるが、実験はない）。
+- **追加で確認したい実験 / 疑問**: few-shot が task recognition なのか de novo learning なのかを、人工タスクや反事実デモで分離して測る実験が必要である（TeX 中には具体実験は明示されていない）。
 
-## キーワード辞典
+## 用語メモ
 
-本文に出てきた順で、中学生向けの一言定義。
+一般的な辞書的定義ではなく、この論文での使われ方を中心に書く。
 
-- **言語モデル（language model）** … 文章の続きを当てるルールを丸ごと覚えた AI。
-- **fine-tuning（ファインチューニング）** … 出来上がった AI を、特定のタスク用にもう一度追加で訓練して微調整すること。
-- **GPT-3** … この論文で作った、パラメータ 1750 億個の大きな言語モデル。
-- **パラメータ（parameter）** … AI の中にある調整つまみ。多いほど色んなパターンを覚えられる。1750 億個 = 175,000,000,000 個。
-- **トークン（token）** … 単語や単語のかけらの単位。AI が読み書きする最小ブロック。
-- **Transformer（トランスフォーマー）** … 今の言語 AI の主流の作り方。文中の単語同士の関係を一気にまとめて扱える。
-- **attention（アテンション・注意機構）** … 入力のどこに注目すべきかを AI 自身が決める仕組み。
-- **context window（コンテキストウィンドウ）** … AI が一度に読める文章の長さ。GPT-3 は 2048 トークン。
-- **zero-shot / one-shot / few-shot** … 本番のテストで AI にお手本を 0 個 / 1 個 / 10〜100 個渡す設定。
-- **in-context learning（インコンテキスト・ラーニング）** … パラメータをいじらず、入力文の中でお手本を見せて「学ばせる」やり方。
-- **meta-learning（メタ学習）** … 「学ぶこと自体を学ぶ」枠組み。ここでは「訓練中に幅広いスキルを覚え込み、本番ではそれを取り出して使う」構造のこと。
-- **prompt（プロンプト）** … AI に渡す入力文。「タスク説明 + お手本 + 本番の問題」をまとめたもの。
-- **autoregressive（自己回帰）** … 「これまでに出した単語を見て、次の単語を 1 つずつ予測する」やり方。
-- **perplexity（パープレキシティ）** … AI が次の単語に迷う度合いの数値。小さいほど良い。
-- **benchmark（ベンチマーク）** … AI の力を比べるための標準テストセット。
-- **SuperGLUE / LAMBADA / TriviaQA / SQuAD / ANLI / WiC / HellaSwag / PIQA** … 論文に出てくる代表的なベンチマーク（テストの名前）。
-- **BERT / T5 / RoBERTa / RAG** … 比較された他の AI モデル。BERT は双方向（文の前後どちらも見る）、T5 は「全部を文章生成問題に統一」、RAG は外部知識を引っ張って答える方式。
-- **CommonCrawl** … インターネット全体をクロール（巡回収集）した大規模テキストデータ。
-- **fuzzy 重複除去（fuzzy deduplication）** … 完全一致でなく「似ている文書」をまとめて 1 個に絞ること。
-- **data contamination（データ汚染）** … 学習データの中にテストの問題が混じってしまって、点数が過大評価されること。
-- **scaling law（スケーリング則）** … モデルサイズや計算量を増やすと、性能がスムーズに上がる規則性。
-- **closed-book QA** … 質問に答えるとき、外部資料を見ずに「モデルの記憶」だけで答える設定。
-- **open-domain QA** … 質問の分野が決まっていない、何でも来い型の質問応答。
-- **broader impacts** … 技術が社会に与える広い影響（悪用、偏見、エネルギーなど）。
-- **NLI（Natural Language Inference）** … 「文 A と文 B は矛盾／含意／無関係 のどれ？」を当てるタスク。
+- **GPT-3**: この論文では特に 175.0B パラメータの最大モデルを指すことが多いが、Table \ref{table:param} では GPT-3 Small から GPT-3 175B までの系列名としても使われる。
+- **Autoregressive language model**: 左から右へ次 token を予測するモデル。著者は sampling と likelihood 計算がしやすいのでこの系統を使ったと述べる。
+- **Few-shot (FS)**: 推論時に $K$ 個の task demonstrations を conditioning として与えるが、weight updates は行わない設定。通常 $K$ は 10 から 100。
+- **One-shot (1S)**: 自然言語の説明に加えて 1 個のデモだけを与える設定。人間にタスクを説明するときの形式に近いとして区別される。
+- **Zero-shot (0S)**: デモなしで自然言語の説明だけを与える設定。便利で spurious correlations を避けやすいが、フォーマットが曖昧なタスクでは人間にも不利な場合がある。
+- **In-context learning**: 重み更新なしで、入力文脈内の説明や例からタスクを実行すること。著者は meta-learning の inner loop として位置づける。
+- **Fine-tuning (FT)**: タスク固有の supervised dataset で pre-trained model の重みを更新する方式。この論文では GPT-3 自体には行わず、将来方向とする。
+- **Closed-book QA**: 外部検索や補助文書を使わず、モデルのパラメータに保持された知識だけで質問に答える設定。GPT-3 はこれに加えて QA dataset での fine-tuning も使わない。
+- **Test-set contamination**: pretraining data に benchmark の test / development examples が混入している問題。著者は 13-gram overlap で conservative に検出し、clean subset との差を見る。
+- **Power-law scaling**: Kaplan et al. 2020 の scaling laws に基づく、compute や model size と validation loss の滑らかな関係。GPT-3 論文ではこの傾向がさらに 2 orders of magnitude 拡張されても大きくは崩れないと報告する。
+- **Spurious correlations**: タスクの本質ではなく、dataset 固有の表面的な手がかり。fine-tuning が狭い分布で行われると、大モデルほどこれを利用しやすいという懸念が導入で述べられる。
+- **BPE / reversible tokenization**: GPT-2 由来の tokenization。翻訳節では、英語中心データで作られた byte-level BPE tokenizer の再利用が out-of-English 翻訳の弱さの可能性として挙げられる。
+- **Broader Impacts**: この論文では、deliberate misuse、bias / fairness / representation、energy usage の三つを中心に、技術の社会的影響を予備的に論じる節である。
 
-## ちょっと深掘り（中学生は飛ばして OK）
+## 読む順番の提案
 
-- **「お手本で本当に学んでいるのか？」問題**: 著者自身が limitations（限界）として「few-shot で AI が新しいタスクを `その場で学んでいる` のか、それとも `訓練中に見たパターンを思い出している` だけなのかは、この論文では区別できない」と書いている。これは後の研究（induction heads など）で議論される論点を先取りしている。
-- **苦手の傾向**: 2 つの文を比べる系（WiC で 2 つの文中の同じ単語が同じ意味で使われているか／ANLI で含意か矛盾か）が一様に弱い。著者はこれを「**自己回帰（左から右に書いていく方式）の弱点**」かもしれないと推測している。BERT のように「両方向から見られる」モデルを同じスケールにしたらどうなるか、は future work とされている。
-- **算術が「丸暗記」ではないという根拠**: 3 桁加算の問題 2000 問のうち、学習データに完全一致したのはたった 17 問（0.8%）。減算では 2 問（0.1%）。それでも 80% 解けるので「丸暗記ではない」と論じている。一方で、桁が増えると正解率がガクッと落ちる（5 桁で 9–10%）ので、「桁ごとに繰り上がりを丁寧に扱う計算」は本当には学べていないと示唆される。
-- **データ汚染の正直な扱い**: 訓練データから評価データを取り除くフィルターに **バグ** があり、一部の評価データが学習側に残ってしまった。「再学習にはコストが大きすぎてできなかった」とそのまま書いている。PIQA・Winograd には * 印を付けて報告。CBT・1BW・4 つの Wikipedia LM は **報告自体を取り下げ** ている。
-- **モデル仕様**:
-  - GPT-3 175B: 96 層, $d_{\mathrm{model}}=12288$, 96 個の注意ヘッド, バッチサイズ 3.2M tokens, 学習率 $0.6\times 10^{-4}$。
-  - 8 個のサイズで実験: 125M / 350M / 760M / 1.3B / 2.7B / 6.7B / 13B / 175B。全モデルとも合計 300B tokens を学習。
-- **「権威」ではなく「最終的な真実」**: 数値はすべて TeX 由来。本文の解釈で「TeX にはここまでしか書いていない」と思った箇所は推測を断定しないように努めた。
+- まず `content/abstract.tex` と `content/1_introduction/introduction.tex` を読む。ここで問題設定、fine-tuning への批判、meta-learning / in-context learning の脚注定義、Figure \ref{figure:aggregate_performance} の読み方を押さえる。正規ノートでは `Summary（著者の主張）` と `Takeaway` の前半に対応する。
+- 次に `content/2_approach/approach.tex` と `content/2_approach/evaluation.tex` を読む。zero-shot / one-shot / few-shot / fine-tuning の違い、$K$, $n_{\mathrm{ctx}}=2048$, multiple choice の likelihood 比を確認する。正規ノートの「手法」「Notes / Quotes」の評価設定に対応する。
+- モデルとデータは `content/2_approach/model_and_architectures.tex`, `training_dataset.tex`, `training_process.tex`, `tables/param.tex`, `tables/dataset.tex` を見る。175B の層数・hidden size・batch size・learning rate、300B tokens、データ混合比はここで裏取りする。
+- 結果は全節を一気に読むより、まず `content/3_results/results.tex`, `graphs/compute.tex`, `tables/language.tex`, `tables/completion.tex`, `Closed_Book_Question_Answering_-_Knowledge_Based_Tasks.tex`, `tables/superglue.tex`, `tables/arithmetic.tex`, `News_Article_Generation.tex` を読む。正規ノートの代表数値と `Critical Thoughts` の根拠になる。
+- 信頼性と限界は `content/4_preventing_memorization/measuring_and_preventing_memorization_of_benchmarks.tex`, `tables/overlap_master.tex`, `content/5_limitations/Limitations.tex` を読む。PIQA / Winograd の asterisk、LAMBADA contamination、WiC / ANLI / RACE / QuAC の弱さをここで確認する。
+- 社会的影響は `content/6_broader_impacts/Broader_Impacts.tex`, `Potential_Misuse_Applications.tex`, `Fairness_Bias_and_Representation.tex`, `Energy.tex`, `tables/total_compute_calculations.tex` を読む。正規ノートの broader impacts と energy の記述につながる。
 
 ## もとの論文・正規ノート
 

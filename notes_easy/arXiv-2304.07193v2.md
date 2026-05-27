@@ -1,4 +1,4 @@
-# DINOv2: Learning Robust Visual Features without Supervision（教師なしで頑丈な画像の特徴を学ぶ大規模モデル「DINOv2」）
+# DINOv2: Learning Robust Visual Features without Supervision（大規模 curated data 上の自己教師あり視覚基盤モデル）
 
 - arXiv: https://arxiv.org/abs/2304.07193
 - 一次ソース: ../papers/arXiv-2304.07193v2/
@@ -8,161 +8,156 @@
 
 ## 一言で言うと
 
-文字の説明文を一切使わず、画像だけを大量に見せて学ばせるだけで、「画像のことなら何でも分かる万能な目」を作った研究だよ。
+DINOv2 は、画像とテキストのペアではなく画像のみを用いた self-supervised learning で、fine-tuning なしに image-level と pixel-level の広い下流タスクへ転移する汎用視覚特徴を作れるかを問う論文である。著者は、大規模 curated dataset `LVD-142M`、DINO+iBOT 系の学習 recipe、1.1B parameter の `ViT-g/14` と distillation を組み合わせ、OpenCLIP などの weakly-supervised feature と多くのベンチマークで同等または上回ると主張する（`abstract.tex`, `intro.tex`, `experiments.tex`）。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- **困りごと**: 写真を扱う AI（例: 写真を分類する・物の輪郭をなぞる・奥行きを当てる）は、いままで「タスクごと」に別々に作る必要があった。文章の AI（ChatGPT みたいなやつ）は「1 個でいろんなことができる万能モデル（= foundation model、いろんな仕事の土台になるモデルのこと）」が登場してすごく便利になったのに、画像の方ではそういう「1 個で何でもこなす万能モデル」が遅れていた。
-  - 身近な例えで言うと「漢字テスト用ノート」「計算テスト用ノート」「英語テスト用ノート」を別々に作っていた状態。1 冊で全教科に使える「万能ノート」が欲しい、というのが目標。
-- **これまでのやり方の何が足りなかったか**:
-  - 主流だった **CLIP** という方法（← 画像と、その画像を説明する英語のキャプションをペアにして学ばせる方法。テキストを「先生」にする）は、キャプションが画像に書かれた情報のごく一部しか説明していないので、画像の細かい情報（奥行きや、物のどの部分がどこにあるか）を取りこぼしてしまう。
-  - 一方、文字を使わずに画像だけから学ぶやり方（**自己教師あり学習 / Self-Supervised Learning = SSL**。「正解ラベル」を人間が付けなくても、画像同士の関係から AI が勝手に問題を作って解く学び方）は、これまで小さなデータ（ImageNet-1k という 130 万枚くらいの綺麗な画像セット）でしか上手くいっておらず、データを増やそうとすると逆に質が下がっていた。
-  - つまり「文字を使わずに、しかも大量のデータで、しかも特徴の質を落とさずに学ぶ」のは未解決だった。
+- **問題設定**: NLP では raw text から学習した foundation model の feature を「そのまま」使える一方、computer vision では caption や image-text aligned corpus に依存する text-guided pretraining が中心である。本論文は、画像だけから学ぶ self-supervised pretraining で、classification, segmentation, depth, retrieval などにそのまま使える `general-purpose visual features` を得られるかを検証する。
+- **対象範囲 / 仮定**: 学習対象は ViT image encoder であり、中心的な評価は frozen backbone の上に linear probe, kNN, simple decoder, DPT decoder などを載せる設定である。pretraining loss はラベルやテキストを使わないが、データ構築では ImageNet-22k, ImageNet-1k train, Google Landmarks, fine-grained / segmentation / depth / retrieval datasets などの curated image datasets を retrieval query として使う（`data.tex`, `supp-data.tex`）。
+- **既存研究との差分**: CLIP/OpenCLIP/SWAG/EVA-CLIP は text supervision または weak supervision を使う。MAE は fine-tuning 後に強いが frozen features は本論文の比較では弱い。DINO/iBOT などの discriminative SSL は ImageNet-1k や ImageNet-22k で発展してきたが、大規模化では uncurated data の品質低下が問題だったと著者は述べる（`intro.tex`, `related.tex`）。
+- **この論文で答えたい問い**: 「十分に大きく多様で curated な画像集合を使えば、self-supervised pretraining alone で weakly-supervised model と競合する frozen visual features を作れるか」である。論文末では、性能要因を training recipe, model scale, dataset scale, distillation の複合として整理している（`tmlr.tex` Future work and Discussion）。
 
-## どうやって解いたの？
+## 背景と前提
+
+- **self-supervised learning (SSL)** は、人手ラベルや caption を目的変数にせず、入力画像から作った pretext objective によって特徴を学ぶ。DINOv2 では DINO の image-level objective と iBOT の patch-level masked prediction を組み合わせる（`approach.tex`）。
+- **Vision Transformer (ViT)** は画像を patch token 列として扱う。本論文では image-level task では class token、dense task では patch token の質が重要になる。
+- **teacher-student / EMA** は DINO/iBOT 系の基本構成である。student を最適化し、teacher は student の過去パラメータの exponential moving average として更新する（`approach.tex`, `supp-implem.tex`）。
+- **frozen feature 評価**では backbone を固定し、linear classifier, kNN, retrieval, simple segmentation head などで特徴の可読性を測る。これは、著者の `finetuning is optional` という主張を支える評価設計である（`experiments.tex` Table `tab:lin-inet1k`, `tab:ft-inet1k-alone`）。
+- **text-guided pretraining との関係**: caption は画像の情報を近似するだけなので、pixel-level information が表面化しにくい可能性がある、というのが著者の問題意識である（`intro.tex`）。ただし、本論文は text-guided model が不要だと一般に断じるのではなく、carbon section では text encoder を再利用する場合は text-guided training に意味があるとも述べる（`carbon.tex`）。
+
+## 提案手法
 
 ### コアアイデア
 
-例え話で言うと、こんな感じ。
+DINOv2 は、単一の新しい目的関数を提案するというより、既存の discriminative SSL を大規模データ・大規模 ViT で安定に動かす recipe を作る論文である。pretraining objective は DINO の class-token 間 cross-entropy、iBOT の masked patch prediction、SwAV 由来の Sinkhorn-Knopp centering、KoLeo regularizer、終盤の high-resolution adaptation から成る（`approach.tex`）。
 
-学校の先生（teacher モデル）と生徒（student モデル）の 2 人がいる。同じ 1 枚の写真を「全体を写したコピー」と「一部だけを切り取ったコピー」に切り分けて、先生には全体を見せ、生徒には一部だけを見せる。生徒は「先生がこの写真をどう思ったか」を当てるように練習する。先生は、生徒が過去に出した答えを少しずつ混ぜて更新していく（生徒がちょっとずつ成長した姿が新しい先生になる）。これを大量の画像で繰り返すと、生徒は「画像のどこに何が写っているか」を、誰にも答えを教わらずに段々わかるようになる。
+データ面では、uncurated web images から、curated image datasets に近い画像を retrieval して `LVD-142M` を作る。本文では post-processing 後に `1.2B unique images` と書かれ、補足では uncurated source `1.3B` から self-deduplication で `1.1B`、relative deduplication で `744M` へ減らす手順が説明されている。最終的な `LVD-142M` は `142,109,386` images である（`data.tex`, `supp-data.tex` Table `tab:lavida-details`）。
 
-さらに DINOv2 では、(1) インターネットから集めた 12 億枚の画像から「似たような画像が偏らないように」自動で 1 億 4200 万枚を選び抜くデータ作りと、(2) 10 億個のパラメータ（モデルが覚える数字の個数）を持つ巨大モデルを安定して学習させるための高速化テクニックを、たくさん詰め込んでいる。
+モデル面では、`ViT-g/14` を scratch から学習し、その後 `ViT-S/14`, `ViT-B/14`, `ViT-L/14` を `ViT-g/14` から distill する。`ViT-g/14` は embedding dimension `1536`, heads `24`, blocks `40`, `1.1B` parameters であり、head dimension を 64 にするため Zhai et al. の構成から変更している（`approach.tex`, `supp-implem.tex` Table `tab:vit-hparams`）。
 
-### 仕組み
+### 重要な定義・数式
 
-- **step1: データを集めて整える（LVD-142M を作る）**
-  - 公開されているウェブから 12 億枚の画像を集める。
-  - 重複を除く（PCA hash という、画像のざっくりした特徴を短い数字列にして、似ていたら同じとみなす技術）。
-  - 不適切画像（NSFW = Not Safe For Work、見せられない画像のこと）を除き、顔をぼかす。
-  - 「お手本になる綺麗な画像セット」（ImageNet-22k や Google Landmarks など）を query（探す元）にして、ウェブの 12 億枚の中から「似ている画像」を取ってくる。これで「綺麗で多様な 1 億 4200 万枚」のデータが完成。
-- **step2: 大きいモデル（ViT-g/14、約 11 億パラメータ）を 1 個、自己教師ありで学習する**
-  - 同じ画像から「大きな切り抜き 2 枚」と「小さな切り抜き複数枚」を作って、先生（teacher）と生徒（student）に別々に渡す。
-  - 生徒は「先生が出した答え」に近づくように学習する。
-  - 画像全体レベルの比較（DINO loss）と、画像の小さな区画（patch）レベルの比較（iBOT loss）の 2 種類を同時に行う。
-  - **KoLeo 正則化**（特徴をバラけさせる罰）を追加して、生徒が「どの画像も似たような答えにしてサボる」のを防ぐ。
-  - 学習の最後に短期間だけ高解像（518×518 ピクセル）で追加学習し、細かい情報も拾えるようにする。
-- **step3: 小さいモデル（ViT-S/B/L）を「蒸留 (distillation)」で作る**
-  - 蒸留 ← 大きくて賢いモデルの答えを、小さなモデルに真似させて学ばせる方法。生徒が先生をコピーするイメージ。
-  - 小さなモデルをゼロから訓練するよりも、大きな ViT-g を先生にして真似させた方が精度が出る。
-- **step4: 学習を高速化する工夫**
-  - 独自の **FlashAttention**（← 後で解説。Attention という重い計算を、メモリを節約して速くする実装）。
-  - **sequence packing**（長さの違うデータをくっつけて 1 本にして処理する工夫。混ざらないように仕切りを入れる）。
-  - **efficient stochastic depth**（モデルの層の一部をランダムにスキップする時、計算自体もサボる実装）。
-  - **FSDP**（Fully-Sharded Data Parallel。モデルが大きすぎて 1 個の GPU に乗らないので、複数の GPU に分けて持つ仕組み）。
-  - これらで、似た手法の iBOT に比べて **約 2 倍速・メモリ 1/3** で動く。
+$$
+m(s, r) = \text{cosine-similarity}\left(f\left(s\right),f\left(r\right)\right) = \frac{f(s)\cdot{}f(r)}{\lVert f(s)\rVert_2\lVert f(r)\rVert_2}
+$$
 
-### 主要な数式
+**式の意味**: 2 枚の画像 `s`, `r` の feature embedding がどれだけ近いかを cosine similarity で測る式である。`supp-data.tex` の `Image similarity` で、deduplication と retrieval の基礎として定義されている。
 
-論文に出てくる中核 2 個を解説するよ。
+**記号の定義**:
+- $s, r$ ... 比較する画像のペア
+- $f$ ... 画像から feature を生成するモデル
+- $f(s), f(r)$ ... それぞれの画像 embedding
+- $\lVert\cdot\rVert_2$ ... L2 norm
 
-#### 1. DINO 損失（画像全体レベルの「先生に近づけ」式）
+**この論文での役割**: `LVD-142M` を作るとき、uncurated pool から curated datasets に近い画像を探すための距離尺度である。データ curation が本論文の性能主張の中心なので、この式は pretraining data の構成根拠に直接関わる。
 
-$$ \mathcal{L}_{\mathrm{DINO}} = - \sum p_t \log p_s $$
+$$
+{\mathcal L}_{DINO} = - \sum p_t \log p_s
+$$
 
-**この式が言ってること**: 先生が出した「答えの確率」と、生徒が出した「答えの確率」がズレているほど大きな罰になる。生徒はこの罰を小さくしようとして、先生の答え方を真似ていく。
+**式の意味**: 同じ画像の異なる crop から得た teacher と student の class-token 出力を、prototype score の softmax 後の分布として比較する cross-entropy loss である（`approach.tex` の `Image-level objective`）。
 
-**記号の意味**:
-- $\mathcal{L}_{\mathrm{DINO}}$ … 「ロス（loss）」と読む。間違いの大きさを表す数。これが小さいほど良い学習。
-- $p_t$ … 先生（teacher）が画像を見て出した「答えの確率」。例えば「これは犬っぽさ 70%、猫っぽさ 20%、鳥っぽさ 10%」みたいな、合計 1 になる数字の組。
-- $p_s$ … 生徒（student）が同じ画像（の別の切り抜き）を見て出した「答えの確率」。同じく合計 1 になる数字の組。
-- $\log$ … 「ログ」と読む関数。0 に近い数を入れるとマイナスにすごく大きな数を返す。「自信がなさすぎる答え」に大きな罰を与えるための関数。
-- $\sum$ … シグマ。後ろの数を全部足すという意味の記号。
-- マイナス記号（先頭の $-$）… 全体をひっくり返して「ズレてるほど大きな正の数」にするため。
+**記号の定義**:
+- ${\mathcal L}_{DINO}$ ... DINO image-level objective
+- $p_t$ ... teacher DINO head から得た prototype score を softmax と centering 後にした分布
+- $p_s$ ... student DINO head から得た prototype score を softmax した分布
+- $\sum$ ... prototype 次元にわたる和
 
-**身近な例え**: 答え合わせのテストみたいなもの。先生が「この問題の正解は犬 70%・猫 20%・鳥 10% だよ」と言ったら、生徒も「犬 70%・猫 20%・鳥 10%」と書けば罰はゼロ。生徒が「鳥 100%」と書いて自信満々に外したら罰がすごく大きい。これを繰り返して、生徒は先生の答え方をどんどん真似ていく。
+**この論文での役割**: class token が画像全体の情報を保持するようにする主要 loss である。ImageNet classification や kNN/linear probing のような image-level 評価を支える学習信号として使われる。
 
-#### 2. KoLeo 正則化（特徴をバラけさせる罰）
+$$
+{\mathcal L}_{iBOT} = - \sum_i p_{ti} \log p_{si}
+$$
 
-$$ \mathcal{L}_{\mathrm{koleo}} = - \frac{1}{n} \sum_{i=1}^n \log( d_{n, i}) $$
+**式の意味**: student では一部 patch を mask し、teacher では対応する visible patch token を使って、masked patch index ごとに teacher 分布と student 分布を合わせる loss である（`approach.tex` の `Patch-level objective`）。
 
-ここで $d_{n,i} = \min_{j \neq i} \| x_i - x_j \|$（$i$ 番目の点から、自分以外の一番近い点までの距離）。
+**記号の定義**:
+- ${\mathcal L}_{iBOT}$ ... iBOT patch-level masked prediction objective
+- $i$ ... student で mask された patch token の index
+- $p_{ti}$ ... teacher iBOT head から得た、patch $i$ に対応する分布
+- $p_{si}$ ... student iBOT head から得た、masked patch $i$ の分布
 
-**この式が言ってること**: バッチ（同時に処理する画像の束）の中で、画像同士の「特徴」がくっつきすぎていたら罰を与える。みんなが満員電車みたいにギュウギュウなのは NG、ちゃんと散らばっていてね、という指示。
+**この論文での役割**: patch token に局所情報を持たせるための loss である。ablation では MIM objective を外すと ADE-20k linear segmentation が `44.2` から `47.1` へ改善する差分を失うため、dense prediction で重要だと著者は解釈している（`ablation.tex` Table `tab:ibot`）。
 
-**記号の意味**:
-- $\mathcal{L}_{\mathrm{koleo}}$ … 「バラけてなさ罰」。これが小さいほどバラけている。
-- $n$ … バッチに入っている画像（特徴）の個数。
-- $x_i$ … $i$ 番目の画像の特徴。中身は「数を順番にたくさん並べたもの」（住所の数字みたいに、複数の数で 1 つの画像を表す道具）。
-- $\| x_i - x_j \|$ … 2 つの特徴の「距離」。座標が近いほど小さくなる、地図上の直線距離みたいなもの。
-- $\min_{j \neq i}$ … 「自分以外で一番近い相手までの距離」を選ぶ操作。
-- $\log$ … 入れる数が小さい（= ご近所が近い）ほど、マイナスにすごく大きくなる関数。前にマイナスがついているので「近すぎると罰が大きい」になる。
-- $\frac{1}{n} \sum$ … 全員ぶん足して平均する操作。
+$$
+{\mathcal L}_{\mathrm{koleo}} = - \frac{1}{n} \sum_{i=1}^n \log( d_{n, i}), \quad d_{n, i} = \min_{j \neq i} \| x_i - x_j \|
+$$
 
-**身近な例え**: 教室で全員が一箇所にギューッと集まると怒られて、ちゃんと教室全体に散らばって座ると褒められるイメージ。これがあると、似たような画像を全部「同じ答え」にしてサボる生徒に、「サボるな、もっと違いを出せ」と注意できる。
+**式の意味**: batch 内の feature が互いに近づきすぎないように、各 feature から最も近い別 feature までの距離を大きくする正則化である。論文では Kozachenko-Leonenko differential entropy estimator に由来すると説明される（`approach.tex`）。
 
-## 何がすごいの？
+**記号の定義**:
+- ${\mathcal L}_{\mathrm{koleo}}$ ... KoLeo regularizer
+- $n$ ... batch 内の vector 数
+- $x_i$ ... $i$ 番目の feature vector
+- $d_{n,i}$ ... $x_i$ から batch 内の最も近い別 vector までの距離
 
-著者は「frozen feature」と呼ばれる評価方法を中心に使っている。これは「学習が終わった後、AI の本体は触らずに固定したまま（= frozen）、最後の答えだけ単純な仕掛けで読み出す」やり方で、特徴そのものの質を直接測るやり方。
+**この論文での役割**: feature 空間を広く使わせる正則化である。ablation では KoLeo ありで Oxford-M retrieval が `55.6` から `63.9` に上がり、著者は nearest-neighbor search task に効くと述べる（`ablation.tex` Table `tab:koleo`）。
 
-- **ImageNet-1k**（画像分類の標準ベンチマーク、1000 種類の物を分類するテスト）
-  - ViT-g/14: linear 評価で **86.5%**、kNN 評価で **83.5%**。
-  - OpenCLIP ViT-G/14（86.2%）や EVA-CLIP（86.4%）といった「テキストを先生に使う最強モデル」を上回った。← つまり「テキストの先生なし」でも勝てることを示した。
-  - 元になった iBOT ViT-L/16（82.3%）から **+4.2%** 改善。
-- **ロバストネス（意地悪な画像にどれだけ強いか）**
-  - ImageNet-A（AI が間違えやすい画像集）: 75.9
-  - ImageNet-R（絵画・スケッチなど別ドメイン）: 78.8
-  - ImageNet-Sketch（スケッチ画像）: 62.5
-  - iBOT 比で A は +29.6%、R は +22.1%、Sketch は +23.0%。
-- **細かい画像の分類**
-  - iNat2018（生き物の分類）: 81.6（OpenCLIP-G より +8.6）
-  - iNat2021: 85.7（+9.7）
-- **物の位置を当てる系（pixel レベル）**
-  - ADE20k のセマンティックセグメンテーション（画像のどの部分が何かを塗り分ける課題）で、frozen backbone + ViT-Adapter + Mask2former 構成で **60.2 mIoU**。
-  - 奥行き推定（NYUd の RMSE）: DPT 構成で 0.279。SoTA の BinsFormer（0.330）と同等以上。
-- **同じ場所を写した別画像を見つけるタスク（instance retrieval）**
-  - Oxford-Hard で mAP **54.0**。OpenCLIP-G より **+34** という大差。← テキスト先生では拾えない「ピクセル細部」の情報をちゃんと持っている証拠。
-- **著者が論文中で挙げている貢献**:
-  1. 自己教師ありだけで、テキスト先生付きの最強モデル（OpenCLIP / EVA-CLIP）と同等以上の汎用視覚特徴を初めて作った。
-  2. メタデータに頼らず、画像同士の似てる度で自動的にデータを選び抜く pipeline（LVD-142M、1 億 4200 万枚）を作った。
-  3. 10 億パラメータ級のモデルを安定して学ぶための実装（独自 FlashAttention、sequence packing、efficient stochastic depth、FSDP）を整え、iBOT 比で 2 倍速・メモリ 1/3 にした。
-  4. モデルとコードを Apache 2.0 で公開した。
+### 実装 / アルゴリズム上の要点
 
-## キーワード辞典
+- **データ構築**: curated datasets と uncurated data source を embedding 化し、uncurated data を deduplicate してから curated images に match する（`data.tex` Fig. `fig:retrieval-system`）。retrieval では ImageNet-22k で self-supervised pretraining した `ViT-H/16` の embedding と cosine similarity を使う。大規模 dataset には sample-based retrieval を使い、Google Landmarks v2 と ImageNet-22k は `k=4`、ImageNet-1k train は `k=32` とする。小規模 dataset には `100,000` clusters の cluster-based retrieval を使い、各 dataset から最大 `1M` images を入れる（`supp-data.tex`）。
+- **学習 recipe**: DINO/iBOT heads は iBOT 原論文と異なり separate heads にする。teacher 側の centering は Sinkhorn-Knopp を `3` iterations 実行し、student は softmax normalization を使う。KoLeo は first global crop の class tokens に重み `0.1` で適用する（`approach.tex`, `supp-implem.tex`）。
+- **高解像 adaptation**: pixel-level task で小物体が低解像度で消える問題に対し、pretraining 終盤の短期間だけ `518 x 518` に上げる（`approach.tex`）。resolution ablation では `224 -> 416` を `10k` iterations だけ行う設定が、全期間 `416` に近い結果をより低コストで出すと説明される（`ablation.tex` Fig. `fig:res`）。
+- **効率化**: custom FlashAttention、sequence packing、efficient stochastic depth、FSDP mixed precision を使う。iBOT implementation と比べて `2x` faster、memory `1/3` と著者は報告する（`approach.tex`）。stochastic depth は drop rate `d=40%` で dropped residual の計算自体を skip する。
+- **distillation**: 小モデルは frozen `ViT-g/14` を teacher とし、masking と stochastic depth を外し、iBOT loss を two global crops に適用する。最終モデルは student EMA を使う。ViT-L/14 は scratch より distill が全 12 benchmark で良いと報告される（`approach.tex`, `ablation.tex` Fig. `fig:distillation`）。
 
-- **foundation model（ファウンデーションモデル）** … 1 個でいろんなタスクに使える「土台モデル」。
-- **self-supervised learning (SSL)** … 人間が「正解ラベル」を付けなくても、データそのものから AI が問題を作って自分で学ぶ方法。
-- **weakly-supervised learning (WSL)** … キャプション（説明文）など弱い手がかりを使って学ぶ方法。CLIP がその代表。
-- **CLIP** … 画像とキャプションをペアで学ぶ有名なモデル。テキストが「先生」になる。
-- **ViT (Vision Transformer)** … 画像を小さな正方形（patch）に切って、文章の単語みたいに扱って処理するモデル。
-- **patch** … 画像を 14×14 ピクセルなどの小さな正方形に切ったもの。ViT の最小単位。
-- **DINO** … 「先生と生徒が同じ画像の別の切り抜きを見て、生徒が先生を真似する」自己教師あり学習法。本論文の元の方法。
-- **iBOT** … DINO に「patch を隠して当てさせる」課題を足した方法。本論文の直接の元。
-- **MAE (Masked Autoencoder)** … 画像の patch を隠して元に戻す方法（本論文の比較対象、frozen 比較で大差負け）。
-- **teacher / student** … 自己教師ありでよく出てくる「お手本役 / 真似役」のペア。
-- **EMA (Exponential Moving Average)** … 過去の値をだんだん混ぜて平均を取る方法。先生モデルを「生徒の過去の姿の平均」として作るのに使う。
-- **softmax** … 数の組を「合計 1 の確率」に変換する関数。
-- **cross-entropy（クロスエントロピー）** … 2 つの確率分布がどれだけズレてるか測る罰。DINO loss の本体。
-- **Sinkhorn-Knopp 中心化** … バッチ全体で「先生の答えが偏らないように」整える計算。
-- **KoLeo** … 特徴がバラけるように罰を与える正則化。
-- **正則化 (regularization)** … 学習がやりすぎたり偏ったりしないように、追加で課す罰のこと。
-- **distillation（蒸留）** … 大きなモデルの答えを真似させて、小さなモデルを賢くする方法。
-- **embedding（埋め込み）** … 画像や単語を「数の並び」に変換した表現。
-- **frozen feature** … 学習済みモデル本体を固定したまま、その出力（特徴）だけを使う評価法。
-- **linear 評価** … frozen feature の上に「足し算と掛け算 1 段だけの簡単な分類器」を載せて測る評価。
-- **kNN 評価** … 学習済み特徴を使って「似ている画像を k 個探して多数決」で分類する評価。
-- **fine-tune** … モデル本体も追加学習で微調整すること。frozen の反対。
-- **FlashAttention** … Transformer の重い計算「Attention」を、メモリ節約して速くする実装。
-- **Attention** … Transformer の中で「どの patch と どの patch が関係あるか」を計算する仕組み。
-- **stochastic depth** … 学習中にネットワークの層をランダムにスキップする工夫（過学習を防ぐ）。
-- **FSDP (Fully-Sharded Data Parallel)** … 1 個の巨大モデルを複数 GPU に分けて持つ仕組み。
-- **GPU** … 画像処理に強い並列計算チップ。AI 学習に使う。
-- **batch（バッチ）** … 一度にまとめて処理する画像の束。
-- **LVD-142M** … 本論文で作った 1 億 4200 万枚の画像データセット。
-- **ImageNet-1k / -22k** … 1000 種類 / 22000 種類の物のラベル付き画像データセット。
-- **ADE20k** … 部屋や街の画像で「ここは床・ここは机」みたいに塗り分ける課題のデータセット。
-- **mIoU** … セグメンテーションの良さを測る数値（高いほど良い）。
-- **RMSE** … 奥行き推定などの誤差の大きさ（小さいほど良い）。
-- **mAP** … 検索や検出タスクの良さを測る数値（高いほど良い）。
+## 実験・結果
 
-## ちょっと深掘り（中学生は飛ばして OK）
+- **データセット / ベンチマーク**: ImageNet-1k/ReaL/V2, ImageNet-A/R/C/Sketch, iNaturalist 2018/2021, Places205, SimCLR 由来の 12 transfer classification benchmarks, Kinetics-400/UCF-101/SSv2, Oxford/Paris/Met/AmsterTime, ADE20k/CityScapes/Pascal VOC, NYU Depth V2/KITTI/SUN RGB-D, Dollar Street, Casual Conversations を評価に使う（`experiments.tex`, `fairness.tex`, `supp-eval-datasets.tex`）。
+- **比較対象 / baseline**: SSL baseline は MAE, DINO, SEERv2, MSN, EsViT, Mugs, iBOT。weakly-supervised baseline は CLIP, OpenCLIP, SWAG, EVA-CLIP で、ImageNet 以外では OpenCLIP-G を代表比較として使う（`experiments.tex`）。
+- **指標**: classification は Top-1 accuracy, kNN, linear probing。robustness では ImageNet-C のみ lower-is-better の corruption metric。retrieval は mAP/GAP/ACC。semantic segmentation は mIoU。depth は RMSE。fairness は income / region / group ごとの classifier performance と label association を見る。
+- **主な結果**: ImageNet-1k linear evaluation では `DINOv2 ViT-g/14` が kNN `83.5`, val `86.5`, ReaL `89.6`, V2 `78.4` で、iBOT ViT-L/16 の val `82.3` より `+4.2%`、OpenCLIP ViT-G/14 の `86.2` より `+0.3%`、EVA-CLIP ViT-g/14 の `86.4` より `+0.1%` と本文は述べる（`experiments.tex` Table `tab:lin-inet1k`）。V2 について本文は EVA-CLIP 比 `+1.1%` と書くが、表値は `78.4` と `77.4` である。
+- **主な結果**: fine-tuning sanity check では ViT-g/14 が resolution `224` で linear `86.5` から finetuned `88.5`、resolution `448` で `86.7` から `88.9` へ上がる。著者は、frozen でも強く fine-tuning でも崩れないため `finetuning is optional` と解釈する（Table `tab:ft-inet1k-alone`）。
+- **主な結果**: robustness では ViT-g/14 が Im-A `75.9`, Im-R `78.8`, Im-C `28.2` lower, Sketch `62.5`。OpenCLIP-G より Im-A と Im-C では良いが、Im-R と Sketch では OpenCLIP-G が上である（Table `tab:robustness`）。
+- **主な結果**: iNaturalist 2018/2021 では ViT-g/14 が `81.6` / `85.7` で OpenCLIP-G より `+8.6%` / `+9.7%`。Places205 は `67.5` で OpenCLIP-G の `69.8` より `-2.3%`。video では K400 `78.4`, UCF-101 `91.2`, SSv2 `38.3` で、SSv2 は iBOT ViT-L/16 の `38.7` がわずかに上である（Table `tab:finegrained_video`）。
+- **主な結果**: 12 transfer classification benchmarks の平均は ViT-g/14 が `92.1`、OpenCLIP-G が `91.9`。ただし SUN は `78.7` vs `84.0`、Cars は `91.4` vs `96.1` で OpenCLIP-G が上であり、本文も `SUN (-5.3%)` と `Cars (-4.7%)` を例外として挙げる（Table `tab:finegrained`）。
+- **主な結果**: instance recognition では Oxford-Hard mAP が ViT-L/14 で `54.0`、OpenCLIP-G は `19.7`、iBOT は `12.7`。本文は Oxford-Hard で SSL より `+41%` mAP、weakly-supervised より `+34%` mAP と述べる（Table `tab:retrieval`）。
+- **主な結果**: semantic segmentation では ViT-g/14 が ADE20k `49.0` linear / `53.0` +ms、CityScapes `71.3` / `81.0`、Pascal VOC `83.0` / `86.2`。ViT-Adapter + Mask2Former に frozen ViT-g/14 を入れると ADE20k `60.2` mIoU で、InternImage の `62.9` に近いと著者は述べる（Table `tab:semseg`）。
+- **主な結果**: depth estimation では ViT-g/14 + DPT が NYUd `0.279`, KITTI `2.11`, NYUd -> SUN RGB-D `0.338` RMSE。表上の reference SoTA はそれぞれ `0.330`, `2.10`, `0.421` なので、NYUd と SUN transfer では上回り、KITTI はほぼ同水準でわずかに劣る（Table `tab:depth`）。
+- **著者が主張する貢献**: discussion では、DINOv2 は wide range of benchmarks で weakly-supervised alternatives との gap を fine-tuning なしに閉じる最初の SSL work だと主張する。また、性能要因を improved recipe, larger model scale, larger dataset, distillation に分ける（`tmlr.tex`）。
 
-- **なぜ「自己教師あり」が pixel レベルで強いのか**: テキスト（キャプション）は「犬が走っている」くらいの粗い情報しか持っていない。一方、画像同士を直接比較する自己教師あり学習は、毛並みや影や輪郭といった「ピクセル単位の細かい違い」まで答えに使う必要があるので、結果的に細部の特徴を覚える。奥行き推定や物の位置当てで CLIP 系に大差で勝つのはこの差。
-- **head untying（DINO と iBOT の出力ヘッドを別々にした）**: iBOT の元論文は「ヘッドを共有した方が良い」と言っていたが、本論文では大規模だと逆で「別々にした方が良い」と判明。論文中の正直な逆発見ポイント。
-- **KoLeo の効きどころ**: 分類精度ではほとんど変わらないが、「同じ場所を写した別画像を探す」タイプのタスク（instance retrieval）で大きく効く（Oxford-M で +8）。特徴がバラけている方が「探す」のに向く、という具体例。
-- **distillation の不思議**: ViT-L をゼロから訓練すると 84.5%、ViT-g (86.5%) を先生に蒸留すると 86.3%。先生（86.5%）と生徒（86.3%）がほぼ並ぶ。「巨大モデルを 1 個作って、実運用は蒸留した中サイズを使う」という計算予算配分の指針になる。
-- **計算コスト**: ViT-g 1 回の学習で 22000 GPU 時間（A100 という強い GPU 換算）、二酸化炭素換算で 3.7 トン。プロジェクト全体だと数百〜千トン規模。同条件で OpenCLIP-G を再現すると 10 倍の電力がかかると報告されていて、自己教師あり学習はテキスト encoder を捨てる前提で見ると電力的にもお得、と主張している。
-- **TeX に書かれている弱み**: Dollar Street という「世帯収入の異なる家の写真」での精度が、アフリカで欧州より 25.7% 低い等、地域・収入バイアスが残っていることを著者自身が認めている。
+## 妥当性と限界
+
+- **この主張を支える根拠**: 評価範囲が image-level, instance-level, pixel-level, video, fairness にまたがり、主に frozen features を使っているため、「backbone に情報がすぐ読める形で入っている」という主張と評価設計が対応している。さらに、training recipe, data source, loss components, distillation, resolution の ablation があり、最終性能を支える要素を部分的に分解している（`ablation.tex`）。
+- **この主張を支える根拠**: データ ablation では `LVD-142M` が ImageNet-22k に対して INet-1k は `85.8` vs `85.9` と同程度だが、Im-A `73.9` vs `73.5`, ADE-20k `47.7` vs `46.6`, Oxford-M `64.6` vs `62.5`, iNat2018 `82.3` vs `81.1`, iNat2021 `86.4` vs `85.6`, Places205 `67.6` vs `67.0` で上回る。uncurated data は INet-1k `83.3`, Im-A `59.4`, Oxford-M `54.3` などで劣り、著者の curation 仮説を支えている（Table `tab:ablation-data`）。
+- **この主張を支える根拠**: loss ablation では KoLeo が Oxford-M `55.6 -> 63.9` に効き、MIM/iBOT objective が ADE-20k `44.2 -> 47.1` に効く。distillation では ViT-L/14 scratch が INet-1k `84.5`、distill が `86.3` であり、全 12 benchmarks で distill が scratch を上回る（Tables `tab:koleo`, `tab:ibot`, Fig. `fig:distillation`）。
+- **著者が認めている limitations / future work**: Dollar Street では DINOv2 ViT-g/14 が Europe `89.7` に対し Africa `74.0`、high income `90.5` に対し low income `67.4` で、著者は Western countries と wealthy households への bias が残ると述べる。なお本文は Europe 比の Africa drop を `25.7%`、income buckets の差を `31.7%` と書くが、Table `tab:dollar` の単純な percentage-point 差は Europe-Africa が `15.7`、high-low が `23.1` である（`fairness.tex` Table `tab:dollar`）。
+- **著者が認めている limitations / future work**: Casual Conversations では Non-Human は `0.0`、Crime は最大 `0.2` の小さい値に留まるが、Possibly-Human が男性で多く trigger され、Beard class の影響だと説明される。著者は、より徹底した bias evaluation で flaws が見つかる可能性を認めている（`fairness.tex` Table `tab:gsa`）。
+- **著者が認めている limitations / future work**: future work では、visual features を word tokens のように処理する language-enabled AI system に使う計画が述べられる。また、より大きな model/data scale で object parts や scene geometry のような property がさらに emergent になる可能性を期待しているが、これは将来計画であり実証済み結果ではない（`tmlr.tex`）。
+- **読者として注意すべき点**: `pretraining with no supervision` は loss がラベルやテキストを使わないという意味であり、データ curation は curated datasets を query として使う。したがって、完全に「任意の raw web data だけ」から自律的にデータ分布を決めているわけではない。
+- **読者として注意すべき点**: OpenCLIP-G/EVA-CLIP との差は ImageNet linear では小さい。さらに OpenCLIP-G は Im-R, Sketch, Places205, SUN, Cars で上回るため、「多くのタスクで同等または上回る」は、タスクごとの勝敗を確認して読むべき主張である。
+- **読者として注意すべき点**: compute cost は大きい。`DINOv2-g` の再学習は A100-40GB `22,016` GPU-hours、`9.7 MWh`, `3.7` tCO2eq と見積もられ、project 全体は `0.5k` から `1k` tCO2eq、約 `200k` GPU-days と著者は報告する（`carbon.tex`）。
+- **追加で確認したい実験 / 疑問**: curation query から ImageNet 系を外した場合にも同じ generality が出るか、text-guided model に KoLeo や同様の patch-level signal を加えた場合に retrieval/depth の差が縮むか、という点は TeX 中では実験されていない読者側の疑問である。
+
+## 用語メモ
+
+- **DINOv2**: 本論文で提案される pretrained image encoder family。`ViT-S/14`, `ViT-B/14`, `ViT-L/14`, `ViT-g/14` を含む。
+- **LVD-142M**: curated datasets を query とする image retrieval で作った `142,109,386` images の pretraining dataset。論文中の `\LaViDa`。
+- **general-purpose visual features**: image distributions と tasks をまたいで fine-tuning なしに使える特徴、という意味で使われる。
+- **frozen features**: backbone weights を固定し、linear classifier や decoder だけを学習する評価設定。特徴自体がどれだけ「readily available」かを見る。
+- **text-guided pretraining**: caption や aligned text-image corpus を使って視覚特徴を学ぶ方法。CLIP/OpenCLIP が代表比較対象。
+- **weakly-supervised model**: 本論文では CLIP, OpenCLIP, SWAG, EVA-CLIP など、ラベルやテキスト由来の弱い教師を使う比較対象を指す。
+- **DINO loss**: class token に対する teacher-student cross-entropy。image-level feature の主な学習信号。
+- **iBOT loss / MIM objective**: masked patch token に対する teacher-student prediction。patch-level feature と dense task に効く要素。
+- **prototype scores**: DINO/iBOT head が出す score vector。softmax により $p_s$, $p_t$ の分布になる。
+- **Sinkhorn-Knopp centering**: teacher 側の分布を batch normalization 的に調整する SwAV 由来の手続き。本論文では `3` iterations。
+- **KoLeo regularizer**: batch 内特徴を広げる正則化。Oxford-M retrieval の改善で重要性が示される。
+- **sequence packing**: large crop と small crop から生じる長さの異なる token sequences を concatenate し、block-diagonal attention mask で相互干渉を防ぐ高速化。
+- **efficient stochastic depth**: dropped residual を mask するだけでなく計算自体を skip する実装。drop rate `40%` が使われる。
+- **FSDP**: student, teacher, AdamW moments などで必要な巨大な model replicas を GPU 間で shard する仕組み。
+- **distillation**: scratch で小モデルを学習する代わりに、frozen ViT-g teacher の出力を小モデルに再現させる学習。
+- **+ms**: segmentation evaluation の boosted linear setup。last 4 layers の patch tokens、resolution `640`、multiscale test-time augmentations を使う。
+- **DPT**: depth estimation で frozen ViT patch tokens の上に置く decoder。Table `tab:depth` の主要設定。
+
+## 読む順番の提案
+
+- まず `tmlr.tex` の `\input` 順を見て、本文が `abstract -> intro -> related -> data -> approach -> ablation -> experiments -> fairness -> carbon -> Future work and Discussion` で構成されることを確認する。正規ノートの Summary はこの順序に沿っている。
+- 次に `abstract.tex` と `intro.tex` を読み、`general-purpose visual features`, `without finetuning`, `self-supervised pretraining alone` という主張の範囲を押さえる。正規ノートの「問題」と「貢献」に対応する。
+- 手法は `data.tex` と `supp-data.tex` Table `tab:lavida-details` を先に読むとよい。`LVD-142M` が何から作られ、どこで `ImageNet-1k train`, `ImageNet-22k`, `Google Landmarks`, fine-grained / segmentation / depth / retrieval datasets を使うかが分かる。
+- その後 `approach.tex` を読み、DINO loss, iBOT loss, Sinkhorn-Knopp, KoLeo, high-resolution adaptation, efficient implementation, distillation を確認する。正規ノートの「DINO+iBOT+SwAV+KoLeo」「学習効率」「distillation」に対応する。
+- 結果は `experiments.tex` の Tables `tab:lin-inet1k`, `tab:robustness`, `tab:finegrained_video`, `tab:finegrained`, `tab:retrieval`, `tab:semseg`, `tab:depth` を順に見る。正規ノートの Takeaway にある数値はここで裏取りできる。
+- 主張の妥当性は `ablation.tex` の Tables `tab:ibot-dino`, `tab:ablation-data`, `tab:koleo`, `tab:ibot` と Fig. `fig:distillation`, `fig:res` で確認する。正規ノートの「強い視覚 backbone を作るレシピ」という読み方につながる。
+- 最後に `fairness.tex`, `carbon.tex`, `tmlr.tex` の Future work and Discussion を読む。正規ノートの Critical Thoughts にある bias, carbon, future work の根拠はここにある。
 
 ## もとの論文・正規ノート
 

@@ -1,170 +1,176 @@
-# Discovering Preference Optimization Algorithms with and for Large Language Models（大規模言語モデルを使って、大規模言語モデルのための「好み学習」アルゴリズムを自動発見する）
+# Discovering Preference Optimization Algorithms with and for Large Language Models（LLM-driven objective discovery による offline preference optimization loss の探索）
 
 - arXiv: https://arxiv.org/abs/2406.08414
 - 一次ソース: ../papers/arXiv-2406.08414v3/
 - 正規ノート: ../notes/arXiv-2406.08414v3.md
+- 著者: Chris Lu, Samuel Holt, Claudio Fanconi, Alex J. Chan, Jakob Foerster, Mihaela van der Schaar, Robert Tjarko Lange
+- TeX style: `neurips_2024.sty` を `[final]` で使用
 
 ---
 
 ## 一言で言うと
 
-GPT-4 に「もっと良い学習ルール作って」と頼み続けて、人間が思いつかなかった ChatGPT のしつけ方を見つけた話。
+この論文は、offline preference optimization の損失関数 $f$ を人間が手で設計する代わりに、GPT-4 に PyTorch コードとして提案させ、実際に LLM を fine-tune して MT-Bench score を返すことで反復的に探索する。約 $100$ 個の objective を評価し、logistic loss と exponential loss を sigmoid で混合する LRML、別名 DiscoPOP が AlpacaEval 2.0 / TL;DR / IMDb の held-out task でも強い、というのが著者の主張である。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- **困りごと**: ChatGPT みたいな AI（=「大規模言語モデル」、Large Language Model、略して **LLM** という。すごく大きな文章生成 AI のこと）は、そのままだと暴言や危ない答えを返してしまう。だから「こっちの返事の方が good、こっちは bad」という人間の好みを大量に教えて、お行儀よく直す必要がある。これを「好み学習（preference optimization）」という。
-  - 例えるなら、子犬に「お手は OK、噛みつくのは NG」と一個ずつしつけていく作業に近い。
-- **既存のやり方**: DPO・SLiC・IPO・KTO のような「しつけのルール（=損失関数 loss function。AI に対して『今の答えはどれくらい間違ってるか』を点数で教える計算式のこと）」を、人間の研究者が手作業で 1 つずつ設計してきた。
-- **何が足りなかった**: ルールの作り方は無数にあるはずなのに、人間の発想力には限界がある。ぜんぶ手で作るのは網羅できない。料理レシピを 1 個ずつ天才シェフが考えるのは大変、というのと同じ。
+- **問題設定**: LLM の出力を人間の preference-ranked completion data に合わせる offline preference optimization を扱う。データは $\mathcal{D}=\{(x^i,y_w^i,y_l^i)\}_{i=1}^N$ で、$y_w$ は人間が好む completion、$y_l$ は reject された completion である。
+- **対象範囲 / 仮定**: 背景では Bradley-Terry model に基づく preference 確率、reference policy $\pi_\text{ref}$ から離れすぎない KL regularization、DPO で使う log-ratio difference $\rho$ を前提にする。実験上の discovery は `zephyr-7b-gemma-sft`、`Argilla DPO Mix 7K`、$\beta=0.05$、GPT-4 による objective proposal、MT-Bench を fitness とする設定に固定されている。
+- **既存研究との差分**: DPO, IPO, SLiC などは人間が設計した convex loss を使う。一方、この論文は Tang et al. の generalized preference optimization、つまり $f:\mathbb{R}\rightarrow\mathbb{R}$ を任意の scalar loss としてよいという見方に乗り、LLM に code-level objective functions in Python を直接提案させる。Eureka や Language to Rewards のような environment-specific reward design ではなく、preference optimization task 全体で使える general-purpose objective を狙う点が差分である。
+- **この論文で答えたい問い**: LLM は、既存 loss とその性能を in-context examples として与えられるだけで、既存の preference optimization baseline を上回る新しい loss を発見できるのか。また、その loss は discovery に使った MT-Bench 以外の held-out task にも転移するのか。
 
-## どうやって解いたの？
+## 背景と前提
+
+- **Preference optimization** は、prompt $x$ と completion pair $(y_w,y_l)$ から、policy $\pi_\theta$ が human preference に合うように学習する問題である。RLHF ではまず reward model $r_\phi$ を学習し、その reward を最大化する policy optimization を行う。
+- **DPO の簡略化**: DPO は reward modelling と online RL を使わず、preference pair を使う supervised learning objective に書き換える。ここで中心になる量が、policy と reference model の log probability ratio の差 $\rho$ である。
+- **Generalized preference optimization**: TeX の Background では、$f$ を任意の scalar loss にすると offline preference optimization algorithms の recipe が得られる、と説明している。例として、$f(x)=(x-1)^2$ は IPO、$f(x)=\max(0,1-x)$ は SLiC に対応する。
+- **Baseline との関係**: Table `tab:mt_bench` では、DPO, DPO*（Official HuggingFace `zephyr-7b-gemma` DPO model）, SLiC, KTO を baseline として並べ、その下に発見された DBAQL, AQL, PADLL, AQFL, CELL, LRML, PFL を置いている。
+- **Meta-optimization としての見方**: 論文中の表現では、objective function $f^\gamma$ で $K$ iterations 学習した policy $\pi_K$ の downstream performance $\eta$ を最大化するような objective を探す問題である。ただし、この論文では $\gamma$ をニューラルネットや DSL で事前に固定せず、LLM が Python code として関数を直接生成する。
+
+## 提案手法
 
 ### コアアイデア
 
-「**ルール自体を AI（GPT-4）に考えさせよう**」というアイデア。
+提案手法は `LLM-Driven Objective Discovery` である。LLM に established loss functions とその performance を in-context で渡し、次の candidate objective function $f_i$ を JSON の `thought`, `name`, `code` として出力させる。生成されたコードを parse し、unit tests で valid output shapes などを確認した後、その loss で実際に LLM を fine-tune し、downstream validation task の performance metric $\eta$ を返す。
 
-例えるなら、ゲームの攻略法を友達に聞くとき、「これまで試した攻略法の点数表」を友達に見せて「次はこれ試してみたら？」と提案させる、というのを 100 回繰り返す感じ。GPT-4 は「過去にうまくいったルールたち＋それぞれの点数」を見て、次に試すべき新しいルール（PyTorch という Python のライブラリで書いたコード）を提案する。それを実際に走らせて点数をつけ、また GPT-4 に渡す。これを繰り返して、だんだん良いルールに進化させていく。
+Discovery task では、GPT-4 が $\{\log \pi_\theta(y_w|x), \log \pi_\text{ref}(y_w|x), \log \pi_\theta(y_l|x), \log \pi_\text{ref}(y_l|x)\}$ を入力にとる PyTorch loss code を生成する。valid な objective について `zephyr-7b-gemma-sft` を `Argilla DPO Mix 7K` で preference fine-tuning し、MT-Bench score を fitness として GPT-4 に返す。この反復を通じて、過去に高性能だった loss の変形や組み合わせを探索する。
 
-### 仕組み
+論文はこの発見プロセスの直観を示すため、CIFAR-10 の小規模 case study も置いている。ResNet-18 を 5 epochs 学習する classification loss discovery では、label-smoothed cross-entropy、squared error variant、それらの combination という流れが観察され、著者はこれを random search ではなく concepts を complementary に compose している例として扱う。
 
-- **step1**: GPT-4 に「機械学習研究者になりきって RLHF 用の損失関数を考えて」というお願い文（プロンプト）を渡す。最初のお手本として、DPO・SLiC・IPO のコードと点数を例示する。
-  - **RLHF** = Reinforcement Learning from Human Feedback。「人間からの好みフィードバックを使って AI を強化学習する」という意味の略語。難しく聞こえるけど要は「good/bad の判定を集めて AI をしつける」ということ。
-- **step2**: GPT-4 が JSON（コンピュータが読める箇条書きフォーマット）で「思考メモ・関数名・Python コード」を返してくる。
-- **step3**: そのコードを試験走行させて、「ちゃんと動くか」「変な値（NaN = Not a Number、計算が壊れた印）が出てないか」をユニットテスト（自動チェック）でふるい分け。
-- **step4**: 合格したら本番の AI（**Zephyr 7B Gemma SFT** という 70 億パラメータの中型 LLM。Gemma は Google が公開している言語モデル）を、その新しいルールで **Argilla DPO Mix 7K** という 7000 件の好みデータで再学習する。
-  - **SFT** = Supervised Fine-Tuning。「先生役のお手本を見せて真似させる」予備学習のこと。
-- **step5**: できあがった AI を **MT-Bench**（80 個の会話質問に答えさせて、GPT-4 が 10 点満点で採点する評価テスト）で測る。
-- **step6**: スコアを GPT-4 に「フィードバック」として返して、また step1 に戻る。これを約 100 回まわす。
-- **step7**: 最終的に上位に残った 7 個の新ルールを記録。中でも一番総合力の高いものを **DiscoPOP**（DiscoPOP = Discovered Preference Optimization、「発見された好み学習」）と命名した。
-
-### 主要な数式
-
-#### 数式 1: 好み学習の一般形（背景）
-
-論文の全ての話は、この「形」をいじる遊びだと思えば良い。
+### 重要な定義・数式
 
 $$
-\min_{\pi_\theta} \; \mathbb{E}_{(y_w,\, y_l,\, x)\,\sim\, \mathcal{D}}\Big[\, f\big(\beta \rho\big) \,\Big]
+\max_{\pi_\theta}  \underbrace{\mathbb{E}_{y\sim\pi_\theta, x\sim\mathcal{P}}\left[r_\phi(y,x)\right]}_{\text{reward maximization}} - \beta \underbrace{\mathbb{KL}(\pi_\theta,\pi_\text{ref})}_{\text{regularization}}.
 $$
 
-ここで $\rho = \log\dfrac{\pi_\theta(y_w|x)}{\pi_\text{ref}(y_w|x)} - \log\dfrac{\pi_\theta(y_l|x)}{\pi_\text{ref}(y_l|x)}$。
+**式の意味**: RLHF の policy optimization を、reward maximization と reference policy からの KL regularization の差として書いた式である。TeX では式 `eq:po` として示され、この後 DPO の supervised objective へ書き換えられる。
 
-**この式が言ってること**: 「データ全部をひっくるめて見たとき、$f$ という関数の値ができるだけ小さくなるように AI を調整しよう」と言っている。$f$ の中身は「good な返事 $y_w$ をどれくらい好み、bad な返事 $y_l$ をどれくらい避けるか」を 1 つの数 $\rho$ にしたもの。
+**記号の定義**:
+- $\pi_\theta$ ... 学習する language model policy
+- $r_\phi(y,x)$ ... reward model が prompt $x$ と output $y$ に与える reward
+- $\mathcal{P}$ ... prompt distribution
+- $\pi_\text{ref}$ ... pre-RL または SFT 段階の reference policy
+- $\beta$ ... KL regularization の強さを調整する係数
+- $\mathbb{KL}(\pi_\theta,\pi_\text{ref})$ ... 学習中 policy と reference policy の divergence
 
-**記号の意味**:
-- $\pi_\theta$ … いま学習している AI。「ある質問 $x$ にこの返事を返す確率はどれくらい？」を返してくれる関数。
-- $\pi_\text{ref}$ … 学習する前の、まだしつけられてない元 AI（reference = 比較用の基準）。
-- $y_w$ … 人間が「こっちが good」と選んだ返事（w は winner の w）。
-- $y_l$ … 人間が「こっちが bad」と選んだ返事（l は loser の l）。
-- $x$ … ユーザーからの質問やお題。
-- $\mathcal{D}$ … 学習に使う、好みのペアがたくさん入ったデータの箱。
-- $\mathbb{E}_{\dots\sim\mathcal{D}}[\dots]$ … 「データの箱からたくさん取り出して平均を取る」という意味。$\mathbb{E}$ は期待値、ここでは「平均」と読めば OK。
-- $f$ … 損失関数（=今回 GPT-4 に発見させたい関数）。$\rho$ という 1 つの数を入れると、その答えがどれくらい悪いかの罰点を返してくれる。
-- $\beta$ … β（ベータ）。「どれくらい強くしつけるか」を調節するつまみ。論文では 0.05 で固定。
-- $\rho$ … ρ（ロー）。「good 返事と bad 返事で、新 AI と元 AI の確率比がどれだけずれたか」を表すただ 1 つの数字。プラスなら good 返事を好むように学習が進んでる印、マイナスなら逆。
-- $\log$ … 「自然対数」と言う関数。中身が 1 倍なら 0、2 倍なら約 0.69、3 倍なら約 1.09…のように「何倍になったか」を控えめな数で表すもの。掛け算を足し算に変える便利道具。
-- $\min_{\pi_\theta}$ … 「$\pi_\theta$ を動かして、この値ができるだけ小さくなるようにする」という指示。
-
-**身近な例え**: 体操の採点。$y_w$ が「上手にできた演技」、$y_l$ が「失敗した演技」。$\rho$ は「先生がいまの選手と新人選手を見比べたとき、上手な方を選ぶ自信の差」みたいなもの。$f$ は採点表で、点数の付け方そのもの。この採点表 $f$ をどうデザインするかでしつけの効率が変わる、というのが論文の主題。
-
----
-
-#### 数式 2: DiscoPOP（一番の主役の新ルール）
-
-GPT-4 が見つけたチャンピオン。**Log Ratio Modulated Loss**（log 比による調節損失）と書いて LRML、別名 DiscoPOP。
+**この論文での役割**: DPO とその一般化が何を簡略化しているかを示す出発点である。論文の発見対象はこの RL objective そのものではなく、この objective から導かれる offline preference optimization loss の中の $f$ である。
 
 $$
-f_{\text{lrml}}(\beta\rho) = \big(1 - \sigma(\beta\rho/\tau)\big)\cdot \log\!\big(1 + \exp(-\beta\rho)\big) + \sigma(\beta\rho/\tau)\cdot \exp(-\beta\rho)
+\min_{\pi_\theta}\mathbb{E}_{(y_w,y_l,x)\sim \mathcal{D}}\Bigg[f\Bigg(\underbrace{\beta\cdot\left(\log\frac{\pi_\theta(y_w|x)}{\pi_\text{ref}(y_w|x)} - \log\frac{\pi_\theta(y_l|x)}{\pi_\text{ref}(y_l|x)}\right)}_{r_\phi(y_w,x)-r_\phi(y_l,x)}\Bigg)\Bigg].
 $$
 
-ただし $\tau = 0.05$。
+**式の意味**: Preference pair に対して、chosen completion と rejected completion の log-ratio difference を作り、それを scalar loss $f$ に入れて平均損失を最小化する。TeX では式 `eq:dpo-loss` であり、本論文の objective discovery が直接いじる対象である。
 
-**この式が言ってること**: 「DPO 風の優しい罰（前半の log の項）」と「指数の厳しい罰（後半の exp の項）」を、$\rho$ の値によって自動で混ぜている。$\rho$ が大きい（上手にしつけが進んでる）ときは厳しい罰の比率を増やし、$\rho$ が小さい（まだダメ）ときは優しい罰を中心に。状況によって採点基準を自動で切り替える賢い採点表、ということ。
+**記号の定義**:
+- $\mathcal{D}$ ... preference-ranked completion dataset
+- $x$ ... prompt
+- $y_w$ ... preferred, chosen, winner completion
+- $y_l$ ... rejected, loser completion
+- $\pi_\theta(y|x)$ ... 現在の policy が $x$ に対して $y$ を出す確率
+- $\pi_\text{ref}(y|x)$ ... reference policy の確率
+- $\rho=\log\frac{\pi_\theta(y_w|x)}{\pi_\text{ref}(y_w|x)}-\log\frac{\pi_\theta(y_l|x)}{\pi_\text{ref}(y_l|x)}$ ... difference of log-ratios
+- $f$ ... 探索対象の scalar loss function
 
-**記号の意味**:
-- $\beta$ … 0.05 固定の調節つまみ（数式 1 と同じ）。
-- $\rho$ … good 返事と bad 返事の確率比のずれ（数式 1 と同じ）。
-- $\tau$ … タウ。混ぜ方の切り替わりの急さを決める数。0.05 に決め打ち。
-- $\sigma(\cdot)$ … シグモイド関数。入れた数を「0 と 1 の間」にうまく押し込む関数。具体的には $\sigma(z) = 1/(1+\exp(-z))$。入力が大きいほど 1 に近く、小さいほど 0 に近くなる。
-- $\exp(z)$ … 指数関数。$z$ が大きいほどガーンと大きくなる関数（$\exp(0)=1$, $\exp(1)\approx 2.72$, $\exp(2)\approx 7.39$）。
-- $\log(\cdot)$ … 自然対数（数式 1 で説明したやつ）。
-- $f_{\text{dpo}}(\beta\rho) = \log(1+\exp(-\beta\rho))$ … DPO の損失。「優しめの罰」。
-- $f_{\text{exp}}(\beta\rho) = \exp(-\beta\rho)$ … 指数損失。「厳しめの罰」。
-
-**身近な例え**: ジュースの自販機の蛇口にたとえる。蛇口 A（log の優しい罰）と蛇口 B（exp の厳しい罰）の 2 つがあって、$\sigma(\beta\rho/\tau)$ は「いま蛇口 B をどれくらい開けるか」のレバー（0〜1）。$\rho$ がプラス（学習がうまく進んでる）になるとレバーが上がって厳しい蛇口 B から多く出るようになり、$\rho$ がマイナス（まだダメ）だとレバーが下がって優しい蛇口 A 中心になる、というブレンド装置。
-
----
-
-#### 数式 3: DiscoPOP の不思議な性質
-
-論文が「surprising」と強調しているポイント。$\rho = 0$（学習の出発点）で、$f_{\text{lrml}}$ の傾きがマイナスになっている。つまり、
+**この論文での役割**: GPT-4 が生成する loss code は、この式の $f$ を実装するものとして扱われる。DPO, SLiC, IPO, LRML などは、同じ $\rho$ に別の $f$ を適用する違いとして比較される。
 
 $$
-\left.\frac{d f_{\text{lrml}}(\beta\rho)}{d\rho}\right|_{\rho=0} < 0
+f_{dpo}(\beta\rho)=\log(1+\exp(-\beta\rho)),\quad
+f_{slic}(\beta\rho)=\mathrm{ReLU}(1-\beta\rho),\quad
+f_{exp}(\beta\rho)=\exp(-\beta\rho).
 $$
 
-**この式が言ってること**: 学習スタート直後（$\rho=0$）の地点で、損失が「小さくなる方向」がマイナス側にもプラス側にも両方ある。つまり「good 返事を少し嫌う方向」にも一瞬だけ進む。普通の DPO ではあり得ない動き。
+**式の意味**: Appendix `Discovered Objective Functions` で、発見された loss を記述するために定義される既存 component loss である。DPO は logistic/log-sigmoid loss、SLiC は hinge loss、$f_{exp}$ は exponential loss として使われる。
 
-**記号の意味**:
-- $\dfrac{d \cdots}{d\rho}$ … 「ρ をほんの少し動かしたとき、関数の値がどれくらい変わるか」を表す傾き（=微分）。プラスなら右上がり、マイナスなら右下がり。
-- $|_{\rho=0}$ … 「$\rho=0$ の地点での値」という意味。
-- $f_{\text{lrml}}$ … 数式 2 の関数。
-- $0$（右側）… 比較する基準の数。
-- $<$ … 「左が右より小さい」記号。
+**記号の定義**:
+- $f_{dpo}$ ... Direct Preference Optimization の loss
+- $f_{slic}$ ... Sequence Likelihood Calibration の max-margin inspired hinge loss
+- $f_{exp}$ ... LRML や CELL などの発見 loss で使われる exponential component
+- $\rho$ ... chosen と rejected の log-ratio difference
+- $\beta$ ... discovery task では $0.05$ 固定の regularization parameter
 
-**身近な例え**: 山登りで、本来ゴールは右の山頂のはずなのに、出発点ですぐ近くに小さな谷があって、いったん少し左に下る必要がある、という地形。常識的には変だが、この一度の「下り」が後で大きな山を越えるための助走（カリキュラム）になっている、というのが著者の予想。中学校の階段で、屋上に行きたいのに最初の 1 段だけ下る、みたいな珍しい形。
+**この論文での役割**: 発見された loss の多くは、これらの component を混合する形で書かれる。Table `tab:mt_bench` の Objective $f$ Function 欄もこの表記を使っている。
 
-## 何がすごいの？
+$$
+\begin{aligned}
+f_{lrml}(\beta\rho)
+&= (1-\sigma(\beta\rho/\tau))\cdot f_{dpo}(\beta\rho)
++ \sigma(\beta\rho/\tau)\cdot f_{exp}(\beta\rho) \\
+&= (1-\sigma(\beta\rho/\tau))\cdot \log(1+\exp(-\beta\rho))
++ \sigma(\beta\rho/\tau)\cdot \exp(-\beta\rho),\qquad \tau=0.05.
+\end{aligned}
+$$
 
-論文に書かれている数値（TeX 原文から拾った）:
+**式の意味**: LRML, つまり DiscoPOP は、DPO で使う logistic loss と exponential loss を、$\sigma(\beta\rho/\tau)$ によって動的に混ぜる loss である。$\rho=0$ では logistic と exponential が半々に近く、$\rho\rightarrow\infty$ では exponential term が支配的になる、と §6.1 は説明している。
 
-- **MT-Bench（10 点満点）の発見タスク**: DPO 7.888 / SLiC 7.881 / KTO 7.603 だったところを、発見されたルールが全部上回った。ベスト 7 は
-  - DBAQL **7.978**, AQL **7.953**, PADLL **7.941**, AQFL **7.931**, CELL **7.925**, LRML(=DiscoPOP) **7.916**, PFL **7.900**。
-- **AlpacaEval 2.0**（別のお題で試した一般化テスト、GPT-4 と勝率を比べる）: DPO は GPT-4 相手に 11.23% 勝てたところ、DiscoPOP(LRML) は **13.21%**、PADLL は **14.07%**、AQFL は **13.63%** に上昇。LC（長さ補正版）勝率では DiscoPOP が SFT 比 **65.18%** で一番。
-- **TL;DR 要約タスク**（Reddit の投稿 694 件、10% 抜粋）: 人間の要約と比べて、DPO 88.27% vs DiscoPOP 87.63% vs PADLL 88.54% とほぼ拮抗。
-- **IMDb（映画レビューを positive に書かせる）**: GPT-2 + 感情判定器を「正解の報酬」にして測ると、$\beta \in \{0.025, 0.05, 0.1\}$ では DiscoPOP が DPO・SLiC より高い報酬を出した。
-- **使った素材**: ベース AI は `zephyr-7b-gemma-sft`、学習データは `Argilla DPO Mix 7K`、GPU は A100×8、1 ルール試すのに約 30 分。約 100 ルール試した。
+**記号の定義**:
+- $f_{lrml}$ ... Log Ratio Modulated Loss、論文中で DiscoPOP と呼ぶ loss
+- $\sigma(\cdot)$ ... sigmoid function
+- $\tau$ ... temperature parameter。TeX では $\tau=0.05$
+- $f_{dpo}$ ... $\log(1+\exp(-\beta\rho))$
+- $f_{exp}$ ... $\exp(-\beta\rho)$
+- $\beta$ ... discovery process では $0.05$ 固定
+- $\rho$ ... difference of log-ratios
 
-著者が論文中で挙げている **貢献（contributions）** は 3 つ:
-1. LLM にコードを書かせて「好み学習用の損失関数」を自動発見する仕組みを提案した。
-2. MT-Bench で従来手法を上回る複数の新ルールを発見した。中でも DiscoPOP は AlpacaEval / IMDb / TL;DR の 3 種類の別タスクでも安定して良い。
-3. DiscoPOP が「log 損失と exp 損失の重み付き和」「非凸（=なめらかな谷一つではなく、出っぱりへこみがある）」という、人間にはなかなか思いつけない性質を持つことを発見・分析した。
+**この論文での役割**: 著者が最終的に DiscoPOP と名付け、held-out task で一貫して高いと主張する中心的な発見 loss である。§6.1 は、DiscoPOP が non-convex segment と $\rho=0$ での negative gradients を持つ点を surprising feature として挙げる。なお、Appendix の LRML 数式には $f_{exp}(-\beta\rho)$ と読める行があるが、同じ TeX の §6.1 の展開式と $f_{exp}(\beta\rho)=\exp(-\beta\rho)$ の定義は上の式に対応している。
 
-## キーワード辞典
+### 実装 / アルゴリズム上の要点
 
-- **LLM (Large Language Model)** … ChatGPT みたいな大きな文章 AI。
-- **好み学習 / preference optimization** … 人間が「こっちが good、こっちが bad」と教えて AI のお行儀を直す作業。
-- **RLHF** … Reinforcement Learning from Human Feedback。人間の好みフィードバックで AI をしつける手法の総称。
-- **DPO** … Direct Preference Optimization。代表的な好み学習ルール。損失関数は $\log(1+\exp(-\beta\rho))$。
-- **SLiC** … Sequence Likelihood Calibration。比較対象の損失関数の 1 つ、`ReLU(1-βρ)`。
-- **IPO** … Identity Preference Optimization。比較対象、$(x-1)^2$ の形。
-- **KTO** … Kahneman-Tversky Optimization。比較対象。心理学のプロスペクト理論にヒントを得たもの。
-- **損失関数 / loss function** … AI に「今の答えがどれくらいダメか」を点数で教える式。値を小さくする方向に学習する。
-- **fine-tune（ファインチューン）** … 大きな AI を、特定の目的に合うように追加学習させること。元から完全に作り直さず、お行儀を直すイメージ。
-- **SFT (Supervised Fine-Tuning)** … お手本を見せて真似させる予備学習。
-- **シグモイド $\sigma$** … 数を 0〜1 に押し込む関数。スイッチみたいに「だんだん ON になる」を表現できる。
-- **指数 exp** … $\exp(z)$ は $z$ が増えると一気に大きくなる関数。
-- **log（自然対数）** … 掛け算を足し算にする関数。数が 1 のとき 0、ぐっと小さくなるほどマイナスに大きくなる。
-- **非凸（non-convex）** … 関数のグラフが「単純なお椀型」ではなく、出っぱりや 2 つの谷を持つ形。最適化が難しくなる原因。
-- **MT-Bench** … 80 個の会話お題に答えさせて GPT-4 に 10 点満点採点させる評価ベンチマーク。
-- **AlpacaEval 2.0** … GPT-4 と勝率を比べるタイプの自動評価。LC 版は長さによる有利不利を補正してある。
-- **TL;DR** … 「長いから 3 行で要約して」の意味。Reddit 投稿を要約するベンチマーク名でもある。
-- **IMDb** … 映画レビューサイトの名前。それを使った感情生成タスク。
-- **β（ベータ）** … しつけの強さを決めるつまみ。論文では 0.05 で固定。
-- **τ（タウ）** … DiscoPOP の混ぜ具合の急さを決める数。0.05 で固定。
-- **ρ（ロー）** … 「good 返事と bad 返事で、新 AI と元 AI の確率比がどれだけずれたか」を表す 1 つの数。
-- **PyTorch** … AI のコードを書くための Python ライブラリ。
-- **NaN** … Not a Number。計算が壊れて数字じゃない値が出ちゃった印。
-- **ユニットテスト** … プログラムの一部分が正しく動くか自動でチェックする仕組み。
-- **alignment-handbook** … HuggingFace 社が公開している、AI をしつけるための学習レシピ集（オープンソース）。
+- step1: system prompt で exact function interface、JSON 出力形式、`thought` / `name` / `code`、`self.beta = 0.05` を指定し、first user prompt で DPO, SLiC, IPO, KTO の code と fitness を提示する。
+- step2: GPT-4 が candidate objective function $f_i$ の PyTorch code を出力する。入力は `policy_chosen_logps`, `policy_rejected_logps`, `reference_chosen_logps`, `reference_rejected_logps` である。
+- step3: JSON parse と unit tests を行う。TeX では例として valid output shapes を挙げ、失敗時には error message を返して再生成する。
+- step4: valid な loss で `zephyr-7b-gemma-sft` を `Argilla DPO Mix 7K` 上で fine-tune する。Discovery training は all parameters を学習し、$\beta=0.05$、learning rate `5e-7`、bfloat16、2 epochs、batch size per device 2、gradient accumulation 8、cosine scheduler、AdamW、TRL library、8 Nvidia A100 GPUs、1 run 約 30 分である。
+- step5: Fine-tuned model を MT-Bench で評価し、score を fitness $\eta$ として GPT-4 に返す。
+- step6: maximum generations または convergence criteria まで反復する。§4.2 では approximately $100$ objective functions を評価したと書かれている。
 
-## ちょっと深掘り（中学生は飛ばして OK）
+## 実験・結果
 
-- **なぜ DPO がベースなのか**: もともと AI のしつけは「報酬モデルを学習 → 強化学習」の 2 段階だったが、DPO は数学的にこれを 1 つの教師あり学習に書き換えた発明。本論文は「DPO の枠組みの中の $f$ を取り替えれば別のしつけルールになる」（Tang+ 2024 の generalized preference optimization）という見方に乗っかっている。だから探すべき空間は「$f: \mathbb{R} \to \mathbb{R}$、つまり 1 つの実数を入れて 1 つの実数を返す関数」というスカラー関数の世界。検索しやすい。
-- **GPT-4 はランダム探索しているわけじゃない**: CIFAR-10 のおまけ実験（§3）では、「label smoothed cross-entropy → squared error variant → その合成」というように、概念レベルで損失関数を合成していく動きが観察された。論文では「The LLM discovery process does not perform a random search ... but instead composes various concepts in a complementary fashion」と書かれている。
-- **DiscoPOP の β 依存性**: 著者自身が Limitation で認めている通り、$\beta = 0.05$ という値が DiscoPOP の式に「焼き込まれて」しまっている（$\tau$ も 0.05）。$\beta \leq 0.01$ や $\beta \geq 2.5$ では収束しない。著者は「探索中の LLM に、$\beta$ を最初に掛ける制約を入れるべきだった」と振り返っている。
-- **非凸の解釈**: 著者は IMDb で訓練データの 1.35% が DiscoPOP の 2 つの極値の間に落ち、それらは $|r_w - r_l|$ が小さい（=人間の好みが弱い、ノイジーな）ペアだったと報告。「曖昧なペアにはあえて強く反応せず、curriculum 的に振る舞う」という仮説。ただし著者も明言する通り post-hoc な解釈で、理論保証ではない。
-- **評価ベンチマークの注意**: MT-Bench は 80 問・GPT-4 judge と小規模・ノイジー。発見時のフィッティングと評価が同じ MT-Bench を使っているため、circularity（自分の決めた物差しで自分を測る）リスクがある。著者は AlpacaEval / TL;DR / IMDb という別タスクで追加検証しているが、DBAQL のように発見時 1 位なのに AlpacaEval では baseline 以下に落ちるルールもあり、汎化はルールごとにムラがある。
+- **データセット / ベンチマーク**: Discovery では `Argilla DPO Mix 7K` で `zephyr-7b-gemma-sft` を preference fine-tuning し、MT-Bench で評価する。MT-Bench は 80 high-quality multi-turn questions からなり、GPT-4 judge が 0 から 10 の score を付ける。Held-out では、841 instructions の Alpaca Eval 2.0、Reddit TL;DR summarization preference dataset の first 10%（around 8'000 training samples）と 694 samples の評価、SFT 済み GPT-2 IMDb model を用いる positive sentiment generation を使う。
+- **比較対象 / baseline**: DPO, DPO*（Official HuggingFace `zephyr-7b-gemma` DPO model）, SLiC, KTO。初期 prompt には IPO code と fitness 7.84 も含まれるが、Table `tab:mt_bench` の baseline 行には IPO は載っていない。
+- **指標**: MT-Bench score (/10)、Alpaca Eval win rate と LC win rate、TL;DR win rate と LC win rate、IMDb の expected reward と KL divergence。Alpaca と TL;DR の表には standard error が付く。IMDb の reward/KL は 10 different generations で平均される。
+- **主な結果 (MT-Bench)**: DPO 7.888、DPO* 7.810、SLiC 7.881、KTO 7.603 に対し、発見された DBAQL 7.978、AQL 7.953、PADLL 7.941、AQFL 7.931、CELL 7.925、LRML (DiscoPOP) 7.916、PFL 7.900 が報告される。
+- **主な結果 (Alpaca Eval 2.0)**: DPO の vs GPT-4 win rate は $11.23\pm0.97$、LC は $12.81\pm0.66$ である。PADLL は $14.07\pm1.04$ / $14.89\pm0.66$、AQFL は $13.63\pm1.05$ / $15.55\pm0.71$、LRML は $13.21\pm1.02$ / $14.78\pm0.67$ である。vs SFT Checkpoint の LC win rate では LRML が $65.18\pm0.32$ で best とされる。
+- **主な結果 (TL;DR)**: DPO と PADLL が 4 指標中 3 指標で best 付近である。vs Human Preference は DPO $88.27\pm1.07$、PADLL $88.54\pm1.05$、LRML $87.63\pm1.10$。vs SFT Checkpoint は DPO $54.38\pm1.52$、PADLL $55.34\pm1.52$、LRML $53.46\pm1.52$ である。LC win rate の standard error は表注で values $<0.001$ のため丸められている。
+- **主な結果 (IMDb)**: $\beta\in\{0.025,0.05,0.1,0.25,0.5,1.0\}$ の converging models について reward-KL frontier を示す。本文は、低い $\beta$ values $(0.025,0.05,0.1)$ で LRML が DPO より reward と KL-divergence の点で上回り、$\beta\in\{0.05,0.1\}$ では DPO, SLiC, AQFL, PADLL より reward がやや高いと述べる。
+- **著者が主張する貢献**: LLM-driven objective discovery pipeline による novel offline preference optimization algorithms の発見、MT-Bench で高い複数 loss と held-out task で強い DiscoPOP の提示、DiscoPOP が logistic loss と exponential loss の weighted sum かつ non-convex であることの初期分析、の 3 点である。
+
+## 妥当性と限界
+
+- **この主張を支える根拠**: Discovery では approximately $100$ objective functions を同じ training pipeline で評価し、Table `tab:mt_bench` に baseline と discovered losses を並べている。さらに、MT-Bench だけでなく Alpaca Eval 2.0、TL;DR summarization、IMDb positive sentiment generation に held-out evaluation を広げている。Alpaca と TL;DR では standard error、IMDb では 10 generations average の reward/KL frontier を示している。
+- **著者が認めている limitations / future work**: Conclusion の `Limitations & Future work` は、LLM objective proposals の作り方はまだ浅く、temperature sampling や worst-to-best performance sorting は有意な改善を出さなかったと述べる。今後は learning curve plots を VLM に渡す、prompt template を meta-meta-optimize する、複数 floating point parameters をもつ form を調べる、closed-source GPT-4 依存を減らして produced models themselves に code generation させる、といった方向を挙げる。
+- **DiscoPOP 固有の限界**: §6.2 は、IMDb experiment で LRML が $\beta\leq0.01$ または $\beta\geq2.5$ のとき収束しにくいと述べる。$\beta=0.01$ では predominantly negative reviews を生成し reward score が $\sim0.15$ になり、$\beta\in\{2.5,5.0\}$ では sharp spike 後に loss value 0 と NaN outputs を伴う collapse が観察された。著者は、large gradient in the non-convex part と gradient clipping の可能性を挙げる。
+- **読者として注意すべき点**: MT-Bench score は discovery の fitness そのものなので、Table `tab:mt_bench` は探索中の目的関数に対する成績である。表の MT-Bench score には standard error がなく、DPO 7.888 と LRML 7.916 のような差の統計的確かさは TeX 中では示されていない。Alpaca Eval 2.0 では top losses 間の differences are not significant と本文が述べ、例外として vs SFT の LC win rate で DiscoPOP が best としている。
+- **実装上の注意**: Appendix `Discovered Objective Functions` は、LRML, DBAQL, AQL, AQFL, PFL の generated code が、$\beta$ を difference of log-ratios に最初に掛けるという扱いを守っていなかったため、mathematical representation と IMDb experiment の corrected code では $\tau=0.05$ で scale を合わせたと説明している。これは、discovered loss の形が discovery 時の $\beta=0.05$ に依存していることを意味する。
+- **DiscoPOP 解析の根拠**: Appendix `Additional Analysis of DiscoPOP` では、IMDb training samples の $\beta$-scaled difference of log-ratios と DiscoPOP loss を調べる。Figure `fig:lrml_loss_analysis` は local minimum $f_{lrml}(-2.3714)=0.785929$ と local maximum $f_{lrml}(1.44012)=0.87829$ を示し、その間に training set の 1.35% が入ると報告する。Table `tab:abs_reward_differences` では、between optima の $|r_w-r_l|$ mean が 0.981、full range が 3.861、outside optima が 3.9 であり、著者は optima 間の samples がより noisy labels らしいと解釈している。
+- **追加で確認したい実験 / 疑問**: 別の base model、別の preference dataset、別の discovery fitness で同じ loss が出るかは TeX 中には示されていない。MT-Bench 以外を fitness にした再探索、複数 seed / 複数 $\beta$ での candidate selection、$\tau$ や sigmoid gate の ablation、closed-source GPT-4 以外での再現性確認が必要になる。
+
+## 用語メモ
+
+一般的な辞書的定義ではなく、この論文での使われ方を中心に書く。
+
+- **offline preference optimization**: 既に集めた preference pair dataset $\mathcal{D}$ を使い、online RL なしに policy を最適化する枠組み。DPO や SLiC が代表例として扱われる。
+- **objective discovery**: LLM が loss function の Python code を提案し、その performance を実評価して次の提案に反映する探索過程。
+- **fitness / $\eta$**: 生成された objective で学習した model の downstream performance。Discovery task では MT-Bench score。
+- **$\rho$**: chosen と rejected に対する policy/reference の log probability ratio の差。論文の loss functions は基本的に $\beta\rho$ の scalar function として表される。
+- **$\beta$**: KL regularization parameter。Discovery task では $0.05$ 固定であり、DiscoPOP の scaling と安定性にも関わる。
+- **$\tau$**: Appendix で corrected mathematical representation に導入される scalar。Discovery process の $\beta=0.05$ に合わせるため $\tau=0.05$ とされる。
+- **DPO**: $f_{dpo}(\beta\rho)=\log(1+\exp(-\beta\rho))$ を使う Direct Preference Optimization。Table `tab:mt_bench` の主要 baseline。
+- **SLiC**: $f_{slic}(\beta\rho)=\mathrm{ReLU}(1-\beta\rho)$ の hinge loss を使う baseline。
+- **KTO**: Pairwise Kahneman-Tversky Optimization。Table `tab:mt_bench` では objective function は `see Ethayarajh et al. 2024` とされ、score 7.603。
+- **LRML / DiscoPOP**: Log Ratio Modulated Loss。著者が Discovered Preference Optimization と呼ぶ中心的な discovered loss。
+- **PADLL / AQFL / DBAQL / AQL / CELL / PFL**: GPT-4 discovery で得られた他の high-performing losses。多くは DPO, SLiC, exponential component の重み付き混合や、logit statistics に基づく adaptive weighting を含む。
+- **MT-Bench**: 80 multi-turn questions を GPT-4 judge が 0-10 で評価する benchmark。この論文では discovery の fitness。
+- **Alpaca Eval 2.0 LC win rate**: 長さ bias を抑える length-controlled win rate。TeX は Chatbot Arena との correlation 0.98 を背景として挙げる。
+- **reward-KL frontier**: IMDb experiment で、positive sentiment reward と reference model からの KL divergence の関係を見る図。理想は高 reward かつ低 KL の top-left と説明される。
+
+## 読む順番の提案
+
+- まず Abstract と Introduction を読み、著者が何を `without continual expert human intervention` と呼んでいるかを確認する。正規ノートでは `Summary（著者の主張）` の問題・手法・結果に対応する。
+- 次に Background の式 `eq:po` と `eq:dpo-loss` を読む。ここで $\rho$ と $f$ の役割を押さえると、正規ノートの DiscoPOP 式と baseline 説明が読める。
+- §3 `LLM-Driven Objective Discovery` と Algorithm 1 を読み、Appendix `Prompts` で JSON format、`self.beta = 0.05`、初期 baseline code を確認する。
+- §4 `Discovering Offline Preference Optimization Objectives` の discovery setup と Table `tab:mt_bench` を読む。ここが「約 $100$ objective を評価し、上位 loss を catalogued した」という主張の根拠である。
+- §5 `Held-Out Evaluations` の Table `tab:alpaca_eval`、Table `tab:tldr`、Figure `fig:imdb` を読む。正規ノートの `Takeaway` と `Critical Thoughts` は、ここで MT-Bench から held-out に移った時の強弱を整理している。
+- §6 `Analysis of DiscoPOP` と Appendix `Additional Analysis of DiscoPOP` を読む。LRML の式、non-convex segment、$\rho=0$ での negative gradients、IMDb training samples の 1.35% が local optima 間に入る解析がつながる。
+- 最後に Conclusion の `Limitations & Future work` と Appendix `Discovered Objective Functions` を読む。特に $\beta$ の扱いと $\tau=0.05$ の補正は、正規ノートの「DiscoPOP の β 依存性」に対応する。
 
 ## もとの論文・正規ノート
 

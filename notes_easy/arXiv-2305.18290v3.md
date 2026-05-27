@@ -1,4 +1,4 @@
-# Direct Preference Optimization: Your Language Model is Secretly a Reward Model（中学生向け解説）
+# Direct Preference Optimization: Your Language Model is Secretly a Reward Model（RLHFの嗜好最適化を分類損失に再定式化する研究）
 
 - arXiv: https://arxiv.org/abs/2305.18290
 - 一次ソース: ../papers/arXiv-2305.18290v3/
@@ -8,149 +8,160 @@
 
 ## 一言で言うと
 
-「人の好み」をAIに教えるのに、これまで必要だった面倒な強化学習をやめて、〇×クイズみたいな簡単な勉強だけで同じ結果が出せる、という発明だよ。
+この論文は、RLHF の標準的な目的である「報酬最大化 + 参照モデルからの KL 制約」を、明示的な standalone reward model と RL fine-tuning loop を使わず、嗜好ペア上の binary classification loss として直接最適化する Direct Preference Optimization (DPO) を提案する。鍵は、KL 制約付き報酬最大化の最適 policy の閉形式を逆向きに使い、policy 自身を implicit reward model とみなす再パラメタライズである（`main.tex`, Eq. `eq:op_policy`, `eq:main_eq`, `eq:optimum_model`）。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- 大きな言語モデル（ChatGPT みたいに文章を生成するAI。← これを論文では LM と呼ぶ。Language Model の略）は、ネットの文章を山ほど読んで「次にどんな言葉が来そうか」を学んでいる。でも、ネットには良いことも悪いこともごちゃまぜに書いてあるから、そのままだと「人間にとって嬉しい返事」をしてくれるとは限らない。
-- 例えるなら、世界中の落書きノートを丸暗記した子に「丁寧に答えてね」と言っても、落書きの真似ばかりするようなもの。だから「どっちの答えが好き？」と人間にアンケートを取って、AIをしつけ直す必要がある。
-- これまでの主流の方法は **RLHF**（← Reinforcement Learning from Human Feedback の略。「人の好みを元にした強化学習」と読む。強化学習というのは、ゲームで「上手くやったらご褒美、失敗したら罰」を繰り返して上達させるやり方のこと）。
-- RLHF は手順が複雑：
-  1. 人間に「答えAと答えB、どっちが好き？」を大量に答えてもらう。
-  2. その好みを真似する「採点係AI」（**報酬モデル**。reward model ← 答えに点数をつける別のAI）を訓練する。
-  3. 元のAIに、点数が高くなるように強化学習で答えを書き直させる。
-- 困りごとは「採点係AI」と「答えるAI」の2つを同時に動かす必要があり、学習中もずっとAIに文章を作らせては採点して…とぐるぐる回す。重いし、不安定で、ちょっとしたパラメータの違いで壊れる。
+- **問題設定**: prompt $x$ に対する 2 つの応答のうち、人間が好む応答 $y_w$ と好まない応答 $y_l$ からなるオフライン嗜好データ $\mathcal{D}=\{x^{(i)},y_w^{(i)},y_l^{(i)}\}_{i=1}^N$ を使い、言語モデル policy $\pi_\theta(y\mid x)$ を人間の嗜好に合わせて fine-tune する。
+- **対象範囲 / 仮定**: 嗜好は latent reward $r^*(x,y)$ によって生成され、Bradley-Terry model、またはより一般の Plackett-Luce model と整合すると仮定する。DPO の理論では、与えられた reference model $\piref(y\mid x)$ と $\beta>0$ の下で reward と optimal policy の対応を使う。Theorem 1 の Appendix 版では $\piref(y\mid x)>0$ が仮定に含まれる。
+- **既存研究との差分**: 通常の RLHF は SFT、reward model fitting、PPO などによる RL optimization の 3 段階を使う（`section:prelims`）。DPO は reward model loss を policy の loss へ変数変換し、policy $\pi_\theta$ を直接学習するため、学習中に policy からサンプリングする RL loop を使わない。
+- **この論文で答えたい問い**: (1) KL 制約付き RLHF 目的を、嗜好データ上の単純な分類損失として最適化できるか。 (2) その再パラメタライズで表現できる reward class は狭くならないか。 (3) sentiment control、TL;DR summarization、Anthropic HH single-turn dialogue で PPO 型 RLHF と比べて同等以上に機能するか。
 
-## どうやって解いたの？
+## 背景と前提
+
+- **RLHF pipeline**: 論文は Ziegler et al. や Stiennon et al. 以降の典型的 RLHF を、1) supervised fine-tuning (SFT)、2) preference sampling and reward learning、3) RL optimization の 3 段階として整理する。SFT model は $\pisft$ と書かれ、多くの場合 reference policy $\piref$ として使われる。
+- **preference data**: prompt $x$ に対して SFT model などから応答ペア $(y_1,y_2)$ を生成し、人間が $y_w\succ y_l\mid x$ のラベルを付ける。DPO はこのような固定済みのオフライン嗜好データを前提にする。
+- **Bradley-Terry / Plackett-Luce**: Bradley-Terry は 2 応答の比較、Plackett-Luce は $K$ 個の応答ランキングを扱う preference model。DPO の本文の主式は Bradley-Terry で導出され、Appendix `app:plackett_luce_models` で Plackett-Luce への拡張が示される。
+- **KL constraint の役割**: RLHF の $\beta \mathbb{D}_{\textrm{KL}}[\pi_\theta\|\piref]$ は、policy が reward model の信頼できる分布から離れすぎること、diversity の消失、single high-reward answer への mode collapse を抑えるために入る（`main.tex`, Eq. `eq:RL` 直後）。
+- **PPO との関係**: PPO は learned reward function を最大化する RL アルゴリズムとして使われる baseline。DPO は PPO と同じ KL 制約付き報酬最大化の構造から出発するが、最適 policy の閉形式を使うため actor-critic 型の value function や high variance な policy gradient の問題を避ける、という議論をする（`Instability of Actor-Critic Algorithms`）。
+
+## 提案手法
 
 ### コアアイデア
 
-著者たちは「採点係AIを別に作らなくていいじゃん」と気づいた。秘密はこう：採点係AIに与えたいゴール（KL制約付きで点数を最大化する。← KL は「2つの確率分布がどれくらい違うか」を測る数字。要は『元のAIから遠く離れすぎないでね』という縛り）には、実は数学的に「正解の形」がもう決まっている。その正解の形をひっくり返して計算すると、「採点係AIの点数 = 答えるAI自身が出す『答えやすさ』」という関係式が出てくる。
+DPO の中心は、「reward function をまず学習してから RL で最適 policy を探す」のではなく、「reward function とその KL 制約付き最適 policy の対応」を使って reward を policy の log-ratio で表す点にある。Eq. `eq:op_policy` により、任意の reward $r(x,y)$ に対する最適 policy は
 
-例えるなら、「合格点を取るための勉強法を考える」のと「勉強の結果からテストの点数を逆算する」のは、表裏のセットになっている、というイメージ。だから「採点係」をわざわざ別に作らなくても、答えるAI本人が裏でこっそり採点係を兼ねている、というわけ。これが論文のタイトル「あなたの言語モデルは秘密の採点係なんだよ」の意味。
+「reference policy $\piref(y\mid x)$ を、$\exp(r(x,y)/\beta)$ で重み付けし、partition function $Z(x)$ で正規化した分布」
 
-### 仕組み
+として書ける。これを $r(x,y)$ について解くと、reward は $\beta\log\frac{\pi_r(y\mid x)}{\piref(y\mid x)}+\beta\log Z(x)$ になる。Bradley-Terry model は同じ prompt 内の reward 差だけを見るため、$x$ だけに依存する $\beta\log Z(x)$ は $y_w$ と $y_l$ の差で消える。結果として、嗜好確率を $\pi_\theta$ と $\piref$ だけで書ける。
 
-- step1: 人間のアンケート（同じ質問xに対して、好きな答え $y_w$ と嫌いな答え $y_l$ のペア。w は winner、l は loser）をたくさん用意する。
-- step2: 元のAI（**参照モデル** $\pi_\text{ref}$ ← もう学習を始める前の、しつけ前のAI。「お手本ストッパー」）をコピーして、「学習中のAI」$\pi_\theta$ を作る。
-- step3: 各アンケートについて、学習中のAIに「$y_w$ をどれくらい出しやすい？ $y_l$ はどれくらい出しやすい？」を聞く。
-- step4: 「$y_w$ の出しやすさ ↑、$y_l$ の出しやすさ ↓」になるように、AIの中身（パラメータ）を少しずつ動かす。これを全アンケートで繰り返す。
-- step5: ただし、「元のAIに比べて、$y_w$ を出しやすくなった割合」と「$y_l$ を出しやすくなった割合」の差を見て、その差をシグモイド関数（← 入力をギューッと 0〜1 の間に押し込める関数。「どのくらい確からしいか」を 0〜1 の値で答える時によく使う）に通して点数化する。
-- step6: 強化学習も、文章生成しながらの採点もいらない。普通の「〇×クイズの正解率を上げる勉強」と同じ形になる。
+著者はこの考えを「the policy network represents both the language model and the (implicit) reward」と説明している。DPO での implicit reward は $\hat r_\theta(x,y)=\beta\log\frac{\pi_\theta(y\mid x)}{\piref(y\mid x)}$ であり、standalone reward model を別途持つ設計ではない。
 
-### 主要な数式
-
-#### ① これまでの方法（RLHF）が目指していたゴール
+### 重要な定義・数式
 
 $$
-\max_{\pi_{\theta}}\; \mathbb{E}_{x,\, y \sim \pi_\theta}\!\left[r_\phi(x,y)\right] \;-\; \beta\,\mathrm{KL}\!\left[\pi_\theta(y\mid x)\,\|\,\pi_\text{ref}(y\mid x)\right]
+p^*(y_1\succ y_2 \mid x)=\frac{\exp\left(r^*(x, y_1)\right)}{\exp\left(r^*(x, y_1)\right) + \exp\left(r^*(x, y_2)\right)}
 $$
 
-**この式が言ってること**: 「採点係 $r_\phi$ が高い点数をくれる答えを出すように頑張ってね。でも元のAIから離れすぎちゃダメだよ」と AI に命令している式。$\beta$ で「どれくらい元のAIから離れていいか」のキツさを決めている。
+**式の意味**: Bradley-Terry model による人間の嗜好確率の仮定である（`main.tex`, Eq. `eq:bradley-terry`）。応答 $y_1$ が $y_2$ より好まれる確率は、それぞれの latent reward の指数の比で決まる。
 
-**記号の意味**:
-- $\pi_\theta$ … 学習中のAI（$\theta$ は中身の調節つまみ全体）。$\pi$ は「ある答えを出す出やすさ」を表す。
-- $x$ … 質問やお題（プロンプト）。
-- $y$ … AIが返した答えの文章。
-- $r_\phi(x,y)$ … 採点係AIが「質問 $x$ に対する答え $y$」につけた点数。
-- $\mathbb{E}[\cdots]$ … たくさんのサンプルで平均を取りますよ、という記号（中学生語：「いっぱい試して平均」）。
-- $\mathrm{KL}[A\|B]$ … 2つの「出しやすさ」AとBがどれくらいズレているかを表す数字。0なら同じ、大きいほど別物。
-- $\pi_\text{ref}$ … 元のAI（しつけ前）。
-- $\beta$ … 「元のAIから離れちゃダメ」の縛りのキツさ。大きいほどガチガチ。
+**記号の定義**:
+- $p^*(y_1\succ y_2 \mid x)$ ... prompt $x$ の下で人間が $y_1$ を $y_2$ より好む真の確率
+- $r^*(x,y)$ ... アクセスできない latent ground-truth reward
+- $y_1,y_2$ ... 同じ prompt $x$ に対する 2 つの completion
 
-**身近な例え**: 「テストで高得点を狙え。ただし普段の自分らしさからかけ離れた答案はダメ」と先生に言われている状態。点数（$r_\phi$）と「いつもの自分らしさ」（KL）の両方を見ながらバランス取りをしている。
-
-#### ② 上のゴールに対する数学的な「正解の形」
+**この論文での役割**: reward model を学習する従来 RLHF と DPO の両方の出発点になる preference model。DPO はこの式に reward-policy の再パラメタライズを代入して、reward model の loss を policy の loss に変換する。
 
 $$
-\pi_r(y\mid x) \;=\; \frac{1}{Z(x)}\,\pi_\text{ref}(y\mid x)\,\exp\!\left(\tfrac{1}{\beta}\,r(x,y)\right)
+\max_{\pi_{\theta}}  \mathbb{E}_{x\sim \mathcal{D}, y\sim \pi_{\theta}(y \mid x)}\bigl[r_{\phi}(x, y)\bigr] - \beta\mathbb{D}_{\textrm{KL}}\bigl[\pi_{\theta}(y\mid x)\mid \mid \piref(y\mid x)\bigr]
 $$
 
-**この式が言ってること**: ①のゴールを完璧に達成するAIは、「元のAIの出しやすさ × 採点係の点数で味付けしたもの」を、ぜんぶの $y$ で足して 1 になるように割り算したもの、という決まった形になる。
+**式の意味**: 標準的な RLHF の RL fine-tuning phase で最適化する KL 制約付き報酬最大化目的である（`main.tex`, Eq. `eq:RL`）。reward を高くしつつ、policy が reference policy から離れすぎないようにする。
 
-**記号の意味**:
-- $\pi_r$ … 採点係 $r$ のもとで「正解」となるAI。
-- $\exp(\cdots)$ … エクスポネンシャル。「中の数字が大きいほど、めちゃくちゃ大きくなる」関数（例: $\exp(0)=1$、$\exp(1)\approx 2.7$、$\exp(3)\approx 20$）。
-- $Z(x)$ … 「全部足して 1 にする」ための割り算用の数字（**分配関数**と呼ぶ）。これがクセモノで、全部の答えを足し合わせるのが現実には超大変。
-- 他の記号は①と同じ。
+**記号の定義**:
+- $\pi_\theta$ ... fine-tune する language model policy
+- $r_\phi(x,y)$ ... 嗜好データから学習した reward model
+- $\piref$ ... reference policy。通常は initial SFT model $\pisft$
+- $\beta$ ... reference policy からの逸脱に対する KL penalty の強さ
+- $\mathbb{D}_{\textrm{KL}}[\pi_\theta\mid\mid\piref]$ ... policy と reference policy の KL divergence
 
-**身近な例え**: クラス全員のテスト点を、合計が必ず100%になるように比率に直す作業。「太郎の点数 ÷ クラス全員の合計点」をやると、太郎が占める割合になるよね。あの「÷ クラス全員の合計点」が $Z(x)$。
-
-#### ③ DPO のキメ技 — 逆算して採点係を消す
-
-$$
-r(x,y) \;=\; \beta\,\log\!\frac{\pi_r(y\mid x)}{\pi_\text{ref}(y\mid x)} \;+\; \beta\,\log Z(x)
-$$
-
-**この式が言ってること**: ②の式を $r$ について解き直すと、採点係の点数 $r$ は「学習中のAIと元のAIで、その答えの出しやすさがどれくらい変わったか」（$\log$ を使った比率）で表せる。つまり採点係AIをわざわざ作らなくても、学習中のAI自身が点数表になっている。
-
-**記号の意味**:
-- $\log\frac{A}{B}$ … 「AとBの比」を扱いやすい数字に変える計算。Aの方が大きいとプラス、Bの方が大きいとマイナスになる。A=Bならゼロ。要するに「どっちが何倍出しやすい？」を符号付きで表したもの。
-- 他は同じ。
-
-**身近な例え**: 「太郎の身長は次郎の何倍？」を聞きたい時、太郎/次郎 = 1.2 のように比べる。それと同じで、「答え $y$ を、学習中のAIは元のAIの何倍出しやすくなったか」が、そのまま採点係の点数として使えるよ、ということ。
-
-#### ④ DPO の最終的な勉強用ゴール（一番大事な式）
+**この論文での役割**: DPO はこの目的を放棄するのではなく、この目的の最適解の構造を使って、explicit standalone reward model の別学習と RL loop を避ける。したがって、DPO の主張は「別目的を経験的に試す」ではなく「既存 RLHF 目的を別のパラメタライズで扱う」に近い。
 
 $$
-\mathcal{L}_\text{DPO} \;=\; -\,\mathbb{E}_{(x,\,y_w,\,y_l)\sim\mathcal{D}}\!\left[\log\sigma\!\left(\beta\log\tfrac{\pi_\theta(y_w\mid x)}{\pi_\text{ref}(y_w\mid x)} \;-\; \beta\log\tfrac{\pi_\theta(y_l\mid x)}{\pi_\text{ref}(y_l\mid x)}\right)\right]
+\pi_r(y\mid x) = \frac{1}{Z(x)}\piref(y\mid x)\exp\left(\frac{1}{\beta}r(x, y)\right),
+\qquad
+Z(x) =\sum_{y}\piref(y\mid x)\exp\left(\frac{1}{\beta}r(x, y)\right)
 $$
 
-**この式が言ってること**: 「人が好きと言った答え $y_w$ について、元のAIより自分の方が出しやすくする。人が嫌いと言った答え $y_l$ については、元のAIより自分の方が出しにくくする。その差が大きいほど良い」と AI に教える式。$\mathcal{L}$ は「間違い度」なので小さくしたい。マイナスがついているので、$\sigma(\cdots)$ の中身が大きい（=好きと嫌いの差が大きい）と、$\mathcal{L}$ は小さくなる。
+**式の意味**: 任意の reward $r(x,y)$ に対する KL 制約付き報酬最大化目的の最適 policy の閉形式である（`main.tex`, Eq. `eq:op_policy`、Appendix `app:derivation1`）。$\piref$ に reward による指数重みをかけ、$Z(x)$ で正規化する。
 
-**記号の意味**:
-- $\mathcal{L}_\text{DPO}$ … DPO の「間違い度合い」。これを小さくするのが学習。
-- $(x, y_w, y_l)$ … 質問と、人間が好きな答え $y_w$、嫌いな答え $y_l$ のセット。
-- $\mathcal{D}$ … アンケート結果の集まり。
-- $\sigma(\cdots)$ … シグモイド関数。中身がプラスに大きいほど 1 に近づき、マイナスに大きいほど 0 に近づく、なめらかなS字カーブ。
-- $\log$ … 大きい数を扱いやすくし、比率を引き算で扱えるようにする計算。$\log(A/B) = \log A - \log B$。
-- $\beta$ … 縛りのキツさ（①と同じ）。論文では基本 $\beta = 0.1$、要約タスクのみ $\beta = 0.5$。
-- $\pi_\theta, \pi_\text{ref}$ … 学習中のAI、元のAI。
+**記号の定義**:
+- $\pi_r$ ... reward $r$ が誘導する最適 policy
+- $Z(x)$ ... prompt $x$ ごとの partition function
+- $r(x,y)$ ... 一般の reward function
+- $\beta$ ... KL constraint の強さを決める正のパラメータ
 
-**身近な例え**: 〇×クイズの勉強と同じ。「この問題（$x$）には〇（$y_w$）が正解、×（$y_l$）が不正解だよ」と先生に教わって、AIは「〇を選ぶ自信」と「×を選ぶ自信」の差を広げるように勉強する。違うのは、「もともと自分はどっちを選びがちだったか」（$\pi_\text{ref}$）からの変化量で勉強する点。
+**この論文での役割**: DPO の導出の中心。$Z(x)$ の計算は実用上困難だが、次の再パラメタライズと Bradley-Terry の reward 差により $Z(x)$ は最終損失から消える。
 
-## 何がすごいの？
+$$
+r(x,y) =\beta \log \frac{\pi_r(y\mid x)}{\piref(y\mid x)} + \beta \log Z(x)
+$$
 
-- **採点係AIも強化学習もいらない**: コードはほぼ1行（`F.logsigmoid(beta * (pi_logratios - ref_logratios))`）で書ける。実装が爆発的にシンプル。
-- **映画レビューの感情コントロール実験（IMDb データ、GPT-2-large を使用）**: 「報酬とKLのバランス（フロンティア）」のグラフで、DPO はあらゆる KL の値で PPO（← Proximal Policy Optimization。強化学習の代表的アルゴリズム）、Preferred-FT、Unlikelihood に勝った。さらに **PPO-GT**（採点係AIすら使わず、本物の答え合わせ役にアクセスできるズル状態の PPO）にも勝った。
-- **Reddit TL;DR 要約タスク（GPT-J を SFT したもの、$\beta=0.5$）**: GPT-4 に「人間が書いた要約とどっちがいい？」と聞いた時の勝率（win rate）で、DPO ≈ **61%**（温度0）、PPO ≈ **57%**（温度0）。「温度」はAIの答えの多様さの調節つまみで、温度を上げると PPO は基本のGPT-J並みまで崩れるのに、DPO は安定。Best of N（N個の候補から採点係で一番いいのを選ぶズル技）の天井すら超えた。
-- **学習していない分野でもちゃんと動く（OOD汎化）**: TL;DR で学習したAIを CNN/DailyMail のニュース記事要約にそのまま使うと、DPO は **0.36 / 0.31**（温度 0 / 0.25）、PPO は **0.26 / 0.23**。
-- **Anthropic HH 対話データ（Pythia-2.8B）**: データセットの「人間が好む答え」に対し、勝ち越せたのは DPO だけ。Best of 128 や別の PPO-HH モデルにも勝った。
-- **人間に聞いてもDPOが勝つ**: TL;DR で DPO（温度0.25）vs PPO（温度0）を、Stanford のSTEM系学生など25名（うち1名は提出遅れで除外）に評価してもらったら、人間の **58%** が DPO を選んだ。GPT-4 と人間の判定は 67〜70% で一致しており、これは人間同士の一致率(65%)と同じくらい。
-- **著者が挙げる主な貢献**:
-  1. RLHF の「KL制約付き点数最大化」を、採点係AIも強化学習ループも使わず、シンプルな分類問題として完全に解く新アルゴリズム DPO。
-  2. **Theorem 1**: $r(x,y) = \beta\log\frac{\pi(y\mid x)}{\pi_\text{ref}(y\mid x)}$ という置き換え方が、Plackett-Luce型の好みモデル全体をカバーすることを数学的に証明。「表現できる採点係の幅が狭まったりはしない」と保証。
-  3. 感情コントロール / 要約 / 対話の3タスクで実証。ハイパーパラメータをほとんど調整せずに PPO と同等以上。
+**式の意味**: 上の最適 policy の式を reward について解き直した式である（`main.tex`, Eq. `eq:main_eq`）。reward は、最適 policy と reference policy の log-ratio と、prompt のみに依存する正規化項で表される。
 
-## キーワード辞典
+**記号の定義**:
+- $\pi_r(y\mid x)$ ... reward $r$ に対する最適 policy の確率
+- $\piref(y\mid x)$ ... reference policy の確率
+- $Z(x)$ ... completion $y$ には依存しない partition function
+- $\log\frac{\pi_r}{\piref}$ ... reference に対する policy の相対 log probability
 
-- **LM（Language Model 言語モデル）** … 「次にどんな言葉が来そうか」を学んだAI。ChatGPTもこれの一種。
-- **RLHF** … Reinforcement Learning from Human Feedback。「人の好みを元にした強化学習」。AIを人間好みにしつけ直すこれまでの主流手法。
-- **SFT（Supervised Fine-Tuning）** … 「お手本」をAIに真似させる最初のしつけ段階。
-- **報酬モデル（reward model, $r_\phi$）** … 答えに点数をつける採点係AI。
-- **PPO（Proximal Policy Optimization）** … 強化学習の代表的なアルゴリズム。RLHF でよく使われる。複雑で不安定なのが弱点。
-- **強化学習** … 「上手くやったらご褒美、失敗したら罰」で AI を上達させるやり方。
-- **Bradley-Terry モデル** … 「Aが好き、Bが嫌い」というアンケートから、AとBそれぞれの「実力点」を推定する古典的な確率モデル。
-- **KL（Kullback-Leibler divergence）** … 2つの「出しやすさ」がどれくらい違うかを測る数字。0なら一緒、大きいほど別物。
-- **シグモイド関数 $\sigma$** … 入力を 0〜1 の間に押し込めるS字カーブの関数。「確からしさ」に使う。
-- **$\log$（対数）** … 大きい数を扱いやすくする計算。$\log(A/B) = \log A - \log B$ となるので、比率を引き算で扱える便利な道具。
-- **$\exp$（指数関数）** … $\log$ の逆。中の数が大きいほど爆発的に大きくなる。
-- **policy（方策 $\pi$）** … AIの「ある質問に対してどんな答えを出しやすいか」のクセ全体。
-- **partition function $Z(x)$（分配関数）** … 確率を全部足して1にするための割り算用の数字。
-- **win rate（勝率）** … 「2つの答えを並べてどっちがいい？」と評価者に聞いた時、Aが選ばれる割合。
-- **Best of N** … N個候補を作って採点係で一番いいのを選ぶ、ズルいけど強い手法。
-- **OOD（Out-Of-Distribution）** … 学習時に見ていない種類のデータ。「未知のジャンルの問題」。
-- **Plackett-Luce モデル** … Bradley-Terry の拡張で、3つ以上のランキングにも使える好みモデル。
-- **temperature（温度）** … AIの答えの多様さを調節するつまみ。0は「いつも一番自信のある答え」、高いと「気まぐれ」。
+**この論文での役割**: reward model を policy の関数として書くための変数変換。Bradley-Terry では $r(x,y_1)-r(x,y_2)$ だけが効くので、$\beta\log Z(x)$ が相殺され、未知の partition function を推定せずに済む。
 
-## ちょっと深掘り（中学生は飛ばして OK）
+$$
+\mathcal{L}_\text{DPO}(\pi_{\theta}; \piref) = -\mathbb{E}_{(x, y_w, y_l)\sim \mathcal{D}}\left[\log \sigma \left(\beta \log \frac{\pi_{\theta}(y_w\mid x)}{\piref(y_w\mid x)} - \beta \log \frac{\pi_{\theta}(y_l\mid x)}{\piref(y_l\mid x)}\right)\right]
+$$
 
-- **なぜ $Z(x)$ が消えるのか？** Bradley-Terry モデルでは好みの確率が「点差」$r(x,y_1) - r(x,y_2)$ だけで決まる。式③に $Z(x)$ という項があるが、$y_w$ と $y_l$ で引き算するとき、$Z(x)$ は $y$ に依存しない（$x$ だけの関数）ので、ちょうど消える。これが DPO の「魔法」の正体。
-- **勾配の重み付けが本質**: 勾配は $\sigma(\hat r_\theta(x,y_l) - \hat r_\theta(x,y_w))$ という重みで「学習中のAIが間違って $y_l$ を高く評価しているサンプルほど強く罰する」形になっている。この重みを外して「単純に $y_w$ を上げて $y_l$ を下げる」だけ（=Unlikelihood）にすると、「when when when ...」みたいな壊れた文章を吐くようになる（Appendix Table 6）。
-- **PPO-GT すら超えるのはなぜ？** PPO は本物の採点係を使えても、強化学習特有の「サンプリングのばらつき」「価値関数（value baseline）の推定誤差」「PPOのクリッピング」などの実装上のロスがある。DPO はこれら全部を回避できる。
-- **デフォルトのハイパラ**: $\beta=0.1$（要約のみ $0.5$）、バッチサイズ 64、最適化アルゴリズムは RMSprop、学習率 1e-6、150 ステップで 0 から 1e-6 へ線形に温め（warmup）。ほぼいじらない。
-- **Theorem 1 の意味**: $r(x,y) = \beta\log\frac{\pi}{\pi_\text{ref}}$ という形は、「好みの確率を変えない範囲で同等とみなせる採点係の集まり（同値類）」のうち、ぴったり1つを選んでいる。だから「表現力が落ちていない」と保証できる。
-- **著者自身が挙げる限界**: (i) OODでの汎化の検証はまだ部分的、(ii) ラベルなしプロンプトを自己ラベルで活用できるかは未検証、(iii) 報酬の過剰最適化（reward over-optimization）が DPO でも起きるかは Fig 3 右の学習後半の僅かな勝率低下が示唆するのみ、(iv) 最大 6B（GPT-J）までで、70B級のスケーリングは未確認、(v) GPT-4 評価はプロンプトに敏感（GPT-4 (S) と (C) で結果が 7pt 動く）、(vi) 言語以外（画像生成など）への応用は今後の課題。
+**式の意味**: DPO の最終目的関数である（`main.tex`, Eq. `eq:optimum_model`）。preferred completion $y_w$ の policy/reference log-ratio が dispreferred completion $y_l$ の log-ratio より大きくなるように、binary cross entropy 型の損失を最小化する。
+
+**記号の定義**:
+- $\mathcal{L}_\text{DPO}$ ... DPO の training loss
+- $(x,y_w,y_l)\sim\mathcal{D}$ ... prompt、preferred completion、dispreferred completion の嗜好ペア
+- $\sigma$ ... logistic sigmoid
+- $\pi_\theta$ ... 学習対象の policy
+- $\piref$ ... 固定された reference policy
+
+**この論文での役割**: 実装上の DPO そのもの。Appendix `app:implementation` の PyTorch では `losses = -F.logsigmoid(beta * (pi_logratios - ref_logratios))` と対応している。
+
+### 実装 / アルゴリズム上の要点
+
+1. 各 prompt $x$ について completion pair $y_1,y_2\sim\piref(\cdot\mid x)$ を用意し、人間の preference label から $\mathcal{D}=\{x^{(i)},y_w^{(i)},y_l^{(i)}\}_{i=1}^N$ を作る。実際には public preference dataset を再利用する場合も想定している。
+2. $\piref$ は、嗜好データのサンプリング元 $\pisft$ が利用できる場合は $\piref=\pisft$ とする。利用できない場合は、preferred completions $(x,y_w)$ の likelihood を最大化して reference model を作り、true reference distribution と DPO で使う $\piref$ の distribution shift を緩和する。
+3. 各 completion について、policy log probability と reference log probability を計算し、preferred と dispreferred の log-ratio 差に $\beta$ を掛けて `logsigmoid` loss に入れる。
+4. 論文のデフォルト実装設定は $\beta=0.1$、batch size `64`、RMSprop、learning rate `1e-6`、`0` から `1e-6` まで `150` steps の linear warmup。TL;DR summarization のみ $\beta=0.5$（Appendix `app:implementation`）。
+5. DPO の gradient は、$\hat r_\theta(x,y_l)-\hat r_\theta(x,y_w)$ が大きい、つまり implicit reward が誤って dispreferred completion を高く評価している例ほど強く更新する。著者は、この weighting を外した naive version は degeneration を起こしうると述べ、Unlikelihood baseline の破綻例を Table `tab:unlikelihood_generations` に示している。
+
+## 実験・結果
+
+- **データセット / ベンチマーク**: controlled sentiment generation、Reddit TL;DR summarization、Anthropic Helpful and Harmless (HH) single-turn dialogue の 3 種類。sentiment では IMDb review prefix を使い、pre-trained sentiment classifier `siebert/sentiment-roberta-large-english` で preference pair を生成する。TL;DR では Reddit TL;DR dataset と Stiennon et al. の human preferences を使う。HH では 170k dialogues を含む Anthropic HH dataset を使い、各 transcript の最後に human-preferred response label がある。
+- **比較対象 / baseline**: zero-shot GPT-J（summarization）、2-shot Pythia-2.8B（dialogue）、SFT、Preferred-FT、Unlikelihood、PPO、controlled sentiment での PPO-GT、Best of $N$。Best of $N$ は SFT model または dialogue では Preferred-FT から $N$ responses をサンプルし、learned reward function で最高スコアのものを返す。
+- **指標**: controlled sentiment では ground-truth reward classifier があるため expected reward と sequence-level KL の frontier を評価する。summarization と dialogue では GPT-4 を proxy evaluator とし、summarization は test set の reference summaries、dialogue は test dataset の preferred response に対する win rate を使う。GPT-4 評価には `gpt-4-0314` を使い、提示順はランダム化される（Appendix `app:prompts`）。
+- **主な結果**: sentiment では、target KL $\{3,6,9,12\}$、DPO の $\beta\in\{0.05,0.1,1,5\}$、Unlikelihood の $\alpha\in\{0.05,0.1,0.5,1\}$ など計 22 runs の sweep を行い、DPO が reward-KL frontier で最も効率的、かつ PPO-GT より良い frontier を示したと著者は報告する（Fig. `fig:frontier-tldr-main` 左、本文 `How well can DPO optimize the RLHF objective?`）。
+- **主な結果**: TL;DR summarization では、DPO、PPO、Preferred-FT が同じ GPT-J SFT model を fine-tune する。DPO は temperature 0.0 で win rate 約 61%、PPO は最良 temperature 0.0 で約 57%。DPO は Best of $N$ baseline より高い最大 win rate を達成し、PPO より sampling temperature に頑健で、高温では PPO が base GPT-J model 程度まで低下しうるとされる（Fig. `fig:frontier-tldr-main` 右）。
+- **主な結果**: Anthropic HH single-turn dialogue では、pre-trained Pythia-2.8B から Preferred-FT で reference model を作り、DPO を学習する。Best of 128 Preferred-FT completions、2-shot Pythia-2.8B、外部の PPO-HH model も比較される。著者は、DPO が preferred completions in the Anthropic HH dataset を上回る唯一の computationally efficient method であり、Best of 128 と同程度以上と述べる（Fig. `fig:dialogue-main`）。
+- **主な結果**: OOD generalization では、TL;DR で学習した PPO/DPO policies を CNN/DailyMail test split の news articles に適用し、GPT-4 (C) prompt の `forum post` を `news article` に置き換えて評価する。Table `tab:ood` では DPO が temp 0 / 0.25 で 0.36 / 0.31、PPO が 0.26 / 0.23。
+- **主な結果**: 人間評価では TL;DR の DPO temp 0.25、SFT temp 0.25、PPO temp 1.0 を PPO temp 0 と比較する。Table `tab:human_results` では、DPO の N respondents は 272、GPT-4 (S) win 47%、GPT-4 (C) win 54%、Human win 58%、GPT-4 (S)-H agree 70%、GPT-4 (C)-H agree 67%、H-H agree 65%。SFT は Human win 43%、PPO-1 は Human win 17%。著者は GPT-4 と人間の一致が人間同士の一致と同程度と述べる。
+- **著者が主張する貢献**: DPO は、言語モデルを嗜好から学習するための RL-free algorithm であり、reward maximization with a KL-divergence constraint を explicit standalone reward model fitting や RL なしに扱う。Theorem 1 は Plackett-Luce / Bradley-Terry と整合する reward equivalence classes が $r(x,y)=\beta\log\frac{\pi(y\mid x)}{\piref(y\mid x)}$ の形で表現できることを示し、実験では最大 6B parameters の models で PPO 型 RLHF と同等以上の性能を示す。
+
+## 妥当性と限界
+
+- **この主張を支える根拠**: 手法面では、Eq. `eq:op_policy` の閉形式解、Eq. `eq:main_eq` の逆変換、Bradley-Terry の reward 差で $Z(x)$ が消えること、Theorem 1 の reward equivalence class の議論が主要な根拠である。実験面では、controlled sentiment の reward-KL frontier、TL;DR / HH の GPT-4 win rate、OOD の CNN/DailyMail、GPT-4 評価を検証する人間評価がある。
+- **著者が認めている limitations / future work**: OOD generalization は初期的な結果であり、より包括的な検証が必要。DPO policy からの self-labeling で unlabeled prompts を活用できるかは未検証。reward over-optimization が DPO でどう現れるか、Fig. `fig:dialogue-main` 右の slight decrease がその一例かは未解明。評価は最大 6B parameters までで、state-of-the-art models orders of magnitude larger への scaling は future work。GPT-4 win rates は prompt に影響される。言語以外の modality の generative models への応用も future work。
+- **読者として注意すべき点**: DPO は standalone reward model を別途訓練して保存する設計ではなく、policy が implicit reward を表す設計である。Best of $N$ のような reranking では learned reward function が必要になるため、DPO と explicit reward model の用途は完全には同じではない。また、TL;DR や HH の win rate は GPT-4 evaluator に依存し、論文自身も GPT-4 (S) と GPT-4 (C) の prompt 差を検証している。
+- **追加で確認したい実験 / 疑問**: より大きなモデルで DPO の安定性と $\beta$ 感度がどう変わるか。public preference dataset で true sampling policy $\pisft$ が利用できない場合、Preferred-FT で作る $\piref$ が結果にどの程度効くか。DPO の implicit reward を standalone evaluator や reranker として使えるかは、TeX 中では深く検証されていない。Plackett-Luce の $K>2$ ranking objective は Appendix に式があるが、本文実験は pairwise preference が中心である。
+
+## 用語メモ
+
+- **DPO (Direct Preference Optimization)**: 嗜好データから policy を直接学習する方法。論文では RLHF の KL 制約付き報酬最大化を、policy と reference policy の log-ratio を使う classification loss に変換する。
+- **implicit reward**: DPO の policy が暗黙に定義する reward。本文では $\hat r_\theta(x,y)=\beta\log\frac{\pi_\theta(y\mid x)}{\piref(y\mid x)}$ と書かれる。
+- **reference policy $\piref$**: KL penalty の基準になる固定 policy。通常は SFT model $\pisft$。利用できない場合、preferred completions の likelihood 最大化で近似的に作る。
+- **SFT / $\pisft$**: supervised fine-tuning されたモデル。downstream task の高品質データで事前に fine-tune され、RLHF や DPO の初期点・reference として使われる。
+- **Preferred-FT**: chosen completion $y_w$ に supervised learning する baseline。HH では standard SFT model がないため、Pythia-2.8B から Preferred-FT で reference model を作る。
+- **Bradley-Terry model**: 2 つの completion の preference probability を reward 差で表すモデル。DPO の本文導出の中心。
+- **Plackett-Luce model**: 3 個以上の candidate の ranking preference を扱う Bradley-Terry の一般化。DPO の Appendix で拡張目的関数が与えられる。
+- **reward equivalence class**: $r(x,y)-r'(x,y)=f(x)$ となる reward functions を同値とみなす考え方。同じ prompt に同じ定数を足しても preference distribution と KL 制約付き最適 policy は変わらない。
+- **partition function $Z(x)$**: Eq. `eq:op_policy` の正規化項。直接計算は難しいが、DPO では reward 差で相殺される。
+- **PPO-GT**: controlled sentiment setting で ground-truth reward function にアクセスできる oracle PPO baseline。DPO はこの baseline より良い reward-KL frontier を報告している。
+- **Best of $N$**: $N$ 個の completion をサンプルして learned reward function で最高スコアを選ぶ baseline。性能は強いが、test time に $N$ completions が必要で computationally impractical とされる。
+- **temperature**: generation sampling の温度。TL;DR では 0.0 から 1.0 まで変え、PPO は高温で劣化しやすく DPO はより robust と報告される。
+- **GPT-4 (S) / GPT-4 (C)**: TL;DR 評価用の 2 種類の GPT-4 prompt。GPT-4 (C) は concise さも見るため、著者は人間評価により近いとして main results に使う。
+
+## 読む順番の提案
+
+- まず `main.tex` の Abstract と Introduction を読み、DPO が「RLHF を別目的に置き換える」話ではなく「KL 制約付き RLHF 目的を reward-policy 対応で再表現する」話だと押さえる。正規ノートの Summary の 1、2 点目につながる。
+- 次に Preliminaries の Eq. `eq:bradley-terry`, `eq:reward_model`, `eq:RL` を読む。ここで従来 RLHF の reward modeling と PPO の位置づけを確認すると、正規ノートの「問題」と「手法」の前半が読める。
+- その後、Direct Preference Optimization の Eq. `eq:op_policy`, `eq:main_eq`, `eq:objective`, `eq:optimum_model` を順に追う。$Z(x)$ が reward 差で消える箇所が DPO の主眼で、正規ノートの DPO loss の説明と対応する。
+- 理論面は Theoretical Analysis の Definition、Lemma 1/2、Theorem 1、Appendix `app:thm1` を読む。reward equivalence class と「表現力が落ちない」という主張が正規ノートの Theorem 1 メモにつながる。
+- 実験は Fig. `fig:frontier-tldr-main`、Fig. `fig:dialogue-main`、Table `tab:ood`、Table `tab:human_results` を先に見る。数値の読み方を確認してから Appendix `app:implementation`, `app:sentiment_details`, `app:prompts`, `tab:unlikelihood_generations`, Fig. `fig:best-of-n` を読むと、正規ノートの Critical Thoughts の根拠を追いやすい。
 
 ## もとの論文・正規ノート
 

@@ -1,4 +1,4 @@
-# Deep Residual Learning for Image Recognition（画像認識のための「残差学習」）
+# Deep Residual Learning for Image Recognition（深い CNN を実際に最適化可能にする残差学習）
 
 - arXiv: https://arxiv.org/abs/1512.03385
 - 一次ソース: ../papers/arXiv-1512.03385v1/
@@ -8,155 +8,160 @@
 
 ## 一言で言うと
 
-「すごく深い AI（神経回路の層を 100 段以上重ねたもの）」を、ショートカットを 1 本足すだけで、ちゃんと学習できるようにした論文だよ。
+この論文は、層を深くすると training error まで悪化するという ``degradation'' 問題を、各ブロックに identity shortcut を入れて残差関数を学習させることで緩和する。ImageNet で最大 152 層、CIFAR-10 で 100 層・1000 層級の ResNet を学習し、深さを増やすと精度が改善すること、さらにその表現が ILSVRC & COCO 2015 の detection / localization / segmentation submissions の基盤になることを示す。
 
-## どんな問題を解こうとしてるの？
+## 何を議論する論文か
 
-- AI に「これは猫」「これは犬」と画像を見分けさせる「画像認識」では、計算する層をたくさん重ねるほど賢くなることが分かってきていた。
-  - ここで「層」というのは、画像をだんだん抽象的な特徴に変換していく**処理の段階**のこと。1 段目で「線や色」、5 段目で「目や耳のパーツ」、20 段目で「顔っぽさ」みたいに、深くするほど高度な見方ができる、というイメージ。
-- でも、層を重ねれば重ねるほど性能が上がる、というほど世の中はうまくできていなかった。
-  - **困りごと**: 20 層のネットワークより 56 層のネットワークの方が、**学習中の答え合わせ（training error）の段階ですでに成績が悪い**、という変な現象が起きていた（論文の Fig. 1）。これを著者たちは「degradation 問題（劣化問題）」と呼んでいる。
-  - これは「テスト勉強しすぎて応用が利かない（過学習）」とは別の話。**そもそも勉強そのものができていない**。
-- 「層が深いから勾配が消えてしまうのでは？」という昔からの疑い（vanishing gradient ＝ 学習のヒントが奥の層まで届かない現象）は、Batch Normalization という別の発明でほぼ解決済みだった。それでも深いネットは学習が下手だった。なぜ？
+- **問題設定**: 深い convolutional neural networks は表現の階層を増やせるが、単に層を積むだけでは、ある深さ以降で accuracy が飽和し、さらに悪化する。著者はこれを ``degradation'' と呼び、Fig.~\ref{fig:teaser} と Fig.~\ref{fig:imagenet} で、深い plain network の方が validation error だけでなく training error も高いことを示す。
+- **対象範囲 / 仮定**: 主対象は画像認識用 CNN で、ImageNet 2012 classification、CIFAR-10、PASCAL VOC / MS COCO / ImageNet の detection・localization で評価する。学習は SGD + backpropagation、BN、He initialization を使い、ImageNet / CIFAR-10 の分類実験では dropout を使わない。
+- **既存研究との差分**: VGG nets は 3x3 convolution を深く積む方針、GoogLeNet / Inception は深い構造と補助分類器を使う。Highway Networks は gated shortcut を使うが、ResNet の shortcut は parameter-free identity が中心で、gate が閉じて non-residual function になることがない、と著者は対比する。
+- **この論文で答えたい問い**: Introduction の問いは ``Is learning better networks as easy as stacking more layers?'' である。著者の答えは、plain に積むだけでは難しいが、残差形式に再定式化すれば 100 層超のネットワークでも最適化しやすく、深さから精度向上を得られる、というもの。
 
-身近な例えで言うとこう。
-**料理人を 56 人並べて、リレー形式で 1 つの料理を仕上げる**ところを想像してね。本当は「20 人で作ったときよりおいしくなる」はず（追加の 36 人が「何もしない＝そのまま渡す」を選べば、最低でも 20 人版と同じ味になるから）。なのに実際は、56 人版の方がまずくなってしまう。これが degradation 問題。
+## 背景と前提
 
-## どうやって解いたの？
+- 深い CNN では、低レベル・中レベル・高レベルの特徴と classifier が end-to-end に統合される。論文は、特徴の ``levels'' は stacked layers の数、つまり depth によって豊かになる、という前提から出発する。
+- 以前から vanishing / exploding gradients は深層ネット学習の障害だったが、normalized initialization と intermediate normalization layers、特に BN により、数十層のネットワークは SGD で収束を開始できるようになっていた。したがってこの論文の主張は「勾配消失が残っている」ではなく、BN でも plain network に残る optimization difficulty を扱う。
+- degradation は overfitting ではない。TeX では、深くしたモデルが higher training error を持つと明記される。もし追加層が identity mapping を実現できるなら、深いモデルは浅いモデルの解を含むはずなので、training error は悪くならないはずである。この「構成上は存在する解を solver が見つけられない」ことが論文の問題設定である。
+- shortcut connection 自体は古くから研究されているが、本論文では「数層を飛ばす identity shortcut の出力を、stacked layers の出力に element-wise addition する」ことを residual learning の実装として使う。重要なのは、identity shortcut は追加パラメータと計算量を増やさないため、plain network と residual network をほぼ同じ depth / width / parameter / computational cost で比較できる点である。
+- 関連する baseline として、分類では VGG-16, GoogLeNet, PReLU-net, BN-inception、CIFAR-10 では Maxout, NIN, DSN, FitNet, Highway Networks、検出では Faster R-CNN with VGG-16 が使われる。
+
+## 提案手法
 
 ### コアアイデア
 
-著者のアイデアはたった 1 つ。
-**「層に入ってきた入力 x を、出力にそのまま足し算してあげる近道（ショートカット）を作る」**。
+数層の stacked nonlinear layers に、望ましい写像 $\mathcal{H}(\mathbf{x})$ を直接学習させるのではなく、入力 $\mathbf{x}$ との差である residual function $\mathcal{F}(\mathbf{x}) := \mathcal{H}(\mathbf{x}) - \mathbf{x}$ を学習させる。ブロックの出力は $\mathcal{F}(\mathbf{x})+\mathbf{x}$ になる。
 
-これを「**residual learning（残差学習）**」と呼んでいる。「残差」というのは「目標 − 今あるもの」の差分のこと。料理の例えで言うと、こう。
+この設計の狙いは、もし identity mapping が最適に近いなら、非線形層の重みを調整して identity を再現するより、残差を 0 に近づける方が solver にとって容易かもしれない、という仮説である。論文はこの仮説を理論的に証明するのではなく、plain network との対照実験、shortcut の ablation、層応答の標準偏差、分類・検出への転用で支持する。
 
-> リレー料理人に「自分の前の人が作ったものを全部作り直せ」と言うのは大変。だから「**前の人の料理に、ちょっとだけ味を足して次に渡せばいい**」というルールに変える。何もしたくない人は「足さない（ゼロ）」を選べばいい。これなら「何もしない」が一番簡単な選択肢になる。
+ImageNet 用には、VGG 風の plain network に shortcut を挿入して 18 / 34 層の ResNet を作る。さらに 50 / 101 / 152 層では、各 residual function を $1\times1$, $3\times3$, $1\times1$ convolution からなる bottleneck design に変更する。CIFAR-10 では、より単純な $6n+2$ 層のネットワークを使い、20 / 32 / 44 / 56 / 110 / 1202 層を調べる。
 
-これが効くのは、AI にとって「**何もしない（恒等写像 = identity mapping）を学習で再現する**」のが意外と難しいから。普通の層は「掛け算と足し算を何度もして出力を作る」ので、結果として「入力をそのまま出す」状態に落ち着くには、たくさんの重みを偶然うまく合わせる必要がある。ショートカットを 1 本足してあげると、「何もしない」が初期状態として自然に手に入る。
+### 重要な定義・数式
 
-### 仕組み
+$$
+\mathcal{F}(\mathbf{x}) := \mathcal{H}(\mathbf{x}) - \mathbf{x}, \qquad
+\mathcal{H}(\mathbf{x}) = \mathcal{F}(\mathbf{x}) + \mathbf{x}
+$$
 
-- **step1**: ネットワークをいくつかの「**ブロック**」に区切る。1 ブロックは 2〜3 層くらい。
-- **step2**: 各ブロックは、入力 $x$ を受け取って、何らかの計算 $\mathcal{F}(x)$ をする。これは普通の「畳み込み層 → 活性化 → 畳み込み層」みたいな処理。
-  - 「**畳み込み層（convolution layer）**」← これは画像の小さな窓を順番にずらしながら、その中の数値パターンを検出するフィルターのこと。「目の形」「縦線」など、画像のパーツを見つける役割。
-  - 「**活性化（activation, ReLU）**」← これは「マイナスの値は 0 にして、プラスはそのまま通す」みたいな簡単なスイッチ。出力に非線形性（曲がりやすさ）を入れる役割。
-- **step3**: ブロックの出口で、**計算結果 $\mathcal{F}(x)$ と、入り口の $x$ を足し算する**。これが「ショートカット接続」。
-- **step4**: もし入り口と出口で「数の並びの大きさ（次元）」が違うときは、$x$ を簡単な変換（$1\times1$ 畳み込み）で揃えるか、ゼロで埋める。
-- **step5**: このブロックをたくさん積み上げる。論文では 18 / 34 / 50 / 101 / **152 層**まで作った。CIFAR-10 という小さなデータセットでは 1202 層まで試した。
-- **step6**: 学習は今までと同じやり方（SGD = 少しずつ重みをずらす方法、Batch Normalization = 各層で値を整える処理、weight decay = 重みが大きくなりすぎないようにする工夫）でそのまま動く。**特別な学習方法はいらない**ところがミソ。
-  - 「**SGD（Stochastic Gradient Descent, 確率的勾配降下法）**」← これは、間違いがどっち向きに減るかを少しずつ見ながら、重みをちょっとずつ調整していく方法。山下りをするときに「一番下りの急な方向に小さく一歩ずつ」進むイメージ。
-  - 「**Batch Normalization（BN）**」← これは、ネットワークの途中の値が大きくなりすぎたり小さくなりすぎたりしないように、毎回サイズを整え直す処理。
+**式の意味**: 望ましい underlying mapping $\mathcal{H}(\mathbf{x})$ を直接学習する代わりに、入力からの差分である residual mapping $\mathcal{F}(\mathbf{x})$ を学習するという再定式化である。Sec.~3.1 と Introduction でこの形が提案手法の動機として導入される。
 
-### 主要な数式
+**記号の定義**:
+- $\mathbf{x}$ ... 数層の stacked layers に入る入力ベクトル、または feature map
+- $\mathcal{H}(\mathbf{x})$ ... その数層で本来フィットしたい underlying mapping
+- $\mathcal{F}(\mathbf{x})$ ... $\mathcal{H}(\mathbf{x})-\mathbf{x}$ として定義される residual function
 
-**① 残差ブロックの基本形（論文の式 1）**
+**この論文での役割**: 論文全体の中心定義である。degradation 問題を「深い層が identity mapping を学習できない」という最適化の困難として捉え、identity を shortcut で直接渡し、残差だけを学習対象にする理由を与える。
 
-$$ y = \mathcal{F}(x, \{W_i\}) + x $$
+$$
+\mathbf{y}= \mathcal{F}(\mathbf{x}, \{W_{i}\}) + \mathbf{x}
+$$
 
-**この式が言ってること**: ブロックの出力 $y$ は、「中で計算した結果 $\mathcal{F}$」と「入ってきたそのままの $x$」を足したもの。つまり「何かちょっと足してから次へ渡す」という設計。
+**式の意味**: Eqn.(1) の residual building block である。stacked layers が出す residual mapping と、shortcut で渡した入力 $\mathbf{x}$ を element-wise addition してブロック出力 $\mathbf{y}$ を作る。
 
-**記号の意味**:
-- $x$ … ブロックに入ってきた数の並び（画像が変換された途中状態）
-- $y$ … ブロックの出口で次のブロックに渡す数の並び
-- $\mathcal{F}(x, \{W_i\})$ … ブロックの中で行う計算。たとえば「畳み込み → ReLU → 畳み込み」みたいな処理。$\{W_i\}$ はそこで使う調整つまみ（重み）の集まり。
-- $+\ x$ … ショートカット（近道）。入力を遠回りせずに出口に直接持ってくる線。
+**記号の定義**:
+- $\mathbf{x}$ ... building block の入力
+- $\mathbf{y}$ ... building block の出力
+- $\mathcal{F}(\mathbf{x}, \{W_i\})$ ... 学習される residual mapping
+- $\{W_i\}$ ... residual branch 内の layer weights
 
-**身近な例え**: 学校の連絡帳。前の人（$x$）が書いた連絡事項に、自分が「明日体育だよ」みたいな**追記**だけ ($\mathcal{F}$) を足して次の人に渡すルール。書くことが何もない日は何も足さなくてよい。一方、昔のやり方は「前の人が書いたことも自分が書き写し直す」だったので、写し間違いがたまっていって最後にぐちゃぐちゃになっていた。
+**この論文での役割**: Fig.~\ref{fig:block} の基本ブロックを表す。identity shortcut は追加パラメータも計算量も増やさないため、plain / residual networks の公平な比較を可能にする。
 
----
+$$
+\mathcal{F}=W_{2}\sigma(W_{1}\mathbf{x})
+$$
 
-**② $\mathcal{F}$ の中身の例（論文 3.2 節）**
+**式の意味**: Fig.~\ref{fig:block} の 2-layer residual branch の例である。入力に $W_1$ を適用し、ReLU $\sigma$ を通し、さらに $W_2$ を適用する。TeX では notation を簡単にするため biases は省略される。
 
-$$ \mathcal{F} = W_2\, \sigma(W_1 x) $$
+**記号の定義**:
+- $W_1, W_2$ ... residual branch の 2 つの重み
+- $\sigma$ ... ReLU activation
+- $\mathbf{x}$ ... branch への入力
+- $\mathcal{F}$ ... shortcut に足される residual branch の出力
 
-**この式が言ってること**: ブロックの中の計算 $\mathcal{F}$ は、「入力 $x$ にまず重み $W_1$ をかけて、ReLU（$\sigma$）で負を 0 にして、もう一度 $W_2$ をかける」という 2 段の処理だよ。
+**この論文での役割**: residual branch は特別な solver や目的関数ではなく、通常の convolution / activation の積み重ねで実装できることを示す。実際の ImageNet では 2-layer block と 3-layer bottleneck block の両方が使われる。
 
-**記号の意味**:
-- $W_1, W_2$ … 学習で決めていく調整つまみ（重み）。フィルターの中身。
-- $\sigma$ … ReLU 活性化。マイナスを 0 にする「ふるい」。
-- $x$ … 入ってきた数の並び。
-- $\mathcal{F}$ … この 2 段処理の結果。
+$$
+\mathbf{y}= \mathcal{F}(\mathbf{x}, \{W_{i}\}) + W_{s}\mathbf{x}
+$$
 
-**身近な例え**: コーヒーのフィルター 2 段。1 段目（$W_1$）でカスを取り、味の悪いところを捨て（$\sigma$ で 0 にする）、2 段目（$W_2$）でもう一度濾して透き通った液を出す。最後にそれをカップ（ショートカットの $x$）の中の元のドリンクに**足す**のが ① の式。
+**式の意味**: Eqn.(2) の projection shortcut である。入力 $\mathbf{x}$ と residual branch の出力の次元が一致しない場合に、shortcut 側へ線形射影 $W_s$ を入れて次元を合わせる。
 
----
+**記号の定義**:
+- $W_s$ ... shortcut connection による linear projection。実験では次元増加時に $1\times1$ convolution として使われる
+- $\mathbf{x}, \mathbf{y}, \mathcal{F}, \{W_i\}$ ... Eqn.(1) と同じ
 
-**③ 入口と出口でサイズが違うときの式（論文の式 2）**
+**この論文での役割**: shortcut option A/B/C の比較に対応する。A は zero-padding で全 shortcut を parameter-free、B は次元増加時のみ projection、C は全 shortcut を projection とする。Table~\ref{tab:10crop} では error は A > B > C（C が最良）だが差は小さく、著者は projection shortcut が degradation の解決に本質的ではないと解釈する。
 
-$$ y = \mathcal{F}(x, \{W_i\}) + W_s x $$
+$$
+\text{depth} = 6n + 2
+$$
 
-**この式が言ってること**: ブロックの入口 $x$ と出口 $\mathcal{F}$ の「数の並びの大きさ」がそろっていないときだけ、$x$ にも軽い変換 $W_s$ をかけて大きさを合わせて足す。普段は使わない、サイズ合わせ専用の式。
+**式の意味**: CIFAR-10 実験で使う plain / residual network の weighted layers 数である。3 種類の feature map size $\{32,16,8\}$ にそれぞれ $2n$ layers を置き、最初の convolution と最後の fully-connected layer を含めて $6n+2$ になる。
 
-**記号の意味**:
-- $W_s$ … サイズ合わせ用の小さな変換つまみ（論文では $1\times1$ 畳み込みを使う）。
-- それ以外の記号は ① と同じ。
+**記号の定義**:
+- $n$ ... 各 feature map size ごとの residual block 数に対応する整数
+- $6n$ ... 3 つの stage にある $3\times3$ convolution layers の総数
+- $+2$ ... 最初の convolution と最後の fully-connected layer
 
-**身近な例え**: コンセントの変換アダプタ。普段は形がそろっているからそのまま挿せる（① の式）。海外旅行みたいに形が違うときだけ変換アダプタ ($W_s$) を挟む。本当に必要なときしか使わないので、配線（パラメータ）が無駄に増えない。
+**この論文での役割**: CIFAR-10 で深さだけを体系的に変える実験設計を表す。$n=\{3,5,7,9\}$ が 20 / 32 / 44 / 56 層、$n=18$ が 110 層、$n=200$ が 1202 層に対応する。
 
-## 何がすごいの？
+### 実装 / アルゴリズム上の要点
 
-- **ImageNet 分類タスクで世界 1 位**: ImageNet（1000 種類のものを当てる、約 128 万枚の画像データセット）の test セットで、6 個の ResNet を組み合わせて **top-5 エラー率 3.57%**。これで ILSVRC 2015 という世界大会の分類部門 1 位を獲った。
-  - 「**top-5 エラー率**」← AI が「これかも」と上位 5 候補を答えて、その中に正解が含まれていなかった割合。3.57% ということは 100 枚中 96 枚以上は 5 候補に正解が入っているということ。
-- **152 層という、当時としてはとんでもなく深いネットを実際に動かした**。それまでの代表 VGG ネットは 16〜19 層、Google の Inception でも 22 層程度。ResNet-152 は VGG-19 の **8 倍深い**のに、計算量は **11.3 GFLOPs**（VGG-19 の 19.6 GFLOPs の半分くらい）で済んでいる。
-  - 「**GFLOPs（ギガフロップス）**」← 推論 1 回で必要な計算の量。「掛け算と足し算が何回必要か」を 10 億回単位で数えたもの。少ないほど軽くて速い。
-- **「深くするほど精度が良くなる」が ResNet で本当に成り立った**:
-  - plain-34（普通の 34 層）: top-1 エラー 28.54% / top-5 10.02%
-  - ResNet-34 (option A): top-1 25.03% / top-5 7.76% ← 同じパラメータ数で **top-1 が 3.5 ポイント改善**
-  - ResNet-152: top-1 21.43% / top-5 5.71%
-- **1 個のモデルだけで過去のアンサンブル（複数モデル合成）を超えた**: ResNet-152 単体で top-5 4.49%。それまで最強だった BN-inception の単体 5.81% や PReLU-net 5.71% より良く、**過去のアンサンブル結果さえ超えた**。
-- **CIFAR-10（32×32 の小さな画像 10 クラス）でも有効**:
-  - ResNet-110 で test エラー **6.43%**（5 回平均 6.61 ± 0.16）。
-  - **1202 層**（千二百!）という当時前代未聞の深さでも学習自体は成功し、training error が 0.1% 未満まで下がった。test では 7.93% と 110 層に劣ったが、これは「データセットに対してパラメータが多すぎる過学習」だと著者は説明している。
-- **他のタスクにもそのまま効く**: ImageNet 分類以外でも、ResNet-101 をバックボーンとして使うだけで以下のタスクで 1 位を獲った:
-  - **COCO 物体検出**: mAP@[.5,.95] が VGG-16 ベースの 21.2 → ResNet-101 ベースの 27.2、つまり **+6.0 ポイント（相対 28% 改善）**。
-  - **PASCAL VOC 検出**: VOC07 で 73.2 → 76.4、VOC12 で 70.4 → 73.8 mAP。
-  - **ImageNet localization**: top-5 エラー 9.0%（VGG/GoogLeNet 比で **相対 64% 削減**）。
-  - **ImageNet detection** と **COCO segmentation** も 1 位。
-- **著者が論文で挙げている貢献**（Abstract と §1 より）:
-  1. 普通に層を積むだけでは深さの恩恵を受けられない「degradation 問題」を、実験で明確に示した。
-  2. **identity ショートカット**という最小限の構造変更で、100 層以上の最適化を可能にした。
-  3. SGD など既存の学習器を一切変えずに使える。Caffe（当時の有名な深層学習フレームワーク）の標準実装でそのまま動く。
-  4. 分類だけでなく検出・位置推定・セグメンテーションといった複数タスクに**まとめて 1 位**を取れる、汎用性の高い表現が得られた。
+- ImageNet の plain baseline は VGG nets の方針に基づき、主に $3\times3$ filters を使う。同じ output feature map size では同じ filter 数、feature map size が半分になると filter 数を 2 倍にし、downsampling は stride 2 の convolution で行う。最後は global average pooling と 1000-way fully-connected layer + softmax である。
+- ResNet-18 / 34 は、この plain network に shortcut connections を挿入したもの。input / output dimensions が同じなら identity shortcut、次元が増える場合は option A の zero-padding または option B の $1\times1$ projection を使う。shortcut が feature map size をまたぐ場合は stride 2。
+- ResNet-50 / 101 / 152 は bottleneck block を使う。各 residual function は $1\times1$ で次元を減らし、$3\times3$ で処理し、$1\times1$ で次元を戻す。Table~\ref{tab:arch} では ResNet-152 が 11.3 billion FLOPs で、VGG-16 / VGG-19 の 15.3 / 19.6 billion FLOPs より低い複雑度だと述べられる。
+- ImageNet training では、shorter side を $[256,480]$ から random sample して resize、224x224 crop と horizontal flip、per-pixel mean subtraction、standard color augmentation を使う。各 convolution の直後・activation の前に BN を置く。mini-batch size は 256、learning rate は 0.1 から開始し plateau で 10 分の 1、最大 $60\times10^4$ iterations、weight decay 0.0001、momentum 0.9、dropout なし。
+- ImageNet testing では、比較実験に standard 10-crop testing を使う。best results では fully-convolutional form と multi-scale scoring を使い、shorter side を $\{224,256,384,480,640\}$ に resize して平均する。
+- CIFAR-10 では 32x32 images、per-pixel mean subtraction、3x3 convolution、feature map sizes $\{32,16,8\}$、filters $\{16,32,64\}$、global average pooling、10-way fully-connected layer、softmax を使う。weight decay 0.0001、momentum 0.9、He initialization、BN、dropout なし。mini-batch size は 128、標準の learning rate は 0.1 から始め、32k / 48k iterations で 10 分の 1、64k iterations で終了する。110-layer ResNet では 0.1 が開始時にやや大きいため、training error が 80% 未満になるまで 0.01 で warm up してから 0.1 に戻す。
 
-## キーワード辞典
+## 実験・結果
 
-- **深層学習（deep learning）** … たくさんの層を重ねた AI に、データから自動でパターンを覚えさせる方法。
-- **CNN（畳み込みニューラルネットワーク）** … 画像用の代表的な深層学習モデル。「窓をずらしながらパターンを検出するフィルター」をたくさん組み合わせている。
-- **層（layer）** … ネットワーク内部の 1 段の処理。入力をちょっとだけ変換して次の段に渡す。
-- **畳み込み（convolution）** … 画像の小さな窓に対してフィルターをかける処理。「縦線がある」「目っぽい」みたいな特徴を見つける。
-- **ReLU** … 「マイナスを 0 にする」という単純なスイッチ。$\sigma$ と書かれる。
-- **identity mapping（恒等写像）** … 「入力をそのまま出力に渡す」という何もしない関数。
-- **shortcut connection（ショートカット接続）** … ブロックの入力を、ブロック内の計算を飛ばして出口に直接足す配線。
-- **residual（残差）** … 「目標 − 今の値」の差。残差を学習する＝差分だけ学ぶ＝楽。
-- **residual block（残差ブロック）** … $y = \mathcal{F}(x) + x$ で表される 1 単位。これを積み重ねたのが ResNet。
-- **bottleneck block** … 50 層以上の ResNet で使う、$1{\times}1 \to 3{\times}3 \to 1{\times}1$ の 3 段ブロック。計算量を節約するための工夫。
-- **degradation 問題** … 層を増やすほど training error が悪化する変な現象。本論文の主役。
-- **vanishing gradient（勾配消失）** … 学習のヒントが奥の層まで届かない問題。BN でほぼ解決済みなので degradation の原因では**ない**、と著者は主張。
-- **Batch Normalization（BN）** … 層の途中で値の大きさを整える処理。学習を安定させる。
-- **SGD** … 重みを少しずつ調整して間違いを減らしていく学習方法。
-- **weight decay** … 重みが大きくなりすぎないようにペナルティをかける工夫。
-- **dropout** … 学習中に一部の信号をわざと切って過学習を防ぐ手法。本論文では使っていない。
-- **ImageNet / ILSVRC** … 1000 種類の物体を当てる、約 128 万枚の画像コンテスト＆データセット。
-- **CIFAR-10** … 32×32 ピクセルの小さな画像 10 種類を当てるデータセット。
-- **top-1 / top-5 エラー** … AI が答える上位 1 個 / 上位 5 個に正解が入っていなかった割合。
-- **FLOPs** … 1 回の推論で必要な計算量（掛け算＋足し算の総数）。
-- **VGG-16 / VGG-19** … ResNet の前世代のベンチマーク。3×3 の畳み込みを淡々と積んだ深いネット。
-- **PReLU-net / BN-inception / GoogLeNet** … 当時の強豪。表で比較対象として登場。
-- **Faster R-CNN** … 物体検出の方法。本論文では「バックボーン」（特徴抽出役）を VGG-16 から ResNet-101 に置き換えるだけで大幅改善。
-- **mAP** … 物体検出の精度指標。位置と種類を当てる正確さを 0〜1 で測る（1 が最高）。
-- **COCO / PASCAL VOC** … 物体検出のベンチマークデータセット。
-- **bottleneck の $1{\times}1$ 畳み込み** … チャンネル数（並んでいる特徴マップの枚数）を圧縮・復元する役割。情報を絞ってから 3×3 で計算し、また広げる。
-- **option A / B / C** … ショートカットの 3 種類のやり方。A = 全部 identity（次元増加はゼロ埋め）、B = 次元増加時のみ $1{\times}1$ 投影、C = 全部投影。論文の結論は「A < B < C だが差は小さい。投影は本質ではない」。
+- **データセット / ベンチマーク**: ImageNet 2012 classification は 1000 classes、1.28 million training images、50k validation images、100k test images。CIFAR-10 は 50k training images、10k testing images、10 classes。検出では PASCAL VOC 2007 / 2012 と MS COCO、付録では ImageNet Detection と ImageNet Localization も扱う。
+- **比較対象 / baseline**: ImageNet classification では plain-18 / plain-34、VGG-16、GoogLeNet、PReLU-net、BN-inception と比較する。CIFAR-10 では Maxout、NIN、DSN、FitNet、Highway Networks と比較する。検出では Faster R-CNN の backbone を VGG-16 から ResNet-101 に置き換える比較を行う。
+- **指標**: 分類は top-1 error と top-5 error。CIFAR-10 は classification error。検出は mAP@.5 と COCO standard metric の mAP@[.5,.95]。localization は top-5 localization error を使う。
+- **主な結果**: ImageNet validation の 10-crop testing では、plain-34 が top-1 28.54 / top-5 10.02、ResNet-34 A が 25.03 / 7.76、ResNet-50 が 22.85 / 6.71、ResNet-101 が 21.75 / 6.05、ResNet-152 が 21.43 / 5.71（Table~\ref{tab:10crop}）。single-model validation では ResNet-152 が top-1 19.38 / top-5 4.49（Table~\ref{tab:single}）。ensemble は ImageNet test top-5 error 3.57% で、ILSVRC 2015 classification task の 1st place とされる（Table~\ref{tab:ensemble}）。
+- **主な結果**: plain / ResNet の直接比較では、ImageNet 10-crop top-1 error が 18 layers で plain 27.94、ResNet 27.88、34 layers で plain 28.54、ResNet 25.03（Table~\ref{tab:plain_vs_shortcut}）。Fig.~\ref{fig:imagenet} では 34-layer plain net の training error が 18-layer plain net より高く、ResNet では 34-layer が 18-layer より良い。
+- **主な結果**: shortcut option は ResNet-34 で A 25.03 / 7.76、B 24.52 / 7.46、C 24.19 / 7.40（top-1 / top-5, Table~\ref{tab:10crop}）。著者は、A/B/C の差が小さいことから projection shortcuts は degradation 問題の解決に essential ではないと解釈し、以後は計算量・モデルサイズを抑えるため主に option B を使う。
+- **主な結果**: CIFAR-10 では ResNet-20 8.75%、32 7.51%、44 7.17%、56 6.97%、110 6.43%（5 runs の mean±std は 6.61±0.16）、1202 7.93%（Table~\ref{tab:cifar}）。1202-layer network は training error <0.1% に達するが、test error は 110-layer より悪く、著者は overfitting と解釈する。
+- **主な結果**: Layer response analysis では、Fig.~\ref{fig:std} で ResNets の layer responses の standard deviations が plain counterparts より一般に小さく、ResNet-20 / 56 / 110 の比較では深いほど個々の層が signal をより小さく変更する傾向が示される。
+- **主な結果**: baseline Faster R-CNN で backbone を VGG-16 から ResNet-101 に替えると、PASCAL VOC 2007 test mAP は 73.2 から 76.4、VOC 2012 test mAP は 70.4 から 73.8（Table~\ref{tab:detection_voc}）。COCO validation では mAP@.5 が 41.5 から 48.4、mAP@[.5,.95] が 21.2 から 27.2（Table~\ref{tab:detection_coco}）。著者は同一 detection implementation なので gain は better networks に帰属できると述べる。
+- **著者が主張する貢献**: residual learning framework により、以前より substantially deeper なネットワークを学習しやすくしたこと、ImageNet で 152-layer ResNet を評価し VGG nets より 8x deeper かつ lower complexity としたこと、ImageNet test top-5 error 3.57% を達成したこと、COCO object detection で 28% relative improvement を得たこと、ILSVRC & COCO 2015 の複数タスクで 1st place を得たこと。
 
-## ちょっと深掘り（中学生は飛ばして OK）
+## 妥当性と限界
 
-- **「なぜ identity を足すと最適化が楽になるのか」は実はこの論文でも未解明**。著者自身 §4.1 で「vanishing gradient のせいではない。深い plain ネットは収束速度が指数的に遅いという仮説を立てるが、原因解明は future work」と認めている。後続研究（Li ら 2018、Veit ら 2016 など）で「loss landscape が滑らかになる」「短い経路の集まりとして振る舞う」などの説明が試みられている。
-- **bottleneck design**: ResNet-50 以降のブロックは「$1{\times}1$ で 256ch → 64ch に絞る → $3{\times}3$ で 64ch のまま処理 → $1{\times}1$ で 64ch → 256ch に戻す」という構造。これで深さを増やしても計算量が爆発しないようにしている。152 層 ResNet (11.3 GFLOPs) が VGG-19 (19.6 GFLOPs) より軽いのはこの設計のおかげ。
-- **option A/B/C の比較**: ResNet-34 で見ると top-1 が A=25.03%, B=24.52%, C=24.19%。C は精度が一番良いが、ショートカット全部に投影行列を入れるとパラメータが増えるので、コスト対効果で B（次元増加時だけ投影）を採用したと著者は説明。
-- **応答の大きさの観察（Fig. 7）**: ResNet の各層の出力の標準偏差は plain net より明らかに小さい。しかも深くするほど小さくなる。これは「残差は実際に 0 に近いところに収束していて、ブロックは恒等変換の周りで小さく振れているだけ」という ResNet の動作仮説を裏付ける証拠。
-- **1202 層の話**: CIFAR-10 で 1202 層 ResNet を実際に最適化できた（training error <0.1%）が、test では 7.93% と 110 層の 6.43% に負けた。著者は「19.4M パラメータは CIFAR-10 (5 万枚) に対して過大で過学習」と解釈し、「maxout / dropout を併用すれば改善するかも、future work」と述べている。
-- **検出側の話**: COCO の +6.0 mAP は「バックボーンを ResNet-101 に差し替えただけ」の結果。ここに box refinement、context、multi-scale testing、3 ネットアンサンブルを加えると COCO test-dev で 37.4 mAP まで上がる（§Appendix）。ただしこれらの追加技は ResNet 以外でも効くので、純粋な「ResNet のおかげ」分は +6.0 の方が信頼できる数字。
+- **この主張を支える根拠**: degradation 問題は、ImageNet の 18 / 34-layer plain nets と CIFAR-10 の plain nets で、深い方の training error が高いことで示される。これは validation error だけでなく training error の比較なので、単純な overfitting ではないという主張を支える。
+- **この主張を支える根拠**: residual learning の効果は、same depth / width / parameter / computational cost に近い plain vs ResNet 比較で示される。特に option A は追加パラメータなしなので、ResNet-34 A が plain-34 より大きく改善する結果は、projection やパラメータ増ではなく residual formulation の効果を示す対照実験になっている。
+- **この主張を支える根拠**: shortcut option A/B/C の比較では C が最良だが差は小さい。著者は C の改善を extra parameters によるものとみなし、projection shortcut は essential ではないと述べる。この解釈は Table~\ref{tab:10crop} の ablation に基づく。
+- **この主張を支える根拠**: CIFAR-10 の 1202-layer network が training error <0.1% まで下がることは、少なくともこの設定では 1000 層級 ResNet の optimization difficulty が顕在化していないという根拠になる。ただし test error は 110-layer より悪い。
+- **著者が認めている limitations / future work**: 34-layer plain net の optimization difficulty について、BN により forward signals は non-zero variances を持ち、backward gradients も healthy norms で、vanishing gradients が原因とは考えにくいと述べる一方で、原因は future work とされる。著者は exponentially low convergence rates の可能性を conjecture として述べるにとどめる。
+- **著者が認めている limitations / future work**: 1202-layer ResNet は training error が低いのに test error が悪く、著者は 19.4M parameters が CIFAR-10 には大きすぎる overfitting と解釈する。maxout や dropout のような strong regularization を組み合わせる可能性は future work とされる。
+- **読者として注意すべき点**: この論文は residual learning がなぜ最適化を容易にするかを数学的に証明する論文ではない。中心は、plain / residual の対照、深さスイープ、shortcut ablation、複数タスクでの実験証拠である。
+- **読者として注意すべき点**: 検出の後半の改善、たとえば box refinement、context、multi-scale testing、ensemble は ResNet 以外の工夫も含む。backbone 置換だけの効果として読むべき主要比較は、baseline Faster R-CNN の VGG-16 vs ResNet-101 である。
+- **追加で確認したい実験 / 疑問**: plain network の degradation が、loss landscape、Jacobian / Hessian の条件、gradient の分散などのどの要因と関係するかは、この TeX では明示的に切り分けられていない（これらの確認観点自体は TeX 中には明示されていない）。
+- **追加で確認したい実験 / 疑問**: shortcut option の詳細比較は主に ResNet-34 で示される。bottleneck architecture の深いモデルで option A/B/C を同じ粒度で比較した結果は、この TeX には示されていない。
+
+## 用語メモ
+
+一般的な辞書的定義ではなく、この論文での使われ方を中心に書く。
+
+- **degradation problem**: 深くすると accuracy が飽和後に悪化し、training error も高くなる現象。著者は overfitting ではなく optimization difficulty として扱う。
+- **plain network**: shortcut を持たず、convolutional layers を単純に積んだ baseline。ImageNet では VGG nets の設計思想に基づく 18 / 34-layer network、CIFAR-10 では $6n+2$ 層の network。
+- **residual learning**: $\mathcal{H}(\mathbf{x})$ を直接学習する代わりに $\mathcal{F}(\mathbf{x}) := \mathcal{H}(\mathbf{x})-\mathbf{x}$ を学習し、出力を $\mathcal{F}(\mathbf{x})+\mathbf{x}$ にする再定式化。
+- **identity shortcut connection**: 入力 $\mathbf{x}$ を residual branch の出力にそのまま足す接続。Eqn.(1) の $+\mathbf{x}$ に対応し、追加パラメータや計算量を増やさない。
+- **projection shortcut**: 次元が合わないときに $W_s\mathbf{x}$ を足す shortcut。ImageNet では $1\times1$ convolution で実装され、option B では次元増加時のみ使われる。
+- **option A / B / C**: shortcut の次元合わせの ablation。A は zero-padding で全 shortcut が parameter-free、B は次元増加時のみ projection、C は全 shortcut が projection。
+- **bottleneck design**: ResNet-50 / 101 / 152 で使う $1\times1$, $3\times3$, $1\times1$ の 3-layer residual branch。1x1 layers が dimensions を reduce / restore し、3x3 layer の計算量を抑える。
+- **top-1 / top-5 error**: ImageNet classification の評価指標。top-1 は最上位予測が外れた割合、top-5 は上位 5 予測に正解が含まれない割合。
+- **mAP@.5 / mAP@[.5,.95]**: 物体検出の評価指標。mAP@.5 は IoU=0.5、mAP@[.5,.95] は COCO standard metric として複数 IoU thresholds を使う。
+- **layer responses の standard deviations**: Fig.~\ref{fig:std} の分析対象。各 $3\times3$ layer の出力を BN 後・nonlinearity 前で見た標準偏差で、ResNet では residual functions の response strength を見るために使われる。
+
+## 読む順番の提案
+
+- まず Abstract と Introduction の ``degradation'' の説明を読む。正規ノートの Summary 冒頭にある「training error が深くしたほうが高くなる」という問題設定につながる。
+- 次に Sec.~3.1 と Sec.~3.2、Eqn.(1) / Eqn.(2)、Fig.~\ref{fig:block} を読む。ここが正規ノートの「$\mathcal{H}(x)$ ではなく $\mathcal{F}(x):=\mathcal{H}(x)-x$ を学習する」という手法説明に対応する。
+- ImageNet の Table~\ref{tab:plain_vs_shortcut} と Fig.~\ref{fig:imagenet} を先に見る。plain-34 の degradation と ResNet-34 の改善が、この論文で一番重要な対照実験である。
+- その後 Table~\ref{tab:10crop} と Table~\ref{tab:single} / Table~\ref{tab:ensemble} を読む。shortcut option、50 / 101 / 152 層への拡張、single-model と ensemble の結果がまとまっている。
+- CIFAR-10 では Sec.~4.2、Fig.~\ref{fig:cifar}、Table~\ref{tab:cifar}、Fig.~\ref{fig:std} を読む。正規ノートの「1202 層は training error <0.1% だが test は 110 層に劣る」という評価・限界につながる。
+- 検出や位置推定の主張を確認したい場合は Sec.~4.3 と Appendix の detection / localization tables を読む。正規ノートの Critical Thoughts にある「純粋な backbone 置換ゲインと追加技のゲインを分けて読む」という注意点に対応する。
 
 ## もとの論文・正規ノート
 
